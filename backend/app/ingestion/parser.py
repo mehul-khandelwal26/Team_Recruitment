@@ -1,20 +1,21 @@
-"""CSV and JSON file parsing for registration data.
+"""CSV and JSON file parsing for dynamic registration data.
 
 Converts raw uploaded file bytes into validated team structures,
-collecting errors and warnings along the way.
+preserving custom/unmapped fields, tracking field presence states,
+and supporting configurable field mappings.
 """
 
 from __future__ import annotations
 
-import csv
 import io
 import json
-from typing import Any
+from typing import Any, Optional
 
 import pandas as pd
 from pydantic import ValidationError as PydanticValidationError
 
 from app.schemas.ingestion import (
+    FieldPresenceStatus,
     MemberSchema,
     TeamSchema,
     UploadResponse,
@@ -22,7 +23,7 @@ from app.schemas.ingestion import (
     ValidationWarning,
 )
 
-# Profile-link fields that are optional.  Used to generate warnings
+# Profile-link fields that are optional. Used to generate non-fatal warnings
 # when a member is missing one or more of them.
 _OPTIONAL_PROFILE_FIELDS = [
     "email",
@@ -31,6 +32,19 @@ _OPTIONAL_PROFILE_FIELDS = [
     "linkedin_url",
     "portfolio_url",
 ]
+
+# Recognized standard member columns that map directly to MemberSchema fields
+_RECOGNIZED_MEMBER_COLUMNS = {
+    "member_id",
+    "name",
+    "email",
+    "resume_url",
+    "github_url",
+    "linkedin_url",
+    "portfolio_url",
+    "cgpa",
+    "academic_year",
+}
 
 # Required columns for CSV uploads (order-insensitive)
 _REQUIRED_CSV_COLUMNS = {
@@ -46,26 +60,27 @@ _REQUIRED_CSV_COLUMNS = {
 # ---------------------------------------------------------------------------
 
 
-def parse_csv(raw_bytes: bytes) -> UploadResponse:
-    """Parse a CSV file (one row per member) into teams.
+def parse_csv(
+    raw_bytes: bytes,
+    mapping: Optional[dict[str, str]] = None,
+) -> UploadResponse:
+    """Parse a CSV file (one row per member) into teams with custom field preservation.
 
-    Expected columns:
-        team_id, team_name, member_id, name,
-        email, resume_url, github_url, linkedin_url, portfolio_url
-
-    Rows sharing the same ``team_id`` are grouped into a single team.
+    Supports optional explicit field mapping from original column names to
+    canonical fields. Unmapped columns are safely retained in ``custom_fields``
+    and ``raw_data``.
     """
     errors: list[ValidationError] = []
     warnings: list[ValidationWarning] = []
 
-    text = raw_bytes.decode("utf-8-sig").strip()  # handle BOM
+    text = raw_bytes.decode("utf-8-sig", errors="replace").strip()
     if not text:
         return UploadResponse(
             success=False,
             errors=[ValidationError(location="file", message="Uploaded CSV file is empty.")],
         )
 
-    # -- Read into a DataFrame for convenient grouping ---------------------
+    # Read into a DataFrame
     try:
         df = pd.read_csv(io.StringIO(text), dtype=str, keep_default_na=False)
     except Exception as exc:
@@ -74,10 +89,55 @@ def parse_csv(raw_bytes: bytes) -> UploadResponse:
             errors=[ValidationError(location="file", message=f"Failed to parse CSV: {exc}")],
         )
 
-    # Normalise column names: lowercase + strip whitespace
-    df.columns = [c.strip().lower() for c in df.columns]
+    # Store original column names for custom fields preservation
+    original_columns = [str(c) for c in df.columns]
 
-    # -- Check required columns --------------------------------------------
+    # Apply mapping if provided, or default canonical normalization
+    normalized_mapping: dict[str, str] = {}
+    if mapping:
+        # Validate that multiple columns don't map to the same target
+        target_counts: dict[str, list[str]] = {}
+        for src, tgt in mapping.items():
+            tgt_norm = tgt.strip().lower()
+            if tgt_norm == "member_name":
+                tgt_norm = "name"
+            target_counts.setdefault(tgt_norm, []).append(src)
+        for tgt, srcs in target_counts.items():
+            if len(srcs) > 1 and tgt in _REQUIRED_CSV_COLUMNS:
+                errors.append(
+                    ValidationError(
+                        location="mapping",
+                        message=f"Multiple columns mapped to required field '{tgt}': {', '.join(srcs)}",
+                    )
+                )
+        if errors:
+            return UploadResponse(success=False, errors=errors)
+
+        # Normalize keys in mapping
+        for src, tgt in mapping.items():
+            tgt_norm = tgt.strip().lower()
+            if tgt_norm == "member_name":
+                tgt_norm = "name"
+            normalized_mapping[src.strip().lower()] = tgt_norm
+
+    # Build effective column mapping for DataFrame
+    effective_cols: list[str] = []
+    for col in original_columns:
+        col_lower = col.strip().lower()
+        if col_lower in normalized_mapping:
+            effective_cols.append(normalized_mapping[col_lower])
+        elif col in mapping if mapping else False:
+            effective_cols.append(mapping[col].strip().lower())
+        else:
+            # Default alias check if member_name used without mapping
+            if col_lower == "member_name":
+                effective_cols.append("name")
+            else:
+                effective_cols.append(col_lower)
+
+    df.columns = effective_cols
+
+    # Check required structural columns
     missing_cols = _REQUIRED_CSV_COLUMNS - set(df.columns)
     if missing_cols:
         return UploadResponse(
@@ -90,10 +150,16 @@ def parse_csv(raw_bytes: bytes) -> UploadResponse:
             ],
         )
 
-    # -- Row-level validation ----------------------------------------------
-    # Collect raw member dicts keyed by team_id
+    # Track which columns are unmapped custom fields
+    unmapped_fields = [
+        original_columns[i]
+        for i, col in enumerate(df.columns)
+        if col not in _RECOGNIZED_MEMBER_COLUMNS and col not in {"team_id", "team_name"}
+    ]
+
+    # Row-level processing and grouping
     team_rows: dict[str, list[dict[str, Any]]] = {}
-    team_names: dict[str, str] = {}  # first team_name seen per team_id
+    team_names: dict[str, str] = {}
 
     for row_idx, row in df.iterrows():
         row_num = int(row_idx) + 2  # 1-indexed, +1 for header
@@ -102,25 +168,32 @@ def parse_csv(raw_bytes: bytes) -> UploadResponse:
         team_id = str(row_dict.get("team_id", "")).strip()
         team_name = str(row_dict.get("team_name", "")).strip()
 
-        # Basic required-field checks at row level
         if not team_id:
-            errors.append(ValidationError(location=f"row {row_num}", message="team_id is missing or empty."))
+            errors.append(
+                ValidationError(location=f"row {row_num}", message="team_id is missing or empty.")
+            )
             continue
         if not team_name:
-            errors.append(ValidationError(location=f"row {row_num}", message="team_name is missing or empty."))
+            errors.append(
+                ValidationError(location=f"row {row_num}", message="team_name is missing or empty.")
+            )
             continue
 
         member_id = str(row_dict.get("member_id", "")).strip()
         name = str(row_dict.get("name", "")).strip()
 
         if not member_id:
-            errors.append(ValidationError(location=f"row {row_num}", message="member_id is missing or empty."))
+            errors.append(
+                ValidationError(location=f"row {row_num}", message="member_id is missing or empty.")
+            )
             continue
         if not name:
-            errors.append(ValidationError(location=f"row {row_num}", message="name is missing or empty."))
+            errors.append(
+                ValidationError(location=f"row {row_num}", message="name is missing or empty.")
+            )
             continue
 
-        # Check for inconsistent team_name
+        # Inconsistent team_name check
         if team_id in team_names:
             if team_names[team_id] != team_name:
                 errors.append(
@@ -136,20 +209,68 @@ def parse_csv(raw_bytes: bytes) -> UploadResponse:
         else:
             team_names[team_id] = team_name
 
-        # Build member dict (only include columns present in the CSV)
+        # Construct member data dictionary
+        # Preserve original row values in raw_data
+        raw_row_data = {original_columns[i]: row.iloc[i] for i in range(len(original_columns))}
+        custom_fields: dict[str, Any] = {}
+        field_statuses: dict[str, FieldPresenceStatus] = {
+            "team_id": FieldPresenceStatus.PRESENT,
+            "team_name": FieldPresenceStatus.PRESENT,
+            "member_id": FieldPresenceStatus.PRESENT,
+            "name": FieldPresenceStatus.PRESENT,
+        }
+
         member_data: dict[str, Any] = {
             "member_id": member_id,
             "name": name,
+            "custom_fields": custom_fields,
+            "raw_data": raw_row_data,
+            "field_statuses": field_statuses,
         }
+
+        # Profile link fields
         for field in _OPTIONAL_PROFILE_FIELDS:
             if field in row_dict:
                 val = str(row_dict[field]).strip()
-                member_data[field] = val if val else None
-            # If the column doesn't exist at all, leave it absent → schema default (None)
+                if val:
+                    member_data[field] = val
+                    field_statuses[field] = FieldPresenceStatus.PRESENT
+                else:
+                    member_data[field] = None
+                    field_statuses[field] = FieldPresenceStatus.COLLECTED_BLANK
+            else:
+                member_data[field] = None
+                field_statuses[field] = FieldPresenceStatus.NOT_COLLECTED
+
+        # Additional recognized fields (cgpa, academic_year)
+        for field in ["cgpa", "academic_year"]:
+            if field in row_dict:
+                val = str(row_dict[field]).strip()
+                if val:
+                    member_data[field] = val
+                    field_statuses[field] = FieldPresenceStatus.PRESENT
+                else:
+                    member_data[field] = None
+                    field_statuses[field] = FieldPresenceStatus.COLLECTED_BLANK
+            else:
+                member_data[field] = None
+                field_statuses[field] = FieldPresenceStatus.NOT_COLLECTED
+
+        # Extract arbitrary custom fields
+        for i, col in enumerate(df.columns):
+            if col not in _RECOGNIZED_MEMBER_COLUMNS and col not in {"team_id", "team_name"}:
+                orig_name = original_columns[i]
+                raw_val = row.iloc[i]
+                val = str(raw_val).strip() if raw_val is not None else ""
+                custom_fields[orig_name] = val if val else None
+                if val:
+                    field_statuses[orig_name] = FieldPresenceStatus.PRESENT
+                else:
+                    field_statuses[orig_name] = FieldPresenceStatus.COLLECTED_BLANK
 
         team_rows.setdefault(team_id, []).append(member_data)
 
-    # -- Build & validate teams -------------------------------------------
+    # Build & validate teams
     teams, team_errors, team_warnings = _build_teams(team_rows, team_names)
     errors.extend(team_errors)
     warnings.extend(team_warnings)
@@ -164,30 +285,23 @@ def parse_csv(raw_bytes: bytes) -> UploadResponse:
         teams=teams,
         warnings=warnings,
         errors=errors,
+        unmapped_fields=unmapped_fields,
     )
 
 
-def parse_json(raw_bytes: bytes) -> UploadResponse:
-    """Parse a JSON file (array of team objects) into teams.
+def parse_json(
+    raw_bytes: bytes,
+    mapping: Optional[dict[str, str]] = None,
+) -> UploadResponse:
+    """Parse a JSON file (array of team objects) into teams with custom field preservation.
 
-    Expected format::
-
-        [
-          {
-            "team_id": "...",
-            "team_name": "...",
-            "members": [
-              { "member_id": "...", "name": "...", ... },
-              ...
-            ]
-          },
-          ...
-        ]
+    Supports optional explicit field mapping. Arbitrary team and member
+    attributes are preserved in ``custom_fields`` and ``raw_data``.
     """
     errors: list[ValidationError] = []
     warnings: list[ValidationWarning] = []
 
-    text = raw_bytes.decode("utf-8-sig").strip()
+    text = raw_bytes.decode("utf-8-sig", errors="replace").strip()
     if not text:
         return UploadResponse(
             success=False,
@@ -205,22 +319,119 @@ def parse_json(raw_bytes: bytes) -> UploadResponse:
     if not isinstance(data, list):
         return UploadResponse(
             success=False,
-            errors=[ValidationError(location="file", message="JSON root must be an array of team objects.")],
+            errors=[
+                ValidationError(
+                    location="file",
+                    message="JSON root must be an array of team objects.",
+                )
+            ],
         )
 
     if len(data) == 0:
         return UploadResponse(
             success=False,
-            errors=[ValidationError(location="file", message="JSON array is empty – no teams found.")],
+            errors=[
+                ValidationError(
+                    location="file",
+                    message="JSON array is empty – no teams found.",
+                )
+            ],
         )
 
-    # -- Validate each team object ----------------------------------------
+    # Apply mapping if provided
+    norm_mapping = {}
+    if mapping:
+        for k, v in mapping.items():
+            tgt = v.strip().lower()
+            if tgt == "member_name":
+                tgt = "name"
+            norm_mapping[k.strip().lower()] = tgt
+
     teams: list[TeamSchema] = []
-    for idx, team_obj in enumerate(data):
+    discovered_unmapped: set[str] = set()
+
+    for idx, raw_team_obj in enumerate(data):
         loc = f"team index {idx}"
-        if not isinstance(team_obj, dict):
-            errors.append(ValidationError(location=loc, message="Each team entry must be a JSON object."))
+        if not isinstance(raw_team_obj, dict):
+            errors.append(
+                ValidationError(location=loc, message="Each team entry must be a JSON object.")
+            )
             continue
+
+        # Remap team object keys if mapping provided
+        team_obj = _apply_json_mapping(raw_team_obj, norm_mapping)
+
+        # Track unmapped team keys
+        for k in team_obj.keys():
+            if k not in {"team_id", "team_name", "members", "custom_fields", "raw_data"}:
+                discovered_unmapped.add(k)
+
+        # Process members array
+        members_raw = team_obj.get("members")
+        if not isinstance(members_raw, list):
+            errors.append(
+                ValidationError(location=loc, message="members field must be an array.")
+            )
+            continue
+
+        if len(members_raw) == 0:
+            errors.append(
+                ValidationError(
+                    location=loc,
+                    message="members: List should have at least 1 item after validation, not 0",
+                )
+            )
+            continue
+
+        processed_members = []
+        member_had_error = False
+
+        for m_idx, raw_m in enumerate(members_raw):
+            m_loc = f"{loc}, member index {m_idx}"
+            if not isinstance(raw_m, dict):
+                errors.append(
+                    ValidationError(location=m_loc, message="Member entry must be a JSON object.")
+                )
+                member_had_error = True
+                continue
+
+            m_obj = _apply_json_mapping(raw_m, norm_mapping)
+            if "member_name" in m_obj and "name" not in m_obj:
+                m_obj["name"] = m_obj.pop("member_name")
+
+            # Track unmapped member keys
+            for k in m_obj.keys():
+                if k not in _RECOGNIZED_MEMBER_COLUMNS and k not in {"custom_fields", "raw_data", "field_statuses"}:
+                    discovered_unmapped.add(k)
+
+            # Build field_statuses
+            field_statuses = {}
+            for field in _OPTIONAL_PROFILE_FIELDS:
+                if field in m_obj:
+                    val = m_obj[field]
+                    if val is not None and str(val).strip():
+                        field_statuses[field] = FieldPresenceStatus.PRESENT
+                    else:
+                        field_statuses[field] = FieldPresenceStatus.COLLECTED_BLANK
+                else:
+                    field_statuses[field] = FieldPresenceStatus.NOT_COLLECTED
+            m_obj["field_statuses"] = field_statuses
+
+            try:
+                member_model = MemberSchema.model_validate(m_obj)
+                processed_members.append(member_model)
+            except PydanticValidationError as exc:
+                member_had_error = True
+                for err in exc.errors():
+                    field_path = " → ".join(str(p) for p in err["loc"])
+                    errors.append(
+                        ValidationError(location=loc, message=f"{field_path}: {err['msg']}")
+                    )
+
+        if member_had_error:
+            continue
+
+        team_obj["members"] = processed_members
 
         try:
             team = TeamSchema.model_validate(team_obj)
@@ -232,17 +443,14 @@ def parse_json(raw_bytes: bytes) -> UploadResponse:
                 )
             continue
 
-        # Duplicate member_id check within this team
         dup_err = _check_duplicate_members(team)
         if dup_err:
             errors.append(ValidationError(location=loc, message=dup_err))
             continue
 
-        # Missing-profile warnings
         warnings.extend(_missing_profile_warnings(team))
         teams.append(team)
 
-    # Duplicate team_id check across all validated teams
     team_id_errors = _check_duplicate_team_ids(teams)
     errors.extend(team_id_errors)
 
@@ -256,12 +464,25 @@ def parse_json(raw_bytes: bytes) -> UploadResponse:
         teams=teams,
         warnings=warnings,
         errors=errors,
+        unmapped_fields=sorted(discovered_unmapped),
     )
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _apply_json_mapping(obj: dict[str, Any], norm_mapping: dict[str, str]) -> dict[str, Any]:
+    """Remap keys of a dictionary using normalized target field mapping."""
+    if not norm_mapping:
+        return dict(obj)
+    mapped: dict[str, Any] = {}
+    for k, v in obj.items():
+        k_lower = k.strip().lower()
+        target_key = norm_mapping.get(k_lower, k)
+        mapped[target_key] = v
+    return mapped
 
 
 def _build_teams(
@@ -276,7 +497,6 @@ def _build_teams(
     for team_id, members_data in team_rows.items():
         team_name = team_names[team_id]
 
-        # Validate individual members via Pydantic
         valid_members: list[MemberSchema] = []
         for m in members_data:
             try:
@@ -301,16 +521,13 @@ def _build_teams(
             )
             continue
 
-        # Build team
         team = TeamSchema(team_id=team_id, team_name=team_name, members=valid_members)
 
-        # Duplicate member_id check
         dup_err = _check_duplicate_members(team)
         if dup_err:
             errors.append(ValidationError(location=f"team '{team_id}'", message=dup_err))
             continue
 
-        # Missing-profile warnings
         warnings.extend(_missing_profile_warnings(team))
         teams.append(team)
 
@@ -351,7 +568,7 @@ def _missing_profile_warnings(team: TeamSchema) -> list[ValidationWarning]:
     warns: list[ValidationWarning] = []
     for member in team.members:
         for field in _OPTIONAL_PROFILE_FIELDS:
-            value = getattr(member, field)
+            value = getattr(member, field, None)
             if value is None:
                 warns.append(
                     ValidationWarning(

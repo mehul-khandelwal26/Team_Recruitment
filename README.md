@@ -92,7 +92,8 @@ Registration Data (CSV/JSON)
 | App configuration    | ✅ Done          |
 | Data ingestion       | ✅ Done          |
 | Validation           | ✅ Done          |
-| Signal extraction    | 🔲 Not started  |
+| Dynamic form mapping | ✅ Done          |
+| Signal extraction    | 🔲 Architecture ready (extractors pending) |
 | Eligibility rules    | 🔲 Not started  |
 | Scoring engine       | 🔲 Not started  |
 | Aggregation          | 🔲 Not started  |
