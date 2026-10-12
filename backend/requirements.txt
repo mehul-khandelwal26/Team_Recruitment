@@ -5,3 +5,7 @@ pydantic-settings==2.5.2
 pandas==2.2.3
 python-dotenv==1.0.1
 python-multipart==0.0.12
+
+# Testing
+pytest>=8.0.0
+httpx>=0.27.0

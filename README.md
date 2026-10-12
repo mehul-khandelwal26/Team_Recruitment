@@ -90,8 +90,8 @@ Registration Data (CSV/JSON)
 | Health-check endpoint| ✅ Done          |
 | CORS configuration   | ✅ Done          |
 | App configuration    | ✅ Done          |
-| Data ingestion       | 🔲 Not started  |
-| Validation           | 🔲 Not started  |
+| Data ingestion       | ✅ Done          |
+| Validation           | ✅ Done          |
 | Signal extraction    | 🔲 Not started  |
 | Eligibility rules    | 🔲 Not started  |
 | Scoring engine       | 🔲 Not started  |

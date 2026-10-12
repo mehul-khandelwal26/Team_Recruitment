@@ -1,13 +1,14 @@
 """FastAPI application entry point.
 
 Initializes the application, configures CORS middleware, and
-registers the health-check endpoint. Additional routers will
-be mounted here as features are implemented.
+registers routers. Additional routers will be mounted here
+as features are implemented.
 """
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.endpoints.ingestion import router as ingestion_router
 from app.config import APP_ENV, CORS_ORIGINS
 
 # ---------------------------------------------------------------------------
@@ -34,6 +35,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ---------------------------------------------------------------------------
+# Routers
+# ---------------------------------------------------------------------------
+app.include_router(ingestion_router)
+
 
 # ---------------------------------------------------------------------------
 # Health check
@@ -46,3 +52,4 @@ async def health_check():
         "environment": APP_ENV,
         "version": app.version,
     }
+
