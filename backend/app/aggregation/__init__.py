@@ -1,0 +1,1 @@
+"""Team-level score aggregation."""
