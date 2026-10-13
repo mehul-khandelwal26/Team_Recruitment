@@ -46,3 +46,10 @@ CORS_ORIGINS: list[str] = [
 # File uploads
 # ---------------------------------------------------------------------------
 MAX_UPLOAD_SIZE_MB: int = int(os.getenv("MAX_UPLOAD_SIZE_MB", "10"))
+
+# ---------------------------------------------------------------------------
+# GitHub Integration
+# ---------------------------------------------------------------------------
+GITHUB_TOKEN: str | None = os.getenv("GITHUB_TOKEN", None)
+GITHUB_API_BASE_URL: str = os.getenv("GITHUB_API_BASE_URL", "https://api.github.com").rstrip("/")
+GITHUB_REQUEST_TIMEOUT: float = float(os.getenv("GITHUB_REQUEST_TIMEOUT", "10.0"))

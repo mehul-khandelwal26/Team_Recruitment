@@ -1,20 +1,38 @@
-"""Signal extraction from member profiles."""
+"""Signal extraction and analysis for candidate and team evaluations."""
 
+from app.signals.academic import AcademicMetricsAnalyzer
 from app.signals.base import BaseSignalExtractor, SignalExtractorRegistry
+from app.signals.github import GitHubAnalyzer
 from app.signals.registry import default_signal_registry
 from app.signals.schemas import (
+    CategoryDefinition,
     ExtractedSignal,
+    ExtractionRunRequest,
+    ExtractionRunResponse,
     ExtractorDescriptor,
+    MemberExtractionResult,
+    SignalCatalogResponse,
+    SignalDefinition,
     SignalEvidence,
     SignalStatus,
+    TeamExtractionResult,
 )
 
 __all__ = [
+    "AcademicMetricsAnalyzer",
     "BaseSignalExtractor",
+    "CategoryDefinition",
     "ExtractedSignal",
+    "ExtractionRunRequest",
+    "ExtractionRunResponse",
     "ExtractorDescriptor",
+    "GitHubAnalyzer",
+    "MemberExtractionResult",
+    "SignalCatalogResponse",
+    "SignalDefinition",
     "SignalEvidence",
     "SignalExtractorRegistry",
     "SignalStatus",
+    "TeamExtractionResult",
     "default_signal_registry",
 ]

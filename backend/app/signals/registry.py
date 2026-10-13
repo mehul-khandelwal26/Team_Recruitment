@@ -1,55 +1,31 @@
 """Default registry and standard extractor specifications.
 
-Provides ready-to-inspect descriptors for planned future extractors
-without running external network or heavy ML operations.
+Maintains registered extractors, categories, and contracts for active and planned
+signal extractors.
 """
 
 from __future__ import annotations
 
-from app.signals.base import BaseSignalExtractor, SignalExtractorRegistry
-from app.signals.schemas import ExtractedSignal, ExtractorDescriptor, SignalStatus
 from app.schemas.ingestion import MemberSchema
+from app.signals.academic import AcademicMetricsAnalyzer
+from app.signals.base import BaseSignalExtractor, SignalExtractorRegistry
+from app.signals.github import GitHubAnalyzer
+from app.signals.schemas import (
+    CategoryDefinition,
+    ExtractedSignal,
+    ExtractorDescriptor,
+    SignalDefinition,
+    SignalStatus,
+)
 
 
 # ---------------------------------------------------------------------------
-# Standard Extractor Specifications (Contracts)
+# Planned Future Extractor Specifications (Contracts / Placeholders)
 # ---------------------------------------------------------------------------
-
-
-class GitHubAnalyzerContract(BaseSignalExtractor):
-    """Specification for future GitHub repository and commit analysis."""
-
-    @property
-    def descriptor(self) -> ExtractorDescriptor:
-        return ExtractorDescriptor(
-            extractor_id="github_analyzer",
-            name="GitHub Activity & Repo Analyzer",
-            description="Analyzes public repositories, commit recency, primary languages, and contributions.",
-            category="technical",
-            required_inputs=["github_url"],
-            optional_inputs=["name"],
-            produced_signals=[
-                "github_public_repo_count",
-                "github_recent_commit_activity",
-                "github_primary_languages",
-                "github_profile_verified",
-            ],
-            is_enabled_by_default=False,
-        )
-
-    def extract(self, member: MemberSchema) -> list[ExtractedSignal]:
-        # Staged for future implementation - returns pending contract
-        return [
-            ExtractedSignal(
-                signal_key="github_profile_verified",
-                category="technical",
-                status=SignalStatus.PENDING,
-            )
-        ]
 
 
 class ResumeParserContract(BaseSignalExtractor):
-    """Specification for future PDF/Word resume analysis."""
+    """Contract specification for future PDF/Word resume analysis."""
 
     @property
     def descriptor(self) -> ExtractorDescriptor:
@@ -65,10 +41,38 @@ class ResumeParserContract(BaseSignalExtractor):
                 "resume_experience_years",
                 "resume_degree_level",
             ],
+            signals=[
+                SignalDefinition(
+                    signal_key="resume_extracted_skills",
+                    name="Extracted Skills",
+                    description="Technical skills identified in resume text.",
+                    category="experience",
+                    value_type="list",
+                ),
+                SignalDefinition(
+                    signal_key="resume_experience_years",
+                    name="Years of Experience",
+                    description="Estimated years of professional experience.",
+                    category="experience",
+                    value_type="float",
+                ),
+                SignalDefinition(
+                    signal_key="resume_degree_level",
+                    name="Highest Degree Level",
+                    description="Highest academic degree identified.",
+                    category="experience",
+                    value_type="string",
+                ),
+            ],
             is_enabled_by_default=False,
         )
 
-    def extract(self, member: MemberSchema) -> list[ExtractedSignal]:
+    def extract(
+        self,
+        member: MemberSchema,
+        selected_signals: set[str] | None = None,
+        config: dict | None = None,
+    ) -> list[ExtractedSignal]:
         return [
             ExtractedSignal(
                 signal_key="resume_extracted_skills",
@@ -78,37 +82,8 @@ class ResumeParserContract(BaseSignalExtractor):
         ]
 
 
-class AcademicMetricsContract(BaseSignalExtractor):
-    """Specification for academic score processing."""
-
-    @property
-    def descriptor(self) -> ExtractorDescriptor:
-        return ExtractorDescriptor(
-            extractor_id="academic_metrics",
-            name="Academic Metrics Processor",
-            description="Normalizes CGPA, CPI, and academic standings across diverse grading scales.",
-            category="academic",
-            required_inputs=["cgpa"],
-            optional_inputs=["academic_year"],
-            produced_signals=[
-                "normalized_cgpa_10_scale",
-                "academic_standing_category",
-            ],
-            is_enabled_by_default=False,
-        )
-
-    def extract(self, member: MemberSchema) -> list[ExtractedSignal]:
-        return [
-            ExtractedSignal(
-                signal_key="normalized_cgpa_10_scale",
-                category="academic",
-                status=SignalStatus.PENDING,
-            )
-        ]
-
-
 class PortfolioAnalyzerContract(BaseSignalExtractor):
-    """Specification for candidate portfolio website inspection."""
+    """Contract specification for candidate portfolio website inspection."""
 
     @property
     def descriptor(self) -> ExtractorDescriptor:
@@ -123,10 +98,31 @@ class PortfolioAnalyzerContract(BaseSignalExtractor):
                 "portfolio_site_reachable",
                 "portfolio_has_live_projects",
             ],
+            signals=[
+                SignalDefinition(
+                    signal_key="portfolio_site_reachable",
+                    name="Portfolio Site Reachable",
+                    description="Verifies that the candidate portfolio link is live.",
+                    category="portfolio",
+                    value_type="boolean",
+                ),
+                SignalDefinition(
+                    signal_key="portfolio_has_live_projects",
+                    name="Live Projects Detected",
+                    description="Identifies demonstrable projects on portfolio.",
+                    category="portfolio",
+                    value_type="boolean",
+                ),
+            ],
             is_enabled_by_default=False,
         )
 
-    def extract(self, member: MemberSchema) -> list[ExtractedSignal]:
+    def extract(
+        self,
+        member: MemberSchema,
+        selected_signals: set[str] | None = None,
+        config: dict | None = None,
+    ) -> list[ExtractedSignal]:
         return [
             ExtractedSignal(
                 signal_key="portfolio_site_reachable",
@@ -136,13 +132,79 @@ class PortfolioAnalyzerContract(BaseSignalExtractor):
         ]
 
 
+# Backward compatibility aliases for existing contract imports
+GitHubAnalyzerContract = GitHubAnalyzer
+AcademicMetricsContract = AcademicMetricsAnalyzer
+
+
 # ---------------------------------------------------------------------------
-# Global Registry Instance
+# Global Registry Initialization
 # ---------------------------------------------------------------------------
 
 
-default_signal_registry = SignalExtractorRegistry()
-default_signal_registry.register(GitHubAnalyzerContract())
-default_signal_registry.register(ResumeParserContract())
-default_signal_registry.register(AcademicMetricsContract())
-default_signal_registry.register(PortfolioAnalyzerContract())
+def create_default_registry() -> SignalExtractorRegistry:
+    """Instantiate and register standard analyzers and categories."""
+    registry = SignalExtractorRegistry()
+
+    # Register standard categories
+    registry.register_category(
+        CategoryDefinition(
+            category_id="technical",
+            name="Technical & GitHub",
+            description="Public code repositories, activity recency, and technical profile verification.",
+            signal_keys=[
+                "github_public_repo_count",
+                "github_repo_metadata",
+                "github_recent_activity",
+                "github_profile_verified",
+            ],
+        )
+    )
+    registry.register_category(
+        CategoryDefinition(
+            category_id="academic",
+            name="Academics",
+            description="Normalized CGPA, CPI, and academic year records from registration data.",
+            signal_keys=[
+                "academic_cgpa",
+                "academic_year",
+                "normalized_cgpa_10_scale",
+            ],
+        )
+    )
+    registry.register_category(
+        CategoryDefinition(
+            category_id="experience",
+            name="Experience & Resume",
+            description="Extracted resume skills, work experience, and educational background (planned).",
+            signal_keys=[
+                "resume_extracted_skills",
+                "resume_experience_years",
+                "resume_degree_level",
+            ],
+        )
+    )
+    registry.register_category(
+        CategoryDefinition(
+            category_id="portfolio",
+            name="Portfolio",
+            description="Candidate portfolio website inspection and live demo presence (planned).",
+            signal_keys=[
+                "portfolio_site_reachable",
+                "portfolio_has_live_projects",
+            ],
+        )
+    )
+
+    # Register active functional analyzers
+    registry.register(GitHubAnalyzer())
+    registry.register(AcademicMetricsAnalyzer())
+
+    # Register future planned contracts
+    registry.register(ResumeParserContract())
+    registry.register(PortfolioAnalyzerContract())
+
+    return registry
+
+
+default_signal_registry = create_default_registry()
