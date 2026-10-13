@@ -12,95 +12,68 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 
 - **CSV / JSON ingestion** – upload registration data in common formats with dynamic form discovery.
 - **Dynamic schema mapping** – map custom organizer column names to canonical target fields without code changes.
+- **Missing ID generation & duplicate team handling** – autogenerates missing member/team IDs, detects ambiguous duplicate team names, assigns non-merging temporary IDs (`TEMP_TEAM_...`), and surfaces actionable organizer warnings.
 - **Arbitrary field preservation** – unmapped form fields and raw records are safely preserved in `custom_fields` and `raw_data`.
-- **Extensible signal extraction** – pluggable analyzers for GitHub activity, academics, and future data sources.
+- **Extensible signal extraction** – pluggable analyzers for GitHub activity, academics, resume documents, and future data sources.
+- **Document parsing & resume analysis** – extracts skills, projects, education, work experience, certifications, and links from PDF and DOCX documents without OCR.
+- **Safe remote acquisition & direct upload** – SSRF-protected resume downloading (blocks loopback, private networks, cloud metadata) with 10 MB caps, plus direct multipart file upload via `/api/signals/extract-resume`.
 - **Selective signal execution** – organizers can select broad categories or individual signals without running unneeded analyzers.
-- **Verifiable evidence & audit trails** – all extracted signals include provenance, raw inputs, timestamps, and confidence scores.
+- **Verifiable evidence & audit trails** – all extracted signals include provenance, raw inputs, timestamps, and confidence scores (distinguishing verified API metrics from self-reported resume claims).
 - **Fault-isolated multi-team evaluation** – failure or missing data for one member or signal never halts execution of others.
 - **Variable team sizes** – handle teams of any size without hard-coded member limits.
 - **Scoring separation** – extraction remains cleanly decoupled from scoring rules, weighting, and ranking.
 
 ## 🛠️ Technology Stack
 
-| Layer     | Technology                       |
-| --------- | -------------------------------- |
-| Backend   | Python 3.10+ · FastAPI · Pydantic v2 |
-| Server    | Uvicorn                          |
-| Data      | Pandas                           |
-| HTTP / API| HTTPX                            |
-| Testing   | Pytest · Starlette TestClient    |
-| Frontend  | React + Vite *(planned)*         |
-| Database  | PostgreSQL *(planned)*           |
+| Layer          | Technology                                   |
+| -------------- | -------------------------------------------- |
+| Backend        | Python 3.10+ · FastAPI · Pydantic v2         |
+| Server         | Uvicorn                                      |
+| Data           | Pandas                                       |
+| HTTP / API     | HTTPX                                        |
+| Document Parsers | PyPDF (`pypdf`) · Python-Docx (`python-docx`) |
+| Testing        | Pytest · Starlette TestClient (126 tests)    |
+| Frontend       | React + Vite *(planned)*                     |
+| Database       | PostgreSQL *(planned)*                       |
 
-## 📐 High-Level Processing Workflow
+## 🗺️ Project Roadmap
 
-```
-Registration Data (CSV/JSON)
-        │
-        ▼
-   ┌──────────┐
-   │ Ingestion │  ──▶  Parse & map dynamic form columns
-   └──────────┘
-        │
-        ▼
-   ┌────────────┐
-   │ Validation  │  ──▶  Structural integrity checks & presence tracking
-   └────────────┘
-        │
-        ▼
-   ┌──────────────────┐
-   │ Signal Extraction │  ──▶  Selective analyzer execution per member
-   └──────────────────┘
-        │
-        ▼
-   ┌────────────────┐
-   │ Eligibility Rules │  ──▶  Apply configurable pass/fail criteria (Milestone 3)
-   └────────────────┘
-        │
-        ▼
-   ┌─────────┐
-   │ Scoring  │  ──▶  Weighted scoring per member (Milestone 4)
-   └─────────┘
-        │
-        ▼
-   ┌─────────────┐
-   │ Aggregation  │  ──▶  Combine member signals → team score (Milestone 5)
-   └─────────────┘
-        │
-        ▼
-   ┌─────────┐
-   │ Ranking  │  ──▶  Sort & select top X teams (Milestone 6)
-   └─────────┘
-        │
-        ▼
-   ┌─────────────┐
-   │ Explanation  │  ──▶  Generate human-readable score breakdowns (Milestone 7)
-   └─────────────┘
-        │
-        ▼
-   ┌────────┐
-   │ Export  │  ──▶  CSV / JSON download (Milestone 8)
-   └────────┘
-```
+| Phase | Description | Status |
+| :--- | :--- | :--- |
+| **Prompt 1** | Backend foundation, architectural structure, and base configuration | ✅ Completed |
+| **Prompt 2** | CSV/JSON ingestion, dynamic form mapping, and validation | ✅ Completed |
+| *Prompt 2.1 / 3.2* | Auto-ID generation for missing IDs, CGPA scale preservation | ✅ Completed |
+| *Prompt 3.3* | Duplicate team name detection, temporary IDs, and ambiguous team warnings | ✅ Completed |
+| **Prompt 3** | Evaluation signal extraction framework, GitHub analyzer, and Academic analyzer | ✅ Completed |
+| **Additional Milestone** | **Resume Analyzer**: PDF/DOCX parsing, SSRF security, 12 signals, direct file upload | ✅ Completed |
+| **Prompt 4** | Configurable eligibility rules and hard filters | 🔲 *Next Up* |
+| **Prompt 5** | Weighted scoring and team-level aggregation | 🔲 Planned |
+| **Prompt 6** | Ranking, top-X selection, and human-readable explanations | 🔲 Planned |
+| **Prompt 7** | Frontend integration and organizer dashboard | 🔲 Planned |
+| **Prompt 8** | End-to-end testing and final improvements | 🔲 Planned |
+
+---
 
 ## 📦 Current Implementation Status
 
-| Component            | Status          | Details |
-| -------------------- | --------------- | ------- |
-| Project structure    | ✅ Done          | Clean architectural layer separation |
-| FastAPI app skeleton | ✅ Done          | Application instance & health check |
-| Ingestion & Discovery| ✅ Done          | CSV/JSON upload, field discovery, schema mapping |
-| Dynamic form mapping | ✅ Done          | Preserves arbitrary custom fields, tracks missing states |
-| Signal Extraction    | ✅ Implemented   | Extensible registry, selective signals, GitHub & Academic analyzers |
-| GitHub Analyzer      | ✅ Implemented   | Public repo count, repo metadata, recent activity, verification |
-| Academic Analyzer    | ✅ Implemented   | CGPA/CPI, academic year/batch, scale checks, column mapping |
-| Resume Analyzer      | 🔲 Staged Contract | ResumeParserContract registered for Milestone 3 |
-| Portfolio Analyzer   | 🔲 Staged Contract | PortfolioAnalyzerContract registered |
-| Eligibility rules    | 🔲 Staged Schema | Boundary contracts in place |
-| Scoring engine       | 🔲 Staged Schema | Criteria schemas defined; evaluation planned |
-| Aggregation          | 🔲 Not started  | Planned after scoring engine |
-| Ranking              | 🔲 Not started  | Planned after aggregation |
-| React frontend       | 🔲 Not started  | Planned after backend completion |
+| Component | Status | Details |
+| :--- | :--- | :--- |
+| Project structure | ✅ Done | Clean architectural layer separation |
+| FastAPI app skeleton | ✅ Done | Application instance, health check, CORS, router mounts |
+| Ingestion & Discovery | ✅ Done | CSV/JSON upload, dynamic header discovery, schema mapping |
+| Missing ID generation | ✅ Done | Generates missing Team/Member IDs without overwriting explicit IDs |
+| Duplicate team detection | ✅ Done | Detects same-name teams, assigns temporary IDs (`TEMP_TEAM_...`), preserves separation |
+| Dynamic form mapping | ✅ Done | Preserves arbitrary custom fields, tracks missing states |
+| Signal Extraction Framework | ✅ Implemented | Extensible registry, selective signals, catalog APIs |
+| GitHub Analyzer | ✅ Implemented | Public repo count, repo metadata, recent activity, profile verification |
+| Academic Analyzer | ✅ Implemented | CGPA/CPI normalization, academic year/batch, scale checks |
+| **Resume Analyzer** | ✅ Implemented | **12 signals**, PDF & DOCX extraction, SSRF security, direct upload API |
+| Portfolio Analyzer | 🔲 Staged Contract | `PortfolioAnalyzerContract` registered as planned capability |
+| Eligibility rules (Prompt 4) | 🔲 Staged Schema | Boundary contracts in place; implementation ready |
+| Scoring engine (Prompt 5) | 🔲 Staged Schema | Criteria schemas defined; evaluation planned |
+| Aggregation (Prompt 5) | 🔲 Not started | Planned with scoring engine |
+| Ranking & Selection (Prompt 6) | 🔲 Not started | Planned after aggregation |
+| React frontend (Prompt 7) | 🔲 Not started | Planned after backend completion |
 
 ---
 
@@ -143,9 +116,38 @@ Category: `academic` (displayed as *Academics*)
 
 *Dynamic mapping support*: Reads canonical `cgpa` and `academic_year` or custom organizer column names configured via `cgpa_field` / `academic_year_field`.
 
+#### 3. Resume Analyzer (`resume_signal_extractor`)
+Category: `experience` (displayed as *Experience & Projects*)
+
+Extracts technical background, projects, work experience, and educational credentials from candidate resume documents.
+
+- **`resume_extracted_skills`** (`dict`): Comprehensive skill catalog containing `languages`, `frameworks`, `databases`, `tools`, `all_skills`, and `total_skills_count`.
+- **`resume_programming_languages`** (`list`): Programming languages identified in the resume (e.g. `["Go", "Python", "TypeScript", "C++"]`).
+- **`resume_frameworks_libraries`** (`list`): Web frameworks, machine learning libraries, and UI toolkits (e.g. `["FastAPI", "React", "PyTorch"]`).
+- **`resume_databases`** (`list`): Relational and NoSQL databases, search engines, and data stores (e.g. `["PostgreSQL", "Redis", "MongoDB"]`).
+- **`resume_tools_technologies`** (`list`): Developer tools, cloud platforms, container platforms, and CI/CD tools (e.g. `["Docker", "Kubernetes", "AWS", "Git"]`).
+- **`resume_projects`** (`list`): Self-reported projects with `name`, `technologies`, `description`, `evidence`, and `verified: False`.
+- **`resume_education`** (`dict`): Academic credentials including `degree`, `degree_short`, `institution`, `graduation_year`, and `gpa`.
+- **`resume_degree_level`** (`string`): Canonical degree level (e.g. `"B.Tech"`, `"B.E."`, `"M.Tech"`, `"Ph.D."`).
+- **`resume_experience`** (`list`): Internships and employment history with `role`, `company`, `duration`, `description`, and `evidence`.
+- **`resume_experience_years`** (`float`): Estimated duration of technical experience in years (unit: `years`).
+- **`resume_certifications_achievements`** (`list`): Certifications, competitive programming honors, and hackathon placements.
+- **`resume_external_links`** (`dict`): Professional links grouped by `github`, `linkedin`, `portfolio`, `competitive_programming`, and `other`.
+
+*Input methods supported*:
+- Direct multipart file uploads via `POST /api/signals/extract-resume` (`.pdf` and `.docx`).
+- Remote URLs (`member.resume_url` or mapped form column).
+- Raw bytes passed via `custom_fields["resume_bytes"]`.
+
+*Document safety & security controls*:
+- **SSRF defense**: Pre-connection DNS resolution blocks loopback (`127.0.0.0/8`, `::1`), private subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), and cloud metadata IPs (`169.254.169.254`). Non-standard ports are rejected.
+- **Resource protection**: Enforces a strict 10 MB file-size limit (`MAX_RESUME_FILE_SIZE_BYTES`) and 10.0s connection timeouts.
+- **Fault isolation**: Encrypted, malformed, empty, or scanned image documents fail gracefully with informative error messages (`SignalStatus.FAILED`), without halting other team members or other analyzers.
+- **Provenance tracking**: All resume signals carry `SignalEvidence` with `provenance: "self_reported_resume"` and `verified: False` to maintain a clear boundary from verified external profile APIs.
+
 ### How to Register a Future Analyzer
 
-To add a new analyzer (such as the upcoming Resume parser):
+To add a new analyzer:
 
 ```python
 from app.schemas.ingestion import MemberSchema
@@ -207,6 +209,7 @@ default_signal_registry.register(MyCustomAnalyzer())
 | `GET` | `/api/signals/signals` | List all individual evaluation signals |
 | `POST` | `/api/signals/extract` | Run selective extraction on pre-parsed team structures |
 | `POST` | `/api/signals/extract-file` | Upload CSV/JSON and run selective signal extraction in one step |
+| `POST` | `/api/signals/extract-resume` | Direct upload of a candidate's PDF or DOCX resume document |
 
 ---
 
@@ -271,13 +274,20 @@ Run the complete automated test suite locally:
 pytest -v
 ```
 
-All external HTTP calls in the test suite are mocked; no real GitHub API tokens or network access are required.
+The test suite includes **126 automated tests** with 100% pass rate:
+- **`backend/tests/test_ingestion.py`** (47 tests): CSV/JSON ingestion, header discovery, dynamic form mapping, custom field preservation, and validation.
+- **`backend/tests/test_duplicate_teams_regression.py`** (15 tests): Duplicate team name detection, automatic ID generation, temporary non-merging IDs (`TEMP_TEAM_...`), and warning generation.
+- **`backend/tests/test_signals.py`** (39 tests): Extensible signal registry, catalog discovery, GitHub API analysis, Academic CGPA/batch normalization, and cross-analyzer fault isolation.
+- **`backend/tests/test_resume_analyzer.py`** (25 tests): PDF & DOCX text parsing, all 12 resume signals, SSRF security defenses, size limits, direct file upload endpoint, and multi-analyzer compatibility.
+
+All external HTTP calls in the test suite are mocked; no real GitHub API tokens or external network access are required.
 
 ---
 
 ## ⚠️ Current Limitations & Next Steps
 
-1. **Resume Analysis**: Staged as `ResumeParserContract`. Resume PDF/Word text parsing will be implemented in the next milestone using the extraction framework.
-2. **Scoring Engine**: Composite weighted scoring and threshold evaluation are maintained as contracts in `app.scoring.schemas`. Scoring rules and team ranking are deliberately decoupled from extraction.
-3. **Database Persistence**: Currently in-memory / response-based. Relational database persistence will be introduced in a future milestone.
-4. **GitHub Unauthenticated Rate Limits**: Unauthenticated calls to GitHub API are limited to 60 requests per hour per IP. Set `GITHUB_TOKEN` in `.env` for production workloads to achieve 5,000 req/hr.
+1. **Next Milestone (Prompt 4 - Configurable Eligibility Rules & Hard Filters)**: Implementing organizer-defined eligibility rules (minimum CGPA, required programming languages, degree requirements, minimum experience) evaluated before weighted scoring.
+2. **Scoring Engine & Team Aggregation (Prompt 5)**: Composite weighted scoring, missing-data strategies, and team-level score aggregation are staged as schemas in `app.scoring.schemas`.
+3. **Future AI Resume Analyzer**: An architectural audit confirmed that an advanced external AI/LLM resume provider can be plugged in via strategy pattern without altering existing signal contracts or downstream scoring.
+4. **Database Persistence**: Currently in-memory and request/response-based. Relational database persistence will be introduced in a future milestone.
+5. **GitHub Unauthenticated Rate Limits**: Unauthenticated calls to GitHub API are limited to 60 requests per hour per IP. Set `GITHUB_TOKEN` in `.env` for production workloads to achieve 5,000 req/hr.
