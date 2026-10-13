@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.endpoints.ingestion import router as ingestion_router
+from app.api.endpoints.rules import router as rules_router
 from app.api.endpoints.signals import router as signals_router
 from app.config import APP_ENV, CORS_ORIGINS
 
@@ -41,6 +42,7 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 app.include_router(ingestion_router)
 app.include_router(signals_router)
+app.include_router(rules_router)
 
 
 # ---------------------------------------------------------------------------
