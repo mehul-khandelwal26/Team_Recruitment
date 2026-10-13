@@ -10,6 +10,7 @@ from app.schemas.ingestion import MemberSchema
 from app.signals.academic import AcademicMetricsAnalyzer
 from app.signals.base import BaseSignalExtractor, SignalExtractorRegistry
 from app.signals.github import GitHubAnalyzer
+from app.signals.resume import ResumeSignalExtractor
 from app.signals.schemas import (
     CategoryDefinition,
     ExtractedSignal,
@@ -176,11 +177,20 @@ def create_default_registry() -> SignalExtractorRegistry:
         CategoryDefinition(
             category_id="experience",
             name="Experience & Resume",
-            description="Extracted resume skills, work experience, and educational background (planned).",
+            description="Extracted candidate resume skills, projects, education, experience, achievements, and links.",
             signal_keys=[
                 "resume_extracted_skills",
-                "resume_experience_years",
+                "resume_programming_languages",
+                "resume_frameworks_libraries",
+                "resume_databases",
+                "resume_tools_technologies",
+                "resume_projects",
+                "resume_education",
                 "resume_degree_level",
+                "resume_experience",
+                "resume_experience_years",
+                "resume_certifications_achievements",
+                "resume_external_links",
             ],
         )
     )
@@ -199,9 +209,9 @@ def create_default_registry() -> SignalExtractorRegistry:
     # Register active functional analyzers
     registry.register(GitHubAnalyzer())
     registry.register(AcademicMetricsAnalyzer())
+    registry.register(ResumeSignalExtractor())
 
     # Register future planned contracts
-    registry.register(ResumeParserContract())
     registry.register(PortfolioAnalyzerContract())
 
     return registry

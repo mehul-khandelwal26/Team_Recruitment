@@ -142,6 +142,14 @@ class TeamExtractionResult(BaseModel):
 
     team_id: str = Field(..., description="Team identifier")
     team_name: str = Field(..., description="Team display name")
+    is_temporary_id: bool = Field(
+        default=False,
+        description="Whether this team has a temporary unresolved ID",
+    )
+    is_unresolved: bool = Field(
+        default=False,
+        description="Whether this team's identity is unresolved due to duplicate names or ambiguous registration",
+    )
     member_results: list[MemberExtractionResult] = Field(
         default_factory=list,
         description="Per-member extraction results",

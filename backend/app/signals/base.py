@@ -287,6 +287,8 @@ class SignalExtractorRegistry:
                 TeamExtractionResult(
                     team_id=team.team_id,
                     team_name=team.team_name,
+                    is_temporary_id=getattr(team, "is_temporary_id", False),
+                    is_unresolved=getattr(team, "is_unresolved", False),
                     member_results=member_results,
                 )
             )

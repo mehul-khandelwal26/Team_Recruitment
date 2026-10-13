@@ -59,20 +59,49 @@ _STRUCTURAL_FIELDS = {
 }
 
 
+def normalize_team_name(name: str) -> str:
+    """Normalize a team name for duplicate detection.
+
+    Converts to lowercase, collapses consecutive punctuation and whitespace
+    into single spaces, and trims.
+    Example: '  Code Warriors! ' -> 'code warriors', 'Code_Warriors' -> 'code warriors'.
+    """
+    cleaned = re.sub(r"[_\W]+", " ", name.strip().lower()).strip()
+    return cleaned if cleaned else name.strip().lower()
+
+
 def generate_stable_team_id(team_name: str) -> str:
     """Generate a deterministic, stable team_id from team_name.
 
     Stability guarantee: Uses a URL-safe slugified version of team_name combined
     with a deterministic SHA-256 hash prefix (8 hex chars). Identical team names
     in repeated runs produce identical team_ids without randomness.
-    Limitations: Distinct teams that share the exact same team_name within the
-    same upload will be grouped together unless distinguished by an explicit team_id.
     """
     cleaned = team_name.strip()
     slug = re.sub(r"[^a-zA-Z0-9]+", "_", cleaned.lower()).strip("_")
     slug = slug[:24] if slug else "team"
     h = hashlib.sha256(cleaned.encode("utf-8")).hexdigest()[:8]
     return f"team_{slug}_{h}"
+
+
+def generate_temporary_team_id(team_name: str, occurrence: int) -> str:
+    """Generate a distinct temporary Team ID for ambiguous duplicate teams.
+
+    Format: temp_team_{slug}_{hash}_unresolved_{occurrence}
+
+    - Distinct prefix 'temp_team_' prominently identifies temporary status.
+    - Suffix '_unresolved_{occurrence}' marks unresolved ambiguity and ensures
+      uniqueness among competing teams sharing the same name.
+    - Deterministic across identical file uploads with consistent record order.
+    Limitations across repeat uploads: If new registrations are inserted or reordered,
+    occurrence numbers may shift. Distinct teams sharing identical names cannot guarantee
+    cross-upload stability without explicit IDs or registration timestamps.
+    """
+    cleaned = team_name.strip()
+    slug = re.sub(r"[^a-zA-Z0-9]+", "_", cleaned.lower()).strip("_")
+    slug = slug[:24] if slug else "team"
+    h = hashlib.sha256(cleaned.encode("utf-8")).hexdigest()[:6]
+    return f"temp_team_{slug}_{h}_unresolved_{occurrence}"
 
 
 def generate_stable_member_id(team_id: str, member_idx: int) -> str:
@@ -84,6 +113,48 @@ def generate_stable_member_id(team_id: str, member_idx: int) -> str:
     is completely deterministic across re-runs on the same file.
     """
     return f"{team_id}_m{member_idx}"
+
+
+def _format_row_ranges(rows: list[int]) -> str:
+    """Format row numbers into human-readable ranges, e.g. 'rows 2-3', 'row 5'."""
+    if not rows:
+        return ""
+    sorted_rows = sorted(set(rows))
+    ranges: list[str] = []
+    start = sorted_rows[0]
+    prev = sorted_rows[0]
+    for r in sorted_rows[1:]:
+        if r == prev + 1:
+            prev = r
+        else:
+            ranges.append(f"{start}-{prev}" if start != prev else f"{start}")
+            start = r
+            prev = r
+    ranges.append(f"{start}-{prev}" if start != prev else f"{start}")
+    s = ", ".join(ranges)
+    return f"row {s}" if len(sorted_rows) == 1 else f"rows {s}"
+
+
+class _TeamMeta:
+    """Internal metadata describing a team registration block."""
+
+    def __init__(
+        self,
+        team_id: str,
+        team_name: str,
+        is_temporary_id: bool = False,
+        is_unresolved: bool = False,
+        duplicate_name_detected: bool = False,
+        custom_fields: Optional[dict[str, Any]] = None,
+        raw_data: Optional[dict[str, Any]] = None,
+    ) -> None:
+        self.team_id = team_id
+        self.team_name = team_name
+        self.is_temporary_id = is_temporary_id
+        self.is_unresolved = is_unresolved
+        self.duplicate_name_detected = duplicate_name_detected
+        self.custom_fields = custom_fields or {}
+        self.raw_data = raw_data or {}
 
 
 # ---------------------------------------------------------------------------
@@ -188,10 +259,12 @@ def parse_csv(
         if col not in _RECOGNIZED_MEMBER_COLUMNS and col not in {"team_id", "team_name"}
     ]
 
-    # Row-level processing and grouping
-    team_rows: dict[str, list[dict[str, Any]]] = {}
-    team_names: dict[str, str] = {}
-    team_member_counts: dict[str, int] = {}
+    # Row-level processing and registration block partitioning
+    blocks: list[dict[str, Any]] = []
+    explicit_block_lookup: dict[str, int] = {}
+    reg_block_lookup: dict[tuple[str, str], int] = {}
+    current_anon_block_idx: Optional[int] = None
+    last_anon_norm_name: Optional[str] = None
 
     for row_idx, row in df.iterrows():
         row_num = int(row_idx) + 2  # 1-indexed, +1 for header
@@ -204,28 +277,6 @@ def parse_csv(
             )
             continue
 
-        raw_team_id = str(row_dict.get("team_id", "")).strip() if "team_id" in row_dict else ""
-        if raw_team_id:
-            team_id = raw_team_id
-        else:
-            team_id = generate_stable_team_id(team_name)
-
-        # Inconsistent team_name check
-        if team_id in team_names:
-            if team_names[team_id] != team_name:
-                errors.append(
-                    ValidationError(
-                        location=f"row {row_num}",
-                        message=(
-                            f"Inconsistent team_name for team_id '{team_id}': "
-                            f"previously '{team_names[team_id]}', now '{team_name}'."
-                        ),
-                    )
-                )
-                continue
-        else:
-            team_names[team_id] = team_name
-
         name = str(row_dict.get("name", "")).strip()
         if not name:
             errors.append(
@@ -233,97 +284,260 @@ def parse_csv(
             )
             continue
 
-        team_member_counts[team_id] = team_member_counts.get(team_id, 0) + 1
-        raw_member_id = str(row_dict.get("member_id", "")).strip() if "member_id" in row_dict else ""
+        raw_team_id = str(row_dict.get("team_id", "")).strip() if "team_id" in row_dict else ""
+        norm_name = normalize_team_name(team_name)
+        reg_id = str(row_dict.get("registration_id") or row_dict.get("submission_id") or "").strip()
 
-        existing_m_ids = {m["member_id"] for m in team_rows.get(team_id, [])}
-        if raw_member_id:
-            member_id = raw_member_id
+        # Decide block
+        if raw_team_id:
+            if raw_team_id in explicit_block_lookup:
+                b_idx = explicit_block_lookup[raw_team_id]
+                existing_team_name = blocks[b_idx]["team_name"]
+                if existing_team_name != team_name:
+                    errors.append(
+                        ValidationError(
+                            location=f"row {row_num}",
+                            message=(
+                                f"Inconsistent team_name for team_id '{raw_team_id}': "
+                                f"previously '{existing_team_name}', now '{team_name}'."
+                            ),
+                        )
+                    )
+                    continue
+                blocks[b_idx]["row_numbers"].append(row_num)
+                blocks[b_idx]["row_records"].append((row_num, row_dict, row))
+            else:
+                b_idx = len(blocks)
+                explicit_block_lookup[raw_team_id] = b_idx
+                blocks.append({
+                    "team_name": team_name,
+                    "norm_name": norm_name,
+                    "raw_team_id": raw_team_id,
+                    "row_numbers": [row_num],
+                    "row_records": [(row_num, row_dict, row)],
+                })
+            current_anon_block_idx = None
+            last_anon_norm_name = None
+
+        elif reg_id:
+            reg_key = (norm_name, reg_id)
+            if reg_key in reg_block_lookup:
+                b_idx = reg_block_lookup[reg_key]
+                blocks[b_idx]["row_numbers"].append(row_num)
+                blocks[b_idx]["row_records"].append((row_num, row_dict, row))
+            else:
+                b_idx = len(blocks)
+                reg_block_lookup[reg_key] = b_idx
+                blocks.append({
+                    "team_name": team_name,
+                    "norm_name": norm_name,
+                    "raw_team_id": "",
+                    "row_numbers": [row_num],
+                    "row_records": [(row_num, row_dict, row)],
+                })
+            current_anon_block_idx = None
+            last_anon_norm_name = None
+
         else:
-            curr_idx = team_member_counts[team_id]
-            member_id = generate_stable_member_id(team_id, curr_idx)
-            while member_id in existing_m_ids:
-                curr_idx += 1
-                member_id = generate_stable_member_id(team_id, curr_idx)
-            team_member_counts[team_id] = curr_idx
+            # Contiguous grouping by normalized team name
+            if current_anon_block_idx is not None and last_anon_norm_name == norm_name:
+                blocks[current_anon_block_idx]["row_numbers"].append(row_num)
+                blocks[current_anon_block_idx]["row_records"].append((row_num, row_dict, row))
+            else:
+                b_idx = len(blocks)
+                current_anon_block_idx = b_idx
+                last_anon_norm_name = norm_name
+                blocks.append({
+                    "team_name": team_name,
+                    "norm_name": norm_name,
+                    "raw_team_id": "",
+                    "row_numbers": [row_num],
+                    "row_records": [(row_num, row_dict, row)],
+                })
 
-        # Construct member data dictionary
-        # Preserve original row values in raw_data
-        raw_row_data = {original_columns[i]: row.iloc[i] for i in range(len(original_columns))}
-        custom_fields: dict[str, Any] = {}
-        field_statuses: dict[str, FieldPresenceStatus] = {
-            "team_name": FieldPresenceStatus.PRESENT,
-            "name": FieldPresenceStatus.PRESENT,
-        }
+    # Duplicate team name detection & ID assignment across blocks
+    blocks_by_norm: dict[str, list[int]] = {}
+    for i, blk in enumerate(blocks):
+        blocks_by_norm.setdefault(blk["norm_name"], []).append(i)
 
-        if "team_id" in row_dict:
-            field_statuses["team_id"] = (
-                FieldPresenceStatus.PRESENT if raw_team_id else FieldPresenceStatus.COLLECTED_BLANK
-            )
+    for norm_name, b_indices in blocks_by_norm.items():
+        if len(b_indices) > 1:
+            # Multiple registration blocks share the same normalized team name
+            anon_counter = 0
+            for b_idx in b_indices:
+                blk = blocks[b_idx]
+                blk["duplicate_name_detected"] = True
+                if blk["raw_team_id"]:
+                    blk["team_id"] = blk["raw_team_id"]
+                    blk["is_temporary_id"] = False
+                    blk["is_unresolved"] = False
+                else:
+                    anon_counter += 1
+                    blk["team_id"] = generate_temporary_team_id(blk["team_name"], anon_counter)
+                    blk["is_temporary_id"] = True
+                    blk["is_unresolved"] = True
         else:
-            field_statuses["team_id"] = FieldPresenceStatus.NOT_COLLECTED
+            # Exactly one block with this team name
+            b_idx = b_indices[0]
+            blk = blocks[b_idx]
+            blk["duplicate_name_detected"] = False
+            if blk["raw_team_id"]:
+                blk["team_id"] = blk["raw_team_id"]
+                blk["is_temporary_id"] = False
+                blk["is_unresolved"] = False
+            else:
+                blk["team_id"] = generate_stable_team_id(blk["team_name"])
+                blk["is_temporary_id"] = False
+                blk["is_unresolved"] = False
 
-        if "member_id" in row_dict:
-            field_statuses["member_id"] = (
-                FieldPresenceStatus.PRESENT if raw_member_id else FieldPresenceStatus.COLLECTED_BLANK
-            )
-        else:
-            field_statuses["member_id"] = FieldPresenceStatus.NOT_COLLECTED
+    # Generate duplicate warnings
+    for norm_name, b_indices in blocks_by_norm.items():
+        if len(b_indices) > 1:
+            all_locs = [_format_row_ranges(blocks[i]["row_numbers"]) for i in b_indices]
+            all_locs_str = ", ".join(all_locs)
+            all_ids = [blocks[i]["team_id"] for i in b_indices]
 
-        member_data: dict[str, Any] = {
-            "member_id": member_id,
-            "name": name,
-            "custom_fields": custom_fields,
-            "raw_data": raw_row_data,
-            "field_statuses": field_statuses,
-        }
+            for b_idx in b_indices:
+                blk = blocks[b_idx]
+                other_ids = [tid for tid in all_ids if tid != blk["team_id"]]
+                other_ids_str = ", ".join(other_ids) if other_ids else "none"
+                my_loc = _format_row_ranges(blk["row_numbers"])
 
-        # Profile link fields
-        for field in _OPTIONAL_PROFILE_FIELDS:
-            if field in row_dict:
-                val = str(row_dict[field]).strip()
-                if val:
-                    member_data[field] = val
-                    field_statuses[field] = FieldPresenceStatus.PRESENT
+                if blk["is_temporary_id"]:
+                    msg = (
+                        f"Duplicate team name '{blk['team_name']}' detected across multiple registration blocks "
+                        f"({all_locs_str}). Assigned temporary unresolved ID '{blk['team_id']}' for {my_loc}. "
+                        f"Conflicting team ID(s): {other_ids_str}."
+                    )
+                else:
+                    msg = (
+                        f"Duplicate team name '{blk['team_name']}' detected across multiple registration blocks "
+                        f"({all_locs_str}). Preserved explicit ID '{blk['team_id']}' for {my_loc}. "
+                        f"Conflicting team ID(s): {other_ids_str}."
+                    )
+
+                warnings.append(
+                    ValidationWarning(
+                        team_id=blk["team_id"],
+                        member_id="",
+                        field="team_name",
+                        message=msg,
+                    )
+                )
+
+    # Build member data structures per block
+    team_rows: dict[str, list[dict[str, Any]]] = {}
+    team_metas: dict[str, _TeamMeta] = {}
+
+    for blk in blocks:
+        team_id = blk["team_id"]
+        team_name = blk["team_name"]
+        team_metas[team_id] = _TeamMeta(
+            team_id=team_id,
+            team_name=team_name,
+            is_temporary_id=blk["is_temporary_id"],
+            is_unresolved=blk["is_unresolved"],
+            duplicate_name_detected=blk["duplicate_name_detected"],
+        )
+
+        existing_m_ids: set[str] = set()
+        member_counter = 0
+
+        for row_num, row_dict, row in blk["row_records"]:
+            raw_team_id = str(row_dict.get("team_id", "")).strip() if "team_id" in row_dict else ""
+            raw_member_id = str(row_dict.get("member_id", "")).strip() if "member_id" in row_dict else ""
+            name = str(row_dict.get("name", "")).strip()
+
+            if raw_member_id:
+                member_id = raw_member_id
+            else:
+                member_counter += 1
+                member_id = generate_stable_member_id(team_id, member_counter)
+                while member_id in existing_m_ids:
+                    member_counter += 1
+                    member_id = generate_stable_member_id(team_id, member_counter)
+            existing_m_ids.add(member_id)
+
+            # Construct member data dictionary
+            # Preserve original row values in raw_data
+            raw_row_data = {original_columns[i]: row.iloc[i] for i in range(len(original_columns))}
+            custom_fields: dict[str, Any] = {}
+            field_statuses: dict[str, FieldPresenceStatus] = {
+                "team_name": FieldPresenceStatus.PRESENT,
+                "name": FieldPresenceStatus.PRESENT,
+            }
+
+            if "team_id" in row_dict:
+                field_statuses["team_id"] = (
+                    FieldPresenceStatus.PRESENT if raw_team_id else FieldPresenceStatus.COLLECTED_BLANK
+                )
+            else:
+                field_statuses["team_id"] = FieldPresenceStatus.NOT_COLLECTED
+
+            if "member_id" in row_dict:
+                field_statuses["member_id"] = (
+                    FieldPresenceStatus.PRESENT if raw_member_id else FieldPresenceStatus.COLLECTED_BLANK
+                )
+            else:
+                field_statuses["member_id"] = FieldPresenceStatus.NOT_COLLECTED
+
+            member_data: dict[str, Any] = {
+                "member_id": member_id,
+                "name": name,
+                "custom_fields": custom_fields,
+                "raw_data": raw_row_data,
+                "field_statuses": field_statuses,
+            }
+
+            # Profile link fields
+            for field in _OPTIONAL_PROFILE_FIELDS:
+                if field in row_dict:
+                    val = str(row_dict[field]).strip()
+                    if val:
+                        member_data[field] = val
+                        field_statuses[field] = FieldPresenceStatus.PRESENT
+                    else:
+                        member_data[field] = None
+                        field_statuses[field] = FieldPresenceStatus.COLLECTED_BLANK
                 else:
                     member_data[field] = None
-                    field_statuses[field] = FieldPresenceStatus.COLLECTED_BLANK
-            else:
-                member_data[field] = None
-                field_statuses[field] = FieldPresenceStatus.NOT_COLLECTED
+                    field_statuses[field] = FieldPresenceStatus.NOT_COLLECTED
 
-        # Additional recognized fields (cgpa, academic_year)
-        for field in ["cgpa", "academic_year"]:
-            if field in row_dict:
-                val = str(row_dict[field]).strip()
-                if val:
-                    member_data[field] = val
-                    field_statuses[field] = FieldPresenceStatus.PRESENT
+            # Additional recognized fields (cgpa, academic_year)
+            for field in ["cgpa", "academic_year"]:
+                if field in row_dict:
+                    val = str(row_dict[field]).strip()
+                    if val:
+                        member_data[field] = val
+                        field_statuses[field] = FieldPresenceStatus.PRESENT
+                    else:
+                        member_data[field] = None
+                        field_statuses[field] = FieldPresenceStatus.COLLECTED_BLANK
                 else:
                     member_data[field] = None
-                    field_statuses[field] = FieldPresenceStatus.COLLECTED_BLANK
-            else:
-                member_data[field] = None
-                field_statuses[field] = FieldPresenceStatus.NOT_COLLECTED
+                    field_statuses[field] = FieldPresenceStatus.NOT_COLLECTED
 
-        # Extract arbitrary custom fields
-        for i, col in enumerate(df.columns):
-            if col not in _RECOGNIZED_MEMBER_COLUMNS and col not in {"team_id", "team_name"}:
-                orig_name = original_columns[i]
-                raw_val = row.iloc[i]
-                val = str(raw_val).strip() if raw_val is not None else ""
-                custom_fields[orig_name] = val if val else None
-                if val:
-                    field_statuses[orig_name] = FieldPresenceStatus.PRESENT
-                else:
-                    field_statuses[orig_name] = FieldPresenceStatus.COLLECTED_BLANK
+            # Extract arbitrary custom fields
+            for i, col in enumerate(df.columns):
+                if col not in _RECOGNIZED_MEMBER_COLUMNS and col not in {"team_id", "team_name"}:
+                    orig_name = original_columns[i]
+                    raw_val = row.iloc[i]
+                    val = str(raw_val).strip() if raw_val is not None else ""
+                    custom_fields[orig_name] = val if val else None
+                    if val:
+                        field_statuses[orig_name] = FieldPresenceStatus.PRESENT
+                    else:
+                        field_statuses[orig_name] = FieldPresenceStatus.COLLECTED_BLANK
 
-        team_rows.setdefault(team_id, []).append(member_data)
+            team_rows.setdefault(team_id, []).append(member_data)
 
     # Build & validate teams
-    teams, team_errors, team_warnings = _build_teams(team_rows, team_names)
+    teams, team_errors, team_warnings = _build_teams(team_rows, team_metas)
     errors.extend(team_errors)
     warnings.extend(team_warnings)
+
+    team_id_errors = _check_duplicate_team_ids(teams)
+    errors.extend(team_id_errors)
 
     success = len(teams) > 0 and len(errors) == 0
     members_count = sum(len(t.members) for t in teams)
@@ -400,6 +614,10 @@ def parse_json(
     teams: list[TeamSchema] = []
     discovered_unmapped: set[str] = set()
 
+    # Pass 1: Parse and validate JSON team objects
+    team_entries: list[dict[str, Any]] = []
+    norm_to_indices: dict[str, list[int]] = {}
+
     for idx, raw_team_obj in enumerate(data):
         loc = f"team index {idx}"
         if not isinstance(raw_team_obj, dict):
@@ -411,9 +629,17 @@ def parse_json(
         # Remap team object keys if mapping provided
         team_obj = _apply_json_mapping(raw_team_obj, norm_mapping)
 
-        # Ensure team_name and stable team_id
-        raw_team_name = str(team_obj.get("team_name", "")).strip() if "team_name" in team_obj and team_obj["team_name"] is not None else ""
-        raw_team_id = str(team_obj.get("team_id", "")).strip() if "team_id" in team_obj and team_obj["team_id"] is not None else ""
+        # Ensure team_name and raw_team_id
+        raw_team_name = (
+            str(team_obj.get("team_name", "")).strip()
+            if "team_name" in team_obj and team_obj["team_name"] is not None
+            else ""
+        )
+        raw_team_id = (
+            str(team_obj.get("team_id", "")).strip()
+            if "team_id" in team_obj and team_obj["team_id"] is not None
+            else ""
+        )
 
         if not raw_team_name and not raw_team_id:
             errors.append(
@@ -422,13 +648,110 @@ def parse_json(
             continue
 
         if not raw_team_name:
-            team_obj["team_name"] = raw_team_id
-        if not raw_team_id:
-            team_obj["team_id"] = generate_stable_team_id(team_obj["team_name"])
+            raw_team_name = raw_team_id
+            team_obj["team_name"] = raw_team_name
+
+        norm_name = normalize_team_name(raw_team_name)
+        curr_idx = len(team_entries)
+        team_entries.append({
+            "idx": idx,
+            "loc": loc,
+            "raw_team_obj": raw_team_obj,
+            "team_obj": team_obj,
+            "raw_team_name": raw_team_name,
+            "raw_team_id": raw_team_id,
+            "norm_name": norm_name,
+        })
+        norm_to_indices.setdefault(norm_name, []).append(curr_idx)
+
+    # Pass 2: ID assignment & duplicate detection for JSON
+    for norm_name, indices in norm_to_indices.items():
+        if len(indices) > 1:
+            anon_counter = 0
+            for i in indices:
+                entry = team_entries[i]
+                entry["duplicate_name_detected"] = True
+                if entry["raw_team_id"]:
+                    entry["team_id"] = entry["raw_team_id"]
+                    entry["is_temporary_id"] = False
+                    entry["is_unresolved"] = False
+                else:
+                    anon_counter += 1
+                    entry["team_id"] = generate_temporary_team_id(entry["raw_team_name"], anon_counter)
+                    entry["is_temporary_id"] = True
+                    entry["is_unresolved"] = True
+                entry["team_obj"]["team_id"] = entry["team_id"]
+                entry["team_obj"]["is_temporary_id"] = entry["is_temporary_id"]
+                entry["team_obj"]["is_unresolved"] = entry["is_unresolved"]
+                entry["team_obj"]["duplicate_name_detected"] = entry["duplicate_name_detected"]
+        else:
+            i = indices[0]
+            entry = team_entries[i]
+            entry["duplicate_name_detected"] = False
+            if entry["raw_team_id"]:
+                entry["team_id"] = entry["raw_team_id"]
+                entry["is_temporary_id"] = False
+                entry["is_unresolved"] = False
+            else:
+                entry["team_id"] = generate_stable_team_id(entry["raw_team_name"])
+                entry["is_temporary_id"] = False
+                entry["is_unresolved"] = False
+            entry["team_obj"]["team_id"] = entry["team_id"]
+            entry["team_obj"]["is_temporary_id"] = entry["is_temporary_id"]
+            entry["team_obj"]["is_unresolved"] = entry["is_unresolved"]
+            entry["team_obj"]["duplicate_name_detected"] = entry["duplicate_name_detected"]
+
+    # Pass 3: Duplicate team name warnings for JSON
+    for norm_name, indices in norm_to_indices.items():
+        if len(indices) > 1:
+            all_locs = [team_entries[i]["loc"] for i in indices]
+            all_locs_str = ", ".join(all_locs)
+            all_ids = [team_entries[i]["team_id"] for i in indices]
+
+            for i in indices:
+                entry = team_entries[i]
+                other_ids = [tid for tid in all_ids if tid != entry["team_id"]]
+                other_ids_str = ", ".join(other_ids) if other_ids else "none"
+
+                if entry["is_temporary_id"]:
+                    msg = (
+                        f"Duplicate team name '{entry['raw_team_name']}' detected across multiple registrations "
+                        f"({all_locs_str}). Assigned temporary unresolved ID '{entry['team_id']}' for {entry['loc']}. "
+                        f"Conflicting team ID(s): {other_ids_str}."
+                    )
+                else:
+                    msg = (
+                        f"Duplicate team name '{entry['raw_team_name']}' detected across multiple registrations "
+                        f"({all_locs_str}). Preserved explicit ID '{entry['team_id']}' for {entry['loc']}. "
+                        f"Conflicting team ID(s): {other_ids_str}."
+                    )
+
+                warnings.append(
+                    ValidationWarning(
+                        team_id=entry["team_id"],
+                        member_id="",
+                        field="team_name",
+                        message=msg,
+                    )
+                )
+
+    # Pass 4: Process members and construct teams
+    for entry in team_entries:
+        team_obj = entry["team_obj"]
+        loc = entry["loc"]
 
         # Track unmapped team keys
         for k in team_obj.keys():
-            if k not in {"team_id", "team_name", "members", "custom_fields", "raw_data"}:
+            if k not in {
+                "team_id",
+                "team_name",
+                "members",
+                "custom_fields",
+                "raw_data",
+                "is_temporary_id",
+                "is_unresolved",
+                "duplicate_name_detected",
+            }:
                 discovered_unmapped.add(k)
 
         # Process members array
@@ -563,7 +886,7 @@ def _apply_json_mapping(obj: dict[str, Any], norm_mapping: dict[str, str]) -> di
 
 def _build_teams(
     team_rows: dict[str, list[dict[str, Any]]],
-    team_names: dict[str, str],
+    team_metas: dict[str, Any],
 ) -> tuple[list[TeamSchema], list[ValidationError], list[ValidationWarning]]:
     """Validate grouped rows into TeamSchema objects."""
     teams: list[TeamSchema] = []
@@ -571,7 +894,28 @@ def _build_teams(
     warnings: list[ValidationWarning] = []
 
     for team_id, members_data in team_rows.items():
-        team_name = team_names[team_id]
+        meta = team_metas.get(team_id)
+        if isinstance(meta, _TeamMeta):
+            team_name = meta.team_name
+            is_temporary_id = meta.is_temporary_id
+            is_unresolved = meta.is_unresolved
+            duplicate_name_detected = meta.duplicate_name_detected
+            custom_fields = meta.custom_fields
+            raw_data = meta.raw_data
+        elif isinstance(meta, str):
+            team_name = meta
+            is_temporary_id = False
+            is_unresolved = False
+            duplicate_name_detected = False
+            custom_fields = {}
+            raw_data = {}
+        else:
+            team_name = team_id
+            is_temporary_id = False
+            is_unresolved = False
+            duplicate_name_detected = False
+            custom_fields = {}
+            raw_data = {}
 
         valid_members: list[MemberSchema] = []
         for m in members_data:
@@ -597,7 +941,16 @@ def _build_teams(
             )
             continue
 
-        team = TeamSchema(team_id=team_id, team_name=team_name, members=valid_members)
+        team = TeamSchema(
+            team_id=team_id,
+            team_name=team_name,
+            members=valid_members,
+            is_temporary_id=is_temporary_id,
+            is_unresolved=is_unresolved,
+            duplicate_name_detected=duplicate_name_detected,
+            custom_fields=custom_fields,
+            raw_data=raw_data,
+        )
 
         dup_err = _check_duplicate_members(team)
         if dup_err:

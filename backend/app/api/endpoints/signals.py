@@ -17,7 +17,7 @@ from typing import Optional
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.api.endpoints.ingestion import _resolve_parser
-from app.schemas.ingestion import TeamSchema
+from app.schemas.ingestion import MemberSchema, TeamSchema
 from app.signals.registry import default_signal_registry
 from app.signals.schemas import (
     CategoryDefinition,
@@ -160,3 +160,88 @@ async def extract_signals_from_file(
         selected_signals=active_signals,
         config=config_dict,
     )
+
+
+@router.post("/extract-resume", response_model=ExtractionRunResponse)
+async def extract_signals_from_resume_file(
+    file: UploadFile = File(..., description="Resume document in PDF (.pdf) or DOCX (.docx) format"),
+    candidate_name: Optional[str] = Form("Candidate", description="Optional display name for candidate"),
+    member_id: Optional[str] = Form(None, description="Optional member identifier"),
+    team_id: Optional[str] = Form(None, description="Optional team identifier"),
+    selected_signals: Optional[str] = Form(
+        None,
+        description="Optional JSON array or comma-separated list of resume signal keys to extract",
+    ),
+    config: Optional[str] = Form(
+        None,
+        description="Optional JSON configuration dictionary",
+    ),
+) -> ExtractionRunResponse:
+    """Extract signals directly from an uploaded PDF or DOCX resume document.
+
+    Enforces file size limits (10 MB) and format validation (PDF, DOCX).
+    Returns standardized ExtractionRunResponse with extracted signals.
+    """
+    filename = file.filename or "resume.pdf"
+
+    # Validate file type extension
+    lower_fn = filename.lower()
+    if not (lower_fn.endswith(".pdf") or lower_fn.endswith(".docx")):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type for resume: '{filename}'. Only .pdf and .docx files are supported.",
+        )
+
+    raw_bytes = await file.read()
+    if len(raw_bytes) == 0:
+        raise HTTPException(status_code=400, detail="Uploaded resume file is empty (0 bytes).")
+    if len(raw_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Uploaded resume file exceeds maximum size limit of 10 MB.")
+
+    # Parse optional selected_signals
+    active_signals: Optional[list[str]] = None
+    if selected_signals and selected_signals.strip():
+        s_str = selected_signals.strip()
+        if s_str.startswith("["):
+            try:
+                parsed_sigs = json.loads(s_str)
+                if isinstance(parsed_sigs, list):
+                    active_signals = [str(s) for s in parsed_sigs]
+            except Exception:
+                active_signals = [s.strip() for s in s_str.strip("[]").split(",") if s.strip()]
+        else:
+            active_signals = [s.strip() for s in s_str.split(",") if s.strip()]
+
+    # Parse optional config
+    config_dict: dict = {}
+    if config and config.strip():
+        try:
+            parsed_cfg = json.loads(config.strip())
+            if isinstance(parsed_cfg, dict):
+                config_dict = parsed_cfg
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid config JSON: {exc}")
+
+    # Create temporary single-member team with resume_bytes in custom_fields
+    m_id = member_id or "resume_member_1"
+    t_id = team_id or "resume_team_1"
+    c_name = candidate_name or "Candidate"
+
+    single_member = MemberSchema(
+        member_id=m_id,
+        name=c_name,
+        resume_url=filename,
+        custom_fields={"resume_bytes": raw_bytes, "resume_filename": filename},
+    )
+    single_team = TeamSchema(
+        team_id=t_id,
+        team_name=f"Team_{c_name}",
+        members=[single_member],
+    )
+
+    return default_signal_registry.execute_extraction(
+        teams=[single_team],
+        selected_signals=active_signals,
+        config=config_dict,
+    )
+

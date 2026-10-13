@@ -147,7 +147,16 @@ class MemberSchema(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-KNOWN_TEAM_FIELDS = {"team_id", "team_name", "members", "custom_fields", "raw_data"}
+KNOWN_TEAM_FIELDS = {
+    "team_id",
+    "team_name",
+    "members",
+    "custom_fields",
+    "raw_data",
+    "is_temporary_id",
+    "is_unresolved",
+    "duplicate_name_detected",
+}
 
 
 class TeamSchema(BaseModel):
@@ -157,6 +166,20 @@ class TeamSchema(BaseModel):
     team_name: str = Field(..., min_length=1, description="Team display name")
     members: list[MemberSchema] = Field(
         ..., min_length=1, description="At least one member required"
+    )
+
+    # Duplicate detection & temporary ID flags
+    is_temporary_id: bool = Field(
+        default=False,
+        description="Whether this team was assigned a temporary ID due to missing/ambiguous ID",
+    )
+    is_unresolved: bool = Field(
+        default=False,
+        description="Whether this team's identity is unresolved due to duplicate names or ambiguous registration",
+    )
+    duplicate_name_detected: bool = Field(
+        default=False,
+        description="Whether another registration with the same normalized team name was detected",
     )
 
     # Dynamic & raw data preservation
@@ -201,10 +224,13 @@ class TeamSchema(BaseModel):
 
 
 class ValidationWarning(BaseModel):
-    """A non-fatal warning (e.g. missing optional profile link)."""
+    """A non-fatal warning (e.g. missing optional profile link, duplicate team name)."""
 
     team_id: str
-    member_id: str
+    member_id: str = Field(
+        default="",
+        description="Member identifier if warning is member-specific, or empty string for team-level warnings",
+    )
     field: str
     message: str
 
