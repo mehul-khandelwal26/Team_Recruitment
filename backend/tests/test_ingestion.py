@@ -276,12 +276,12 @@ class TestMalformedFiles:
 # =========================================================================
 
 class TestMissingRequiredColumns:
-    def test_missing_team_id_column(self):
-        csv = "team_name,member_id,name\nAlpha,M1,Alice\n"
+    def test_missing_team_name_column(self):
+        csv = "member_id,name\nM1,Alice\n"
         resp = _upload_csv(csv)
         body = resp.json()
         assert body["success"] is False
-        assert any("team_id" in e["message"] for e in body["errors"])
+        assert any("team_name" in e["message"] for e in body["errors"])
 
     def test_missing_name_column(self):
         csv = "team_id,team_name,member_id\nT1,Alpha,M1\n"
@@ -346,15 +346,15 @@ class TestInconsistentTeamNames:
 # =========================================================================
 
 class TestInvalidFieldValues:
-    def test_csv_empty_member_id(self):
+    def test_csv_empty_member_id_generates_id(self):
         csv = (
             "team_id,team_name,member_id,name\n"
             "T1,Alpha,,Alice\n"
         )
         resp = _upload_csv(csv)
         body = resp.json()
-        assert body["success"] is False
-        assert any("member_id" in e["message"].lower() for e in body["errors"])
+        assert body["success"] is True
+        assert body["teams"][0]["members"][0]["member_id"] == "T1_m1"
 
     def test_csv_empty_name(self):
         csv = (

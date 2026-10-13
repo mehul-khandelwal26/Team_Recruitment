@@ -39,6 +39,36 @@ from app.signals.schemas import (
 # 1-39 alphanumeric characters or single hyphens, not beginning or ending with hyphen.
 _GITHUB_USERNAME_REGEX = re.compile(r"^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$")
 
+# Reserved GitHub web paths that cannot be user profile usernames
+_RESERVED_GITHUB_PATHS = {
+    "about",
+    "collections",
+    "contact",
+    "customer-stories",
+    "events",
+    "explore",
+    "features",
+    "issues",
+    "join",
+    "login",
+    "logout",
+    "marketplace",
+    "notifications",
+    "organizations",
+    "orgs",
+    "pricing",
+    "pulls",
+    "readme",
+    "search",
+    "security",
+    "session",
+    "settings",
+    "site",
+    "sponsors",
+    "topics",
+    "trending",
+}
+
 
 def extract_and_validate_github_username(raw_val: Optional[str]) -> tuple[Optional[str], Optional[str]]:
     """Extract and validate GitHub username from a URL or username string.
@@ -47,7 +77,7 @@ def extract_and_validate_github_username(raw_val: Optional[str]) -> tuple[Option
         (username, error_message):
         - (None, None) if raw_val is None or empty (missing input).
         - (username, None) if raw_val is a valid username or GitHub profile URL.
-        - (None, error_message) if raw_val is invalid (e.g. invalid URL, invalid characters).
+        - (None, error_message) if raw_val is invalid (e.g. invalid URL, invalid characters, spoofed domain).
     """
     if raw_val is None:
         return None, None
@@ -60,17 +90,34 @@ def extract_and_validate_github_username(raw_val: Optional[str]) -> tuple[Option
     if cleaned.startswith("@"):
         cleaned = cleaned[1:].strip()
 
-    # If it contains URL parts
-    if "://" in cleaned or cleaned.startswith("github.com") or cleaned.startswith("www.github.com"):
+    # Determine if input looks like a URL or domain path
+    is_url = (
+        "://" in cleaned
+        or cleaned.lower().startswith("github.com")
+        or cleaned.lower().startswith("www.github.com")
+        or "/" in cleaned
+    )
+
+    if is_url:
         candidate_url = cleaned if "://" in cleaned else f"https://{cleaned}"
         try:
             parsed = urlparse(candidate_url)
         except Exception:
             return None, f"Malformed URL: '{raw_val}'"
 
-        netloc = (parsed.netloc or "").lower()
-        if "github.com" not in netloc:
-            return None, f"URL '{raw_val}' is not a GitHub URL (domain: {netloc})."
+        scheme = (parsed.scheme or "").lower()
+        if scheme not in ("http", "https"):
+            return None, f"Invalid URL scheme '{parsed.scheme}': only HTTP and HTTPS are permitted."
+
+        if parsed.username or parsed.password:
+            return None, "Embedded credentials in GitHub URL are not permitted."
+
+        if parsed.port and parsed.port not in (80, 443):
+            return None, f"Non-standard port '{parsed.port}' not permitted in GitHub URL."
+
+        hostname = (parsed.hostname or "").lower()
+        if hostname not in ("github.com", "www.github.com"):
+            return None, f"URL '{raw_val}' is not a GitHub URL (domain: {hostname})."
 
         path_segments = [seg for seg in parsed.path.strip("/").split("/") if seg]
         if not path_segments:
@@ -83,6 +130,9 @@ def extract_and_validate_github_username(raw_val: Optional[str]) -> tuple[Option
 
     # Strip any trailing characters that might accidentally be present
     username = username.strip("/")
+
+    if username.lower() in _RESERVED_GITHUB_PATHS:
+        return None, f"'{username}' is a reserved GitHub system path, not a user profile."
 
     if not _GITHUB_USERNAME_REGEX.match(username):
         return None, f"'{username}' is not a valid GitHub username."
@@ -143,7 +193,7 @@ class GitHubAnalyzer(BaseSignalExtractor):
                 SignalDefinition(
                     signal_key="github_recent_activity",
                     name="Recent GitHub Activity",
-                    description="Recent public activity, push events, and commit recency metrics.",
+                    description="Sample of recent public activity from GitHub public events (private activity omitted; push commits capped at 20/push).",
                     category="technical",
                     value_type="dict",
                 ),
@@ -187,6 +237,14 @@ class GitHubAnalyzer(BaseSignalExtractor):
         """Extract requested GitHub signals for a team member."""
         target_signals = selected_signals or set(self.descriptor.produced_signals)
         results: list[ExtractedSignal] = []
+
+        cfg = config or {}
+        raw_max_repos = cfg.get("max_repos_inspected", 30)
+        try:
+            max_repos = max(1, int(raw_max_repos))
+        except (ValueError, TypeError):
+            max_repos = 30
+        include_forks = bool(cfg.get("include_forks", False))
 
         # Find raw input: check canonical github_url, then custom_fields
         raw_input = member.github_url
@@ -262,7 +320,8 @@ class GitHubAnalyzer(BaseSignalExtractor):
                 return results
 
             # We have valid user profile
-            timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            timestamp = datetime.timezone.utc
+            iso_now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
             # Signal: github_profile_verified
             if "github_profile_verified" in target_signals:
@@ -275,7 +334,7 @@ class GitHubAnalyzer(BaseSignalExtractor):
                         evidence=SignalEvidence(
                             source="github_api",
                             raw_input=str(raw_input),
-                            extracted_at=timestamp,
+                            extracted_at=iso_now,
                             confidence=1.0,
                             metadata={
                                 "username": username,
@@ -300,7 +359,7 @@ class GitHubAnalyzer(BaseSignalExtractor):
                         evidence=SignalEvidence(
                             source="github_api",
                             raw_input=str(raw_input),
-                            extracted_at=timestamp,
+                            extracted_at=iso_now,
                             confidence=1.0,
                             metadata={
                                 "username": username,
@@ -313,7 +372,7 @@ class GitHubAnalyzer(BaseSignalExtractor):
 
             # Signal: github_repo_metadata
             if "github_repo_metadata" in target_signals:
-                repos_data, repos_err = self._fetch_repos(client, username)
+                repos_data, repos_err = self._fetch_repos(client, username, max_repos=max_repos)
                 if repos_err:
                     results.append(
                         ExtractedSignal(
@@ -330,7 +389,9 @@ class GitHubAnalyzer(BaseSignalExtractor):
                         )
                     )
                 else:
-                    repo_summary = self._compute_repo_metadata(repos_data, user_data)
+                    repo_summary = self._compute_repo_metadata(
+                        repos_data, user_data, include_forks=include_forks
+                    )
                     results.append(
                         ExtractedSignal(
                             signal_key="github_repo_metadata",
@@ -340,13 +401,15 @@ class GitHubAnalyzer(BaseSignalExtractor):
                             evidence=SignalEvidence(
                                 source="github_api",
                                 raw_input=str(raw_input),
-                                extracted_at=timestamp,
+                                extracted_at=iso_now,
                                 confidence=1.0,
                                 metadata={
                                     "username": username,
                                     "repos_inspected": len(repos_data),
                                     "total_stars": repo_summary["total_stars"],
                                     "languages_count": len(repo_summary["primary_languages"]),
+                                    "include_forks": include_forks,
+                                    "forks_excluded": repo_summary.get("forks_excluded", 0),
                                 },
                             ),
                         )
@@ -381,12 +444,14 @@ class GitHubAnalyzer(BaseSignalExtractor):
                             evidence=SignalEvidence(
                                 source="github_api",
                                 raw_input=str(raw_input),
-                                extracted_at=timestamp,
+                                extracted_at=iso_now,
                                 confidence=1.0,
                                 metadata={
                                     "username": username,
                                     "events_inspected": len(events_data),
                                     "has_recent_activity": activity_summary["has_recent_activity"],
+                                    "is_public_sample_only": True,
+                                    "private_activity_omitted": True,
                                 },
                             ),
                         )
@@ -434,25 +499,53 @@ class GitHubAnalyzer(BaseSignalExtractor):
         self,
         client: httpx.Client,
         username: str,
+        max_repos: int = 30,
     ) -> tuple[list[dict[str, Any]], Optional[str]]:
-        """Fetch public repos for a user."""
-        if username in self._repos_cache:
-            return self._repos_cache[username], None
+        """Fetch public repos for a user with pagination up to max_repos."""
+        cache_key = f"{username}_{max_repos}"
+        if cache_key in self._repos_cache:
+            return self._repos_cache[cache_key], None
 
-        url = f"{self._base_url}/users/{username}/repos"
-        params = {"per_page": 30, "sort": "updated", "type": "public"}
-        try:
-            resp = client.get(url, params=params)
-        except Exception as exc:
-            return [], str(exc)
+        all_repos: list[dict[str, Any]] = []
+        page = 1
+        per_page = min(max_repos, 100)
 
-        if resp.status_code == 200:
-            data = resp.json()
-            if isinstance(data, list):
-                self._repos_cache[username] = data
-                return data, None
-            return [], "Unexpected response format for repositories."
-        return [], f"HTTP {resp.status_code}"
+        while len(all_repos) < max_repos:
+            needed = max_repos - len(all_repos)
+            fetch_size = min(per_page, needed)
+            url = f"{self._base_url}/users/{username}/repos"
+            params = {
+                "per_page": fetch_size,
+                "page": page,
+                "sort": "updated",
+                "type": "public",
+            }
+            try:
+                resp = client.get(url, params=params)
+            except Exception as exc:
+                if all_repos:
+                    break
+                return [], str(exc)
+
+            if resp.status_code == 200:
+                data = resp.json()
+                if not isinstance(data, list):
+                    if all_repos:
+                        break
+                    return [], "Unexpected response format for repositories."
+                if not data:
+                    break
+                all_repos.extend(data)
+                if len(data) < fetch_size:
+                    break
+                page += 1
+            else:
+                if all_repos:
+                    break
+                return [], f"HTTP {resp.status_code}"
+
+        self._repos_cache[cache_key] = all_repos
+        return all_repos, None
 
     def _fetch_events(
         self,
@@ -482,14 +575,26 @@ class GitHubAnalyzer(BaseSignalExtractor):
         self,
         repos: list[dict[str, Any]],
         user_data: dict[str, Any],
+        include_forks: bool = False,
     ) -> dict[str, Any]:
-        """Summarize repository metadata from public repositories."""
+        """Summarize repository metadata from public repositories.
+
+        Forks are filtered out of repository-level metrics (stars, forks, languages,
+        top repos) unless include_forks is explicitly True. The total public repository
+        count is always preserved from user_data.
+        """
         total_stars = 0
         total_forks = 0
         lang_counts: dict[str, int] = {}
         top_repos: list[dict[str, Any]] = []
+        forks_excluded = 0
 
         for r in repos:
+            is_fork = bool(r.get("fork", False))
+            if is_fork and not include_forks:
+                forks_excluded += 1
+                continue
+
             stars = int(r.get("stargazers_count", 0))
             forks = int(r.get("forks_count", 0))
             lang = r.get("language")
@@ -507,7 +612,7 @@ class GitHubAnalyzer(BaseSignalExtractor):
                     "language": lang,
                     "html_url": r.get("html_url"),
                     "updated_at": r.get("updated_at"),
-                    "is_fork": bool(r.get("fork", False)),
+                    "is_fork": is_fork,
                 }
             )
 
@@ -522,10 +627,20 @@ class GitHubAnalyzer(BaseSignalExtractor):
             "primary_languages": top_languages[:5],
             "language_counts": lang_counts,
             "top_repositories": top_repos[:5],
+            "include_forks": include_forks,
+            "forks_excluded": forks_excluded,
         }
 
     def _compute_recent_activity(self, events: list[dict[str, Any]]) -> dict[str, Any]:
-        """Compute reliable recent activity metrics from GitHub public events."""
+        """Compute recent activity metrics from a sample of GitHub public events.
+
+        Important API limitations documented:
+        - Only public events from GitHub's /users/{username}/events/public are visible.
+        - Private repositories and organizational contributions are omitted.
+        - GitHub API retains at most 300 public events or 90 days, whichever is smaller.
+        - PushEvent payload commits are capped at 20 per push by the GitHub API.
+        - Zero public events does NOT imply candidate inactivity.
+        """
         recent_events_count = len(events)
         push_events_count = 0
         recent_commit_count = 0
@@ -561,7 +676,19 @@ class GitHubAnalyzer(BaseSignalExtractor):
             "recent_events_count": recent_events_count,
             "push_events_count": push_events_count,
             "recent_commit_count": recent_commit_count,
+            "recent_public_push_commits": recent_commit_count,
             "has_recent_activity": has_recent,
             "last_active_date": last_active_date,
             "active_in_past_90_days": active_90_days,
+            "sample_limitations": {
+                "is_public_sample_only": True,
+                "private_activity_included": False,
+                "push_commit_cap_per_event": 20,
+                "max_public_events_retained_by_github": 300,
+                "note": (
+                    "Metrics reflect only recent public events. Zero public events "
+                    "does not imply candidate inactivity, as private or organization "
+                    "contributions are omitted."
+                ),
+            },
         }

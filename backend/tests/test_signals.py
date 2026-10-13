@@ -255,10 +255,8 @@ class TestAcademicAnalyzer:
             ("3rd Year", "3rd Year", 3),
             ("3", "3rd Year", 3),
             ("Junior", "3rd Year", 3),
-            ("final year", "4th Year", 4),
             ("1st", "1st Year", 1),
-            ("Batch 2026", "Batch 2026", 2026),
-            ("2025", "Batch 2025", 2025),
+            ("final year", "Final Year", None),  # Unknown degree -> preserved without assuming 4th year
             ("Masters", "Postgraduate", None),
         ]
         for raw, expected_label, expected_num in cases:
@@ -269,6 +267,17 @@ class TestAcademicAnalyzer:
             assert res.status == SignalStatus.EXTRACTED
             assert res.value == expected_label
             assert res.evidence.metadata["year_number"] == expected_num
+
+        # Batch years are preserved without setting year_number to 2025/2026
+        for raw_batch, grad_yr in [("Batch 2026", 2026), ("2025", 2025)]:
+            member = MemberSchema(member_id="M1", name="Alice", academic_year=raw_batch)
+            results = self.analyzer.extract(member, selected_signals={"academic_year"})
+            assert len(results) == 1
+            res = results[0]
+            assert res.status == SignalStatus.EXTRACTED
+            assert res.value == f"Batch {grad_yr}"
+            assert res.evidence.metadata["year_number"] is None
+            assert res.evidence.metadata["graduation_year"] == grad_yr
 
     def test_missing_academic_values_produce_not_applicable(self):
         """Missing academic records result in NOT_APPLICABLE, NEVER 0."""
@@ -692,7 +701,7 @@ class TestSignalAPIEndpoints:
         assert body["total_members"] == 1
         member_res = body["teams"][0]["member_results"][0]
         assert member_res["signals"][0]["value"] == 9.5
-        assert member_res["signals"][1]["value"] == "4th Year"
+        assert member_res["signals"][1]["value"] == "Final Year"
 
     def test_post_extract_from_csv_file_endpoint(self):
         """POST /api/signals/extract-file parses CSV and extracts signals."""

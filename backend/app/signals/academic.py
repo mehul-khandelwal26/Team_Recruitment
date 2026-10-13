@@ -26,20 +26,151 @@ from app.signals.schemas import (
     SignalStatus,
 )
 
-# Known academic year text patterns mapped to standard representations
-_YEAR_PATTERNS: list[tuple[re.Pattern, str, int]] = [
-    (re.compile(r"^(?:1|1st|first|freshman)(?:\s+year)?$", re.IGNORECASE), "1st Year", 1),
-    (re.compile(r"^(?:2|2nd|second|sophomore)(?:\s+year)?$", re.IGNORECASE), "2nd Year", 2),
-    (re.compile(r"^(?:3|3rd|third|junior)(?:\s+year)?$", re.IGNORECASE), "3rd Year", 3),
-    (re.compile(r"^(?:4|4th|fourth|senior|final)(?:\s+year)?$", re.IGNORECASE), "4th Year", 4),
-    (re.compile(r"^(?:5|5th|fifth)(?:\s+year)?$", re.IGNORECASE), "5th Year", 5),
+# Standard known degree durations (years)
+STANDARD_DEGREE_DURATIONS: dict[str, int] = {
+    # 3-year undergraduate degrees
+    "bca": 3,
+    "b.sc": 3,
+    "bsc": 3,
+    "bba": 3,
+    "b.com": 3,
+    "bcom": 3,
+    "ba": 3,
+    "b.a": 3,
+    "llb": 3,
+    # 4-year undergraduate degrees
+    "btech": 4,
+    "b.tech": 4,
+    "be": 4,
+    "b.e": 4,
+    "bs": 4,
+    "b.s": 4,
+    "b.des": 4,
+    "bdes": 4,
+    "b.pharm": 4,
+    "bpharm": 4,
+    # 5-year undergraduate / integrated degrees
+    "dual degree": 5,
+    "dual_degree": 5,
+    "integrated m.tech": 5,
+    "integrated mtech": 5,
+    "integrated m.sc": 5,
+    "integrated msc": 5,
+    "b.arch": 5,
+    "barch": 5,
+    "mbbs": 5,
+    "ba llb": 5,
+    "bba llb": 5,
+    # 2-year postgraduate degrees
+    "mtech": 2,
+    "m.tech": 2,
+    "me": 2,
+    "m.e": 2,
+    "mba": 2,
+    "mca": 2,
+    "ms": 2,
+    "m.s": 2,
+    "m.sc": 2,
+    "msc": 2,
+    "ma": 2,
+    "m.a": 2,
+    "m.des": 2,
+    "mdes": 2,
+}
+
+_FINAL_YEAR_REGEX = re.compile(r"^(?:final|senior)(?:\s+year)?$", re.IGNORECASE)
+_PRE_FINAL_YEAR_REGEX = re.compile(r"^(?:pre-?final|pre\s+final)(?:\s+year)?$", re.IGNORECASE)
+
+_NUMERIC_YEAR_PATTERNS: list[tuple[re.Pattern, int]] = [
+    (re.compile(r"^(?:1|1st|first|freshman)(?:\s+year)?$", re.IGNORECASE), 1),
+    (re.compile(r"^(?:2|2nd|second|sophomore)(?:\s+year)?$", re.IGNORECASE), 2),
+    (re.compile(r"^(?:3|3rd|third|junior)(?:\s+year)?$", re.IGNORECASE), 3),
+    (re.compile(r"^(?:4|4th|fourth)(?:\s+year)?$", re.IGNORECASE), 4),
+    (re.compile(r"^(?:5|5th|fifth)(?:\s+year)?$", re.IGNORECASE), 5),
 ]
 
 _GRAD_PATTERNS: list[re.Pattern] = [
     re.compile(r"^(?:graduate|postgraduate|pg|master|masters|m\.?tech|m\.?s|phd|mba)$", re.IGNORECASE),
 ]
 
-_BATCH_YEAR_REGEX = re.compile(r"^(?:batch\s+)?(20\d{2})$", re.IGNORECASE)
+_BATCH_YEAR_REGEX = re.compile(r"^(?:batch\s+(?:of\s+)?|class\s+of\s+)?(20\d{2})$", re.IGNORECASE)
+
+
+def _ordinal(n: int) -> str:
+    """Format positive integer as ordinal string (1st, 2nd, 3rd, 4th, 5th)."""
+    if 11 <= (n % 100) <= 13:
+        return f"{n}th"
+    suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def infer_degree_duration(degree_name: str) -> Optional[int]:
+    """Infer degree duration in years from known degree identifiers."""
+    cleaned = re.sub(r"[^a-zA-Z0-9\.]+", " ", str(degree_name).lower()).strip()
+    if cleaned in STANDARD_DEGREE_DURATIONS:
+        return STANDARD_DEGREE_DURATIONS[cleaned]
+    # Check word boundaries within the string
+    for deg_key, dur in STANDARD_DEGREE_DURATIONS.items():
+        pattern = r"\b" + re.escape(deg_key) + r"\b"
+        if re.search(pattern, cleaned):
+            return dur
+    return None
+
+
+def resolve_degree_info(
+    member: MemberSchema,
+    config: Optional[dict[str, Any]] = None,
+) -> tuple[Optional[str], Optional[int]]:
+    """Determine degree name and duration in years from member records and config.
+
+    Precedence:
+    1. Explicit duration in config (`config['degree_duration']`).
+    2. Explicit duration in member custom_fields or raw_data (`degree_duration`, `duration`).
+    3. Duration inferred from degree name (from config or member records) via STANDARD_DEGREE_DURATIONS.
+    """
+    cfg = config or {}
+
+    # 1. Explicit duration in config overrides all
+    if "degree_duration" in cfg and cfg["degree_duration"] is not None:
+        try:
+            dur = int(cfg["degree_duration"])
+            deg = cfg.get("degree") or _find_degree_name(member)
+            return deg, dur
+        except (ValueError, TypeError):
+            pass
+
+    # Degree name from config or member data
+    degree_name = cfg.get("degree") or _find_degree_name(member)
+
+    # 2. Explicit duration in member data
+    duration_val = (
+        member.custom_fields.get("degree_duration")
+        or member.custom_fields.get("duration")
+        or member.custom_fields.get("duration_years")
+        or member.raw_data.get("degree_duration")
+        or member.raw_data.get("duration")
+    )
+    if duration_val is not None:
+        try:
+            return degree_name, int(str(duration_val).strip())
+        except (ValueError, TypeError):
+            pass
+
+    # 3. Inferred duration from degree_name
+    if degree_name:
+        dur = infer_degree_duration(degree_name)
+        return degree_name, dur
+
+    return degree_name, None
+
+
+def _find_degree_name(member: MemberSchema) -> Optional[str]:
+    """Look up degree name in candidate custom fields or raw data."""
+    for key in ("degree", "degree_name", "program", "course", "branch", "qualification"):
+        val = member.custom_fields.get(key) or member.raw_data.get(key)
+        if val is not None and str(val).strip():
+            return str(val).strip()
+    return None
 
 
 def parse_academic_score(
@@ -116,36 +247,119 @@ def parse_academic_score(
     return numeric_score, final_scale, detected_system, None
 
 
-def parse_academic_year(raw_val: Any) -> tuple[Optional[str], Optional[int], Optional[str]]:
+def parse_academic_year(
+    raw_val: Any,
+    degree_duration: Optional[int] = None,
+    degree_name: Optional[str] = None,
+) -> tuple[Optional[str], Optional[int], Optional[str], dict[str, Any]]:
     """Parse and normalize academic year of study or batch.
 
     Returns:
-        (normalized_label, year_number, error_message)
+        (normalized_label, year_number, error_message, metadata)
     """
     if raw_val is None:
-        return None, None, None
+        return None, None, None, {}
 
     text = str(raw_val).strip()
     if not text:
-        return None, None, None
+        return None, None, None, {}
 
-    # Check standard year patterns (1st - 5th)
-    for pattern, label, yr_num in _YEAR_PATTERNS:
+    # 1. Relative "Final Year" / "Senior"
+    if _FINAL_YEAR_REGEX.match(text):
+        if degree_duration is not None:
+            norm_label = f"{_ordinal(degree_duration)} Year"
+            return norm_label, degree_duration, None, {
+                "resolved_from": text,
+                "degree_duration": degree_duration,
+                "degree": degree_name,
+                "is_resolved": True,
+            }
+        else:
+            return "Final Year", None, None, {
+                "resolved_from": text,
+                "degree_duration": None,
+                "degree": degree_name,
+                "is_resolved": False,
+                "note": "Degree duration unknown; preserved textual 'Final Year' without assuming degree duration.",
+            }
+
+    # 2. Relative "Pre-final Year" / "Prefinal"
+    if _PRE_FINAL_YEAR_REGEX.match(text):
+        if degree_duration is not None:
+            pre_num = max(1, degree_duration - 1)
+            norm_label = f"{_ordinal(pre_num)} Year"
+            return norm_label, pre_num, None, {
+                "resolved_from": text,
+                "degree_duration": degree_duration,
+                "degree": degree_name,
+                "is_resolved": True,
+            }
+        else:
+            return "Pre-final Year", None, None, {
+                "resolved_from": text,
+                "degree_duration": None,
+                "degree": degree_name,
+                "is_resolved": False,
+                "note": "Degree duration unknown; preserved textual 'Pre-final Year' without assuming degree duration.",
+            }
+
+    # 3. Explicit numeric years (1st - 5th)
+    for pattern, yr_num in _NUMERIC_YEAR_PATTERNS:
         if pattern.match(text):
-            return label, yr_num, None
+            if degree_duration is not None and yr_num > degree_duration:
+                return (
+                    None,
+                    None,
+                    (
+                        f"Conflicting academic data: Reported year of study ({yr_num}) "
+                        f"exceeds duration for degree '{degree_name or 'unspecified'}' ({degree_duration} years)."
+                    ),
+                    {
+                        "conflict": True,
+                        "reported_year": yr_num,
+                        "degree_duration": degree_duration,
+                        "degree": degree_name,
+                    },
+                )
+            return (
+                f"{_ordinal(yr_num)} Year",
+                yr_num,
+                None,
+                {
+                    "year_number": yr_num,
+                    "degree": degree_name,
+                    "degree_duration": degree_duration,
+                },
+            )
 
-    # Check graduation year (e.g. 2026)
+    # 4. Graduation / batch year (e.g. 2026, Batch 2027, Class of 2025)
     batch_match = _BATCH_YEAR_REGEX.match(text)
     if batch_match:
         year_str = batch_match.group(1)
-        return f"Batch {year_str}", int(year_str), None
+        grad_year = int(year_str)
+        return (
+            f"Batch {year_str}",
+            None,
+            None,
+            {
+                "graduation_year": grad_year,
+                "is_graduation_batch": True,
+                "degree": degree_name,
+                "degree_duration": degree_duration,
+            },
+        )
 
-    # Check postgraduate patterns
+    # 5. Postgraduate patterns
     for pattern in _GRAD_PATTERNS:
         if pattern.match(text):
-            return "Postgraduate", None, None
+            return (
+                "Postgraduate",
+                None,
+                None,
+                {"level": "postgraduate", "degree": degree_name},
+            )
 
-    return None, None, f"Unrecognized academic year format: '{text}'."
+    return None, None, f"Unrecognized academic year format: '{text}'.", {}
 
 
 class AcademicMetricsAnalyzer(BaseSignalExtractor):
@@ -196,6 +410,8 @@ class AcademicMetricsAnalyzer(BaseSignalExtractor):
                 "cgpa_field": "Custom source column name for CGPA/CPI in registration data",
                 "academic_year_field": "Custom source column name for Academic Year in registration data",
                 "allow_scale_conversion": "Explicit boolean flag allowing conversion between scales",
+                "degree": "Target degree name (e.g. 'B.Tech', 'BCA', 'MCA', 'Dual Degree')",
+                "degree_duration": "Explicit degree duration in years (e.g. 3, 4, 5, 2)",
             },
         )
 
@@ -210,6 +426,9 @@ class AcademicMetricsAnalyzer(BaseSignalExtractor):
         cfg = config or {}
         results: list[ExtractedSignal] = []
         timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        # Resolve degree info (degree_name, degree_duration)
+        degree_name, degree_duration = resolve_degree_info(member, cfg)
 
         # Resolve raw CGPA / CPI value and source field name
         cgpa_val, cgpa_field_name = self._resolve_cgpa_value(member, cfg)
@@ -410,7 +629,9 @@ class AcademicMetricsAnalyzer(BaseSignalExtractor):
                     )
                 )
             else:
-                norm_label, yr_num, yr_err = parse_academic_year(year_val)
+                norm_label, yr_num, yr_err, yr_meta = parse_academic_year(
+                    year_val, degree_duration=degree_duration, degree_name=degree_name
+                )
                 if yr_err or norm_label is None:
                     results.append(
                         ExtractedSignal(
@@ -422,11 +643,22 @@ class AcademicMetricsAnalyzer(BaseSignalExtractor):
                             evidence=SignalEvidence(
                                 source="registration_data",
                                 raw_input=str(year_val),
-                                metadata={"source_field": year_field_name, "error": yr_err},
+                                metadata={
+                                    "source_field": year_field_name,
+                                    "error": yr_err,
+                                    **yr_meta,
+                                },
                             ),
                         )
                     )
                 else:
+                    ev_metadata = {
+                        "raw_value": str(year_val),
+                        "normalized_year": norm_label,
+                        "year_number": yr_num,
+                        "source_field": year_field_name,
+                        **yr_meta,
+                    }
                     results.append(
                         ExtractedSignal(
                             signal_key="academic_year",
@@ -438,12 +670,7 @@ class AcademicMetricsAnalyzer(BaseSignalExtractor):
                                 raw_input=str(year_val),
                                 extracted_at=timestamp,
                                 confidence=1.0,
-                                metadata={
-                                    "raw_value": str(year_val),
-                                    "normalized_year": norm_label,
-                                    "year_number": yr_num,
-                                    "source_field": year_field_name,
-                                },
+                                metadata=ev_metadata,
                             ),
                         )
                     )

@@ -7,8 +7,10 @@ and supporting configurable field mappings.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
+import re
 from typing import Any, Optional
 
 import pandas as pd
@@ -46,13 +48,42 @@ _RECOGNIZED_MEMBER_COLUMNS = {
     "academic_year",
 }
 
-# Required columns for CSV uploads (order-insensitive)
-_REQUIRED_CSV_COLUMNS = {
+_REQUIRED_CSV_COLUMNS = {"team_name", "name"}
+
+# Recognized structural fields for hierarchy construction
+_STRUCTURAL_FIELDS = {
     "team_id",
     "team_name",
     "member_id",
     "name",
 }
+
+
+def generate_stable_team_id(team_name: str) -> str:
+    """Generate a deterministic, stable team_id from team_name.
+
+    Stability guarantee: Uses a URL-safe slugified version of team_name combined
+    with a deterministic SHA-256 hash prefix (8 hex chars). Identical team names
+    in repeated runs produce identical team_ids without randomness.
+    Limitations: Distinct teams that share the exact same team_name within the
+    same upload will be grouped together unless distinguished by an explicit team_id.
+    """
+    cleaned = team_name.strip()
+    slug = re.sub(r"[^a-zA-Z0-9]+", "_", cleaned.lower()).strip("_")
+    slug = slug[:24] if slug else "team"
+    h = hashlib.sha256(cleaned.encode("utf-8")).hexdigest()[:8]
+    return f"team_{slug}_{h}"
+
+
+def generate_stable_member_id(team_id: str, member_idx: int) -> str:
+    """Generate a deterministic, stable member_id scoped to the team.
+
+    Stability guarantee: Formed by combining the team_id with a 1-based member index
+    relative to the team order within the upload (e.g. `team_alpha_1a2b3c4d_m1`).
+    This guarantees uniqueness even if participants share identical names, and
+    is completely deterministic across re-runs on the same file.
+    """
+    return f"{team_id}_m{member_idx}"
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +126,7 @@ def parse_csv(
     # Apply mapping if provided, or default canonical normalization
     normalized_mapping: dict[str, str] = {}
     if mapping:
-        # Validate that multiple columns don't map to the same target
+        # Validate that multiple columns don't map to the same structural target
         target_counts: dict[str, list[str]] = {}
         for src, tgt in mapping.items():
             tgt_norm = tgt.strip().lower()
@@ -103,7 +134,7 @@ def parse_csv(
                 tgt_norm = "name"
             target_counts.setdefault(tgt_norm, []).append(src)
         for tgt, srcs in target_counts.items():
-            if len(srcs) > 1 and tgt in _REQUIRED_CSV_COLUMNS:
+            if len(srcs) > 1 and (tgt in _STRUCTURAL_FIELDS or tgt in _REQUIRED_CSV_COLUMNS):
                 errors.append(
                     ValidationError(
                         location="mapping",
@@ -137,7 +168,7 @@ def parse_csv(
 
     df.columns = effective_cols
 
-    # Check required structural columns
+    # Check required structural columns: team_name and name are required
     missing_cols = _REQUIRED_CSV_COLUMNS - set(df.columns)
     if missing_cols:
         return UploadResponse(
@@ -160,38 +191,24 @@ def parse_csv(
     # Row-level processing and grouping
     team_rows: dict[str, list[dict[str, Any]]] = {}
     team_names: dict[str, str] = {}
+    team_member_counts: dict[str, int] = {}
 
     for row_idx, row in df.iterrows():
         row_num = int(row_idx) + 2  # 1-indexed, +1 for header
         row_dict = row.to_dict()
 
-        team_id = str(row_dict.get("team_id", "")).strip()
         team_name = str(row_dict.get("team_name", "")).strip()
-
-        if not team_id:
-            errors.append(
-                ValidationError(location=f"row {row_num}", message="team_id is missing or empty.")
-            )
-            continue
         if not team_name:
             errors.append(
                 ValidationError(location=f"row {row_num}", message="team_name is missing or empty.")
             )
             continue
 
-        member_id = str(row_dict.get("member_id", "")).strip()
-        name = str(row_dict.get("name", "")).strip()
-
-        if not member_id:
-            errors.append(
-                ValidationError(location=f"row {row_num}", message="member_id is missing or empty.")
-            )
-            continue
-        if not name:
-            errors.append(
-                ValidationError(location=f"row {row_num}", message="name is missing or empty.")
-            )
-            continue
+        raw_team_id = str(row_dict.get("team_id", "")).strip() if "team_id" in row_dict else ""
+        if raw_team_id:
+            team_id = raw_team_id
+        else:
+            team_id = generate_stable_team_id(team_name)
 
         # Inconsistent team_name check
         if team_id in team_names:
@@ -209,16 +226,49 @@ def parse_csv(
         else:
             team_names[team_id] = team_name
 
+        name = str(row_dict.get("name", "")).strip()
+        if not name:
+            errors.append(
+                ValidationError(location=f"row {row_num}", message="name is missing or empty.")
+            )
+            continue
+
+        team_member_counts[team_id] = team_member_counts.get(team_id, 0) + 1
+        raw_member_id = str(row_dict.get("member_id", "")).strip() if "member_id" in row_dict else ""
+
+        existing_m_ids = {m["member_id"] for m in team_rows.get(team_id, [])}
+        if raw_member_id:
+            member_id = raw_member_id
+        else:
+            curr_idx = team_member_counts[team_id]
+            member_id = generate_stable_member_id(team_id, curr_idx)
+            while member_id in existing_m_ids:
+                curr_idx += 1
+                member_id = generate_stable_member_id(team_id, curr_idx)
+            team_member_counts[team_id] = curr_idx
+
         # Construct member data dictionary
         # Preserve original row values in raw_data
         raw_row_data = {original_columns[i]: row.iloc[i] for i in range(len(original_columns))}
         custom_fields: dict[str, Any] = {}
         field_statuses: dict[str, FieldPresenceStatus] = {
-            "team_id": FieldPresenceStatus.PRESENT,
             "team_name": FieldPresenceStatus.PRESENT,
-            "member_id": FieldPresenceStatus.PRESENT,
             "name": FieldPresenceStatus.PRESENT,
         }
+
+        if "team_id" in row_dict:
+            field_statuses["team_id"] = (
+                FieldPresenceStatus.PRESENT if raw_team_id else FieldPresenceStatus.COLLECTED_BLANK
+            )
+        else:
+            field_statuses["team_id"] = FieldPresenceStatus.NOT_COLLECTED
+
+        if "member_id" in row_dict:
+            field_statuses["member_id"] = (
+                FieldPresenceStatus.PRESENT if raw_member_id else FieldPresenceStatus.COLLECTED_BLANK
+            )
+        else:
+            field_statuses["member_id"] = FieldPresenceStatus.NOT_COLLECTED
 
         member_data: dict[str, Any] = {
             "member_id": member_id,
@@ -361,6 +411,21 @@ def parse_json(
         # Remap team object keys if mapping provided
         team_obj = _apply_json_mapping(raw_team_obj, norm_mapping)
 
+        # Ensure team_name and stable team_id
+        raw_team_name = str(team_obj.get("team_name", "")).strip() if "team_name" in team_obj and team_obj["team_name"] is not None else ""
+        raw_team_id = str(team_obj.get("team_id", "")).strip() if "team_id" in team_obj and team_obj["team_id"] is not None else ""
+
+        if not raw_team_name and not raw_team_id:
+            errors.append(
+                ValidationError(location=loc, message="team_name is required.")
+            )
+            continue
+
+        if not raw_team_name:
+            team_obj["team_name"] = raw_team_id
+        if not raw_team_id:
+            team_obj["team_id"] = generate_stable_team_id(team_obj["team_name"])
+
         # Track unmapped team keys
         for k in team_obj.keys():
             if k not in {"team_id", "team_name", "members", "custom_fields", "raw_data"}:
@@ -399,6 +464,10 @@ def parse_json(
             if "member_name" in m_obj and "name" not in m_obj:
                 m_obj["name"] = m_obj.pop("member_name")
 
+            raw_m_id = str(m_obj.get("member_id", "")).strip() if "member_id" in m_obj and m_obj["member_id"] is not None else ""
+            if not raw_m_id:
+                m_obj["member_id"] = generate_stable_member_id(team_obj["team_id"], m_idx + 1)
+
             # Track unmapped member keys
             for k in m_obj.keys():
                 if k not in _RECOGNIZED_MEMBER_COLUMNS and k not in {"custom_fields", "raw_data", "field_statuses"}:
@@ -406,6 +475,13 @@ def parse_json(
 
             # Build field_statuses
             field_statuses = {}
+            if "member_id" in raw_m:
+                field_statuses["member_id"] = (
+                    FieldPresenceStatus.PRESENT if raw_m_id else FieldPresenceStatus.COLLECTED_BLANK
+                )
+            else:
+                field_statuses["member_id"] = FieldPresenceStatus.NOT_COLLECTED
+
             for field in _OPTIONAL_PROFILE_FIELDS:
                 if field in m_obj:
                     val = m_obj[field]
