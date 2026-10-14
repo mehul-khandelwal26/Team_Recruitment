@@ -15,6 +15,7 @@ import json
 from typing import Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from starlette.concurrency import run_in_threadpool
 
 from app.api.endpoints.ingestion import _resolve_parser
 from app.schemas.ingestion import MemberSchema, TeamSchema
@@ -67,7 +68,8 @@ async def extract_signals(request: ExtractionRunRequest) -> ExtractionRunRespons
     Preserves all member and team associations without combining results into
     composite scores.
     """
-    return default_signal_registry.execute_extraction(
+    return await run_in_threadpool(
+        default_signal_registry.execute_extraction,
         teams=request.teams,
         selected_signals=request.selected_signals,
         config=request.config,
@@ -155,7 +157,8 @@ async def extract_signals_from_file(
             errors=err_msgs,
         )
 
-    return default_signal_registry.execute_extraction(
+    return await run_in_threadpool(
+        default_signal_registry.execute_extraction,
         teams=upload_result.teams,
         selected_signals=active_signals,
         config=config_dict,
@@ -239,7 +242,8 @@ async def extract_signals_from_resume_file(
         members=[single_member],
     )
 
-    return default_signal_registry.execute_extraction(
+    return await run_in_threadpool(
+        default_signal_registry.execute_extraction,
         teams=[single_team],
         selected_signals=active_signals,
         config=config_dict,

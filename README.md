@@ -129,10 +129,10 @@ Extracts technical background, projects, work experience, and educational creden
 - **`resume_projects`** (`list`): Self-reported projects with `name`, `technologies`, `description`, `evidence`, and `verified: False`.
 - **`resume_education`** (`dict`): Academic credentials including `degree`, `degree_short`, `institution`, `graduation_year`, and `gpa`.
 - **`resume_degree_level`** (`string`): Canonical degree level (e.g. `"B.Tech"`, `"B.E."`, `"M.Tech"`, `"Ph.D."`).
-- **`resume_experience`** (`list`): Internships and employment history with `role`, `company`, `duration`, `description`, and `evidence`.
-- **`resume_experience_years`** (`float`): Estimated duration of technical experience in years (unit: `years`).
-- **`resume_certifications_achievements`** (`list`): Certifications, competitive programming honors, and hackathon placements.
-- **`resume_external_links`** (`dict`): Professional links grouped by `github`, `linkedin`, `portfolio`, `competitive_programming`, and `other`.
+- **`resume_experience`** (`list`): Internships and employment history with `role`, `organization`, `duration`, `description`, and `evidence`.
+- **`resume_experience_years`** (`float`): Estimated duration of technical experience in years (unit: `years`), computed with month-level precision, active 'Present' duration calculation, and overlapping interval merging.
+- **`resume_certifications_achievements`** (`list`): Certifications, hackathon placements (`Winner`, `Runner-up`, `Finalist`, `Champion`, `1st Place`), and honors with stripped bullet prefixes.
+- **`resume_external_links`** (`dict`): Professional links grouped by `github_urls`, `linkedin_urls`, `portfolio_urls`, `competitive_programming_urls`, and `other_urls`.
 
 *Input methods supported*:
 - Direct multipart file uploads via `POST /api/signals/extract-resume` (`.pdf` and `.docx`).
@@ -140,10 +140,12 @@ Extracts technical background, projects, work experience, and educational creden
 - Raw bytes passed via `custom_fields["resume_bytes"]`.
 
 *Document safety & security controls*:
-- **SSRF defense**: Pre-connection DNS resolution blocks loopback (`127.0.0.0/8`, `::1`), private subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), and cloud metadata IPs (`169.254.169.254`). Non-standard ports are rejected.
-- **Resource protection**: Enforces a strict 10 MB file-size limit (`MAX_RESUME_FILE_SIZE_BYTES`) and 10.0s connection timeouts.
-- **Fault isolation**: Encrypted, malformed, empty, or scanned image documents fail gracefully with informative error messages (`SignalStatus.FAILED`), without halting other team members or other analyzers.
-- **Provenance tracking**: All resume signals carry `SignalEvidence` with `provenance: "self_reported_resume"` and `verified: False` to maintain a clear boundary from verified external profile APIs.
+- **Local-File Security Policy**: Local paths, `file://` URIs, and UNC network shares (`\\server\share`, `//server/share`) are strictly blocked by default (`allow_local_files` defaults to `False`), returning `SignalStatus.FAILED` with a generic message without touching the filesystem or leaking file existence. Local file access is only enabled when explicitly configured with `{"allow_local_files": True}` (UNC network shares remain blocked).
+- **SSRF & DNS Rebinding Defense**: Pre-connection resolution validates that all resolved addresses are globally routable (`ip.is_global`), blocking loopback (`127.0.0.0/8`, `::1`), private subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), link-local, Carrier-Grade NAT (`100.64.0.0/10`), and cloud metadata IPs (`169.254.169.254`). Ports are strictly restricted to `{80, 443}` (rejecting 8080/8443). `SSRFSafeNetworkBackend` re-validates the connected peer socket IP at connect time to prevent DNS rebinding attacks, and HTTP redirects are strictly rejected.
+- **Non-Blocking I/O**: Synchronous extraction work is executed via `starlette.concurrency.run_in_threadpool`, ensuring long PDF parses or downloads do not block the event loop or freeze `/api/health`.
+- **Dynamic Confidence Scoring**: Replaces static values with evidence-calibrated confidence in `[0.0, 1.0]` across all 12 signals based on document length quality and evidence strength (e.g. `degree_and_institution_found`, `dated_experience_entries`, `validated_urls_with_recognized_domains`). The rule applied is recorded in `metadata["confidence_rule"]`.
+- **Resource Protection & Fault Isolation**: Enforces a 10 MB file-size limit and 10.0s connection timeouts. Corrupted, encrypted, empty, or unreadable documents fail gracefully without halting other team members or other analyzers.
+- **Provenance Tracking**: All resume signals carry `SignalEvidence` with `provenance: "self_reported_resume"` and `verified: False` to maintain a clear boundary from verified external profile APIs.
 
 ### How to Register a Future Analyzer
 

@@ -25,62 +25,6 @@ from app.signals.schemas import (
 # ---------------------------------------------------------------------------
 
 
-class ResumeParserContract(BaseSignalExtractor):
-    """Contract specification for future PDF/Word resume analysis."""
-
-    @property
-    def descriptor(self) -> ExtractorDescriptor:
-        return ExtractorDescriptor(
-            extractor_id="resume_parser",
-            name="Resume & CV Skill Extractor",
-            description="Parses uploaded resumes for technical skills, years of experience, and education.",
-            category="experience",
-            required_inputs=["resume_url"],
-            optional_inputs=[],
-            produced_signals=[
-                "resume_extracted_skills",
-                "resume_experience_years",
-                "resume_degree_level",
-            ],
-            signals=[
-                SignalDefinition(
-                    signal_key="resume_extracted_skills",
-                    name="Extracted Skills",
-                    description="Technical skills identified in resume text.",
-                    category="experience",
-                    value_type="list",
-                ),
-                SignalDefinition(
-                    signal_key="resume_experience_years",
-                    name="Years of Experience",
-                    description="Estimated years of professional experience.",
-                    category="experience",
-                    value_type="float",
-                ),
-                SignalDefinition(
-                    signal_key="resume_degree_level",
-                    name="Highest Degree Level",
-                    description="Highest academic degree identified.",
-                    category="experience",
-                    value_type="string",
-                ),
-            ],
-            is_enabled_by_default=False,
-        )
-
-    def extract(
-        self,
-        member: MemberSchema,
-        selected_signals: set[str] | None = None,
-        config: dict | None = None,
-    ) -> list[ExtractedSignal]:
-        return [
-            ExtractedSignal(
-                signal_key="resume_extracted_skills",
-                category="experience",
-                status=SignalStatus.PENDING,
-            )
-        ]
 
 
 class PortfolioAnalyzerContract(BaseSignalExtractor):

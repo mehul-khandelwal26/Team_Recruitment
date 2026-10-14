@@ -22,6 +22,7 @@ Covers:
 
 from __future__ import annotations
 
+import datetime
 import io
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -38,6 +39,11 @@ from app.signals.registry import default_signal_registry
 from app.signals.resume import (
     ResumeSignalExtractor,
     download_resume_file,
+    extract_certifications_achievements_from_text,
+    extract_education_from_text,
+    extract_experience_from_text,
+    extract_external_links_from_text,
+    extract_skills_from_text,
     extract_text_from_document,
     validate_url_security,
 )
@@ -625,3 +631,316 @@ class TestRegistryAndAPIFunctionality:
         )
         assert resp.status_code == 400
         assert "unsupported" in resp.json()["detail"].lower()
+
+
+# =========================================================================
+# Prompt 3.1 Hardening Tests (Security & Accuracy Verification)
+# =========================================================================
+
+
+class TestResumeHardeningP31:
+    """Tests for Prompt 3.1 Security & Accuracy Hardening."""
+
+    # 1. P0.1 - Local files
+    def test_local_file_access_disabled_by_default(self, tmp_path):
+        """By default, allow_local_files is False; absolute and file:// paths fail without leaking existence."""
+        probe_file = tmp_path / "probe.pdf"
+        probe_file.write_bytes(b"%PDF-1.4 dummy")
+
+        m_abs = MemberSchema(member_id="m1", name="Alice", resume_url=str(probe_file))
+        res = ResumeSignalExtractor().extract(m_abs, {"resume_extracted_skills"}, {})
+        assert res[0].status == SignalStatus.FAILED
+        assert res[0].error_message == "Local file access is disabled."
+
+        # Non-existent file also gives generic message (no existence oracle)
+        m_nonexist = MemberSchema(member_id="m2", name="Bob", resume_url=str(tmp_path / "ghost.pdf"))
+        res_ne = ResumeSignalExtractor().extract(m_nonexist, {"resume_extracted_skills"}, {})
+        assert res_ne[0].status == SignalStatus.FAILED
+        assert res_ne[0].error_message == "Local file access is disabled."
+
+        # file:// scheme also rejected by default
+        m_file_uri = MemberSchema(member_id="m3", name="Charlie", resume_url=f"file:///{probe_file}")
+        res_uri = ResumeSignalExtractor().extract(m_file_uri, {"resume_extracted_skills"}, {})
+        assert res_uri[0].status == SignalStatus.FAILED
+        assert res_uri[0].error_message == "Local file access is disabled."
+
+    def test_unc_paths_blocked_without_smb_hang(self):
+        """UNC paths (\\\\server\\share, //server/share) are rejected without touching filesystem."""
+        unc_path = r"\\192.168.1.100\resumes\resume.pdf"
+        m_unc = MemberSchema(member_id="m_unc", name="UNC", resume_url=unc_path)
+        # With default config:
+        res = ResumeSignalExtractor().extract(m_unc, {"resume_extracted_skills"}, {})
+        assert res[0].status == SignalStatus.FAILED
+        assert res[0].error_message == "Local file access is disabled."
+
+        # Even with allow_local_files=True, UNC is rejected:
+        res_cfg = ResumeSignalExtractor().extract(m_unc, {"resume_extracted_skills"}, {"allow_local_files": True})
+        assert res_cfg[0].status == SignalStatus.FAILED
+        assert res_cfg[0].error_message == "Local file access is disabled."
+
+    def test_local_file_allowed_with_explicit_config(self, tmp_path):
+        """When allow_local_files is explicitly True, valid files are read; missing files return not found."""
+        pdf_bytes = make_test_pdf_bytes(["Python Developer", "Education", "B.Tech in Computer Science"])
+        pdf_file = tmp_path / "valid.pdf"
+        pdf_file.write_bytes(pdf_bytes)
+
+        m_ok = MemberSchema(member_id="m_ok", name="Ok", resume_url=str(pdf_file))
+        res = ResumeSignalExtractor().extract(m_ok, {"resume_extracted_skills"}, {"allow_local_files": True})
+        assert res[0].status == SignalStatus.EXTRACTED
+        assert "Python" in res[0].value["languages"]
+
+        # Missing file returns clear not found with path
+        missing_path = str(tmp_path / "not_there.pdf")
+        m_miss = MemberSchema(member_id="m_miss", name="Miss", resume_url=missing_path)
+        res_m = ResumeSignalExtractor().extract(m_miss, {"resume_extracted_skills"}, {"allow_local_files": True})
+        assert res_m[0].status == SignalStatus.FAILED
+        assert "Local resume file not found:" in res_m[0].error_message
+
+    # 2. P0.2 - SSRF & DNS rebinding
+    def test_ssrf_port_allowlist_strictly_80_443(self):
+        """Only ports 80 and 443 are allowed; 8080 and 8443 are blocked."""
+        with patch("socket.getaddrinfo") as mock_gai:
+            mock_gai.return_value = [(2, 1, 6, "", ("93.184.216.34", 80))]
+            safe_80, _ = validate_url_security("http://example.com:80/resume.pdf")
+            safe_443, _ = validate_url_security("https://example.com:443/resume.pdf")
+            blocked_8080, err_8080 = validate_url_security("http://example.com:8080/resume.pdf")
+            blocked_8443, err_8443 = validate_url_security("https://example.com:8443/resume.pdf")
+
+        assert safe_80 is True
+        assert safe_443 is True
+        assert blocked_8080 is False
+        assert "Restricted port" in err_8080
+        assert blocked_8443 is False
+        assert "Restricted port" in err_8443
+
+    def test_ssrf_rejects_cgnat_ips(self):
+        """Carrier-Grade NAT (100.64.0.0/10) is rejected."""
+        with patch("socket.getaddrinfo") as mock_gai:
+            mock_gai.return_value = [(2, 1, 6, "", ("100.64.0.1", 80))]
+            safe, err = validate_url_security("http://cgnat.test/resume.pdf")
+            assert safe is False
+            assert "non-global IP address" in err or "blocked" in err
+
+    def test_download_rejects_http_redirects(self):
+        """Redirects (301/302) are rejected to prevent redirect-based SSRF."""
+        with patch("app.signals.resume.validate_url_security", return_value=(True, None)):
+            with patch("httpx.Client.stream") as mock_stream:
+                mock_resp = MagicMock()
+                mock_resp.status_code = 302
+                mock_stream.return_value.__enter__.return_value = mock_resp
+                bytes_out, err = download_resume_file("https://example.com/redirect.pdf")
+                assert bytes_out is None
+                assert "redirects are not permitted" in err.lower()
+
+    # 3. P0.3 - Non-blocking I/O
+    def test_health_check_responds_during_extraction(self):
+        """FastAPI event loop remains responsive for /api/health while extraction runs in threadpool."""
+        import asyncio
+        import time
+
+        async def run():
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+                async def delayed_extract():
+                    orig_execute = default_signal_registry.execute_extraction
+
+                    def slow_sync(teams, selected_signals, config):
+                        time.sleep(0.3)
+                        return orig_execute(teams=teams, selected_signals=selected_signals, config=config)
+
+                    req_payload = {
+                        "teams": [
+                            {
+                                "team_id": "T_ASYNC",
+                                "team_name": "Async Team",
+                                "members": [{"member_id": "M_ASYNC", "name": "Async Dev", "resume_url": "resume.pdf", "custom_fields": {"resume_text": "Python developer"}}],
+                            }
+                        ],
+                        "selected_signals": ["resume_extracted_skills"],
+                    }
+                    with patch.object(default_signal_registry, "execute_extraction", side_effect=slow_sync):
+                        return await ac.post(EXTRACT_URL, json=req_payload)
+
+                async def probe_health():
+                    await asyncio.sleep(0.05)
+                    t0 = time.perf_counter()
+                    resp = await ac.get("/api/health")
+                    t_elapsed = time.perf_counter() - t0
+                    return resp.status_code, t_elapsed
+
+                res_extract, (health_status, health_elapsed) = await asyncio.gather(
+                    delayed_extract(),
+                    probe_health(),
+                )
+                assert health_status == 200
+                assert res_extract.status_code == 200
+                assert health_elapsed < 0.25
+
+        asyncio.run(run())
+
+    # 4. P1.4 - Links accuracy & schemeless
+    def test_schemeless_and_competitive_programming_links(self):
+        """Schemeless URLs, CP platforms, and normalized https:// are properly extracted."""
+        raw_text = (
+            "Contact: github.com/test-user, www.linkedin.com/in/test-user., "
+            "leetcode.com/problem_solver; codeforces.com/profile/tourist) "
+            "portfolio.dev/me! Also check kaggle.com/grandmaster"
+        )
+        data, evidence = extract_external_links_from_text(raw_text)
+
+        assert "https://github.com/test-user" in data["github_urls"]
+        assert "https://www.linkedin.com/in/test-user" in data["linkedin_urls"]
+        assert "https://leetcode.com/problem_solver" in data["competitive_programming_urls"]
+        assert "https://codeforces.com/profile/tourist" in data["competitive_programming_urls"]
+        assert "https://kaggle.com/grandmaster" in data["competitive_programming_urls"]
+        assert "https://portfolio.dev/me" in data["portfolio_urls"]
+        assert not any(u.endswith((".", ",", ";", "!", ")")) for u in data["github_urls"] + data["competitive_programming_urls"])
+
+    # 5. P1.5 - Experience duration & parsing
+    def test_experience_with_present_and_injectable_today(self):
+        """Active role with 'Present' uses reference date and never returns 0.0."""
+        text = "Backend Developer | Startup Labs | Jan 2024 - Present"
+        ref_date = datetime.date(2026, 10, 1)  # ~34 months = 2.83 years
+        entries, years, evidence = extract_experience_from_text(text, today=ref_date)
+
+        assert len(entries) == 1
+        assert entries[0]["role"] == "Backend Developer"
+        assert entries[0]["organization"] == "Startup Labs"
+        assert 2.7 <= years <= 2.9
+
+    def test_unstructured_resume_without_experience_header(self):
+        """Unstructured resumes without 'Experience' section still extract dated roles."""
+        text = "Rahul Sharma\nSoftware Engineer at TechCorp\nJune 2021 - May 2023\nBuilt distributed databases"
+        entries, years, _ = extract_experience_from_text(text)
+        assert len(entries) >= 1
+        assert entries[0]["role"] == "Software Engineer"
+        assert entries[0]["organization"] == "TechCorp"
+        assert 1.9 <= years <= 2.1
+
+    def test_multiline_job_entry_not_split(self):
+        """Multi-line job entries are grouped together instead of creating split duplicate entries."""
+        text = (
+            "Experience\n"
+            "Software Engineer at Acme Corp\n"
+            "Jan 2022 - Dec 2022\n"
+            "- Developed payment gateways\n"
+            "- Optimized SQL queries"
+        )
+        entries, years, _ = extract_experience_from_text(text)
+        assert len(entries) == 1
+        assert entries[0]["role"] == "Software Engineer"
+        assert entries[0]["organization"] == "Acme Corp"
+        assert entries[0]["duration"] == "Jan 2022 - Dec 2022"
+
+    def test_experience_overlapping_intervals_merged(self):
+        """Overlapping job intervals are merged to avoid double-counting experience."""
+        text = (
+            "Experience\n"
+            "Role 1 | Company A | Jan 2023 - Dec 2023\n"
+            "Role 2 | Company B | Jun 2023 - Jun 2024\n"
+        )
+        # Jan 2023 to Jun 2024 = 18 months = 1.5 years (not 1.0 + 1.0 = 2.0)
+        entries, years, _ = extract_experience_from_text(text)
+        assert len(entries) == 2
+        assert years == 1.5
+
+    def test_internship_date_fallback_flag(self):
+        """Undated internships receive 0.25 fallback and fallback_dates=True; dated ones use real duration."""
+        undated = "Experience\nSoftware Engineer Intern at BigCo"
+        entries_u, years_u, _ = extract_experience_from_text(undated)
+        assert len(entries_u) == 1
+        assert entries_u[0]["fallback_dates"] is True
+        assert years_u == 0.25
+
+        dated = "Experience\nSoftware Engineer Intern at BigCo | Jun 2023 - Aug 2023"
+        entries_d, years_d, _ = extract_experience_from_text(dated)
+        assert len(entries_d) == 1
+        assert entries_d[0].get("fallback_dates") is not True
+        assert 0.24 <= years_d <= 0.26
+
+    # 6. P1.6 - Education accuracy & graduation year
+    def test_education_latest_year_extracted_from_range(self):
+        """Graduation year range '2020 - 2024' extracts the latest year (2024)."""
+        text = "Education\nB.Tech in Computer Science\nNational Institute of Technology, Trichy\n2020 - 2024"
+        edu, deg_short, _ = extract_education_from_text(text)
+        assert edu["degree_short"] == "B.Tech"
+        assert edu["institution"] == "National Institute of Technology, Trichy"
+        assert edu["graduation_year"] == 2024
+
+    def test_degree_pattern_does_not_match_lowercase_be(self):
+        """Lowercase 'be' in conversational prose never matches Bachelor of Engineering."""
+        text = "I aspire to be a leader in technology."
+        edu, deg_short, _ = extract_education_from_text(text)
+        assert edu["degree"] is None
+        assert deg_short is None
+
+    def test_ms_office_and_ms_sql_do_not_match_degree(self):
+        """Mentions of MS Office or MS SQL Server do not match Master of Science degree."""
+        text = "Skills: MS Office, MS SQL Server. I want to be a leader."
+        edu, deg_short, _ = extract_education_from_text(text)
+        assert edu["degree"] is None
+        assert deg_short is None
+
+    # 7. P1.7 - Skill false positives in prose
+    def test_prose_ambiguous_words_yield_zero_skills_and_degrees(self):
+        """Conversational prose with ambiguous keywords yields zero skills and zero degrees."""
+        prose = "In my next role, I want to express my ideas swiftly to be a leader."
+        skills, _ = extract_skills_from_text(prose)
+        edu, deg, _ = extract_education_from_text(prose)
+
+        assert skills["languages"] == []
+        assert skills["frameworks"] == []
+        assert skills["total_skills_count"] == 0
+        assert edu["degree"] is None
+        assert deg is None
+
+    def test_ambiguous_skills_extracted_in_tech_list_or_skills_section(self):
+        """Ambiguous skills match when in Skills section or tech list."""
+        tech_list = "Skills: Python, Rust, Swift, Go, Next.js, Express"
+        skills, _ = extract_skills_from_text(tech_list)
+        assert "Python" in skills["languages"]
+        assert "Rust" in skills["languages"]
+        assert "Swift" in skills["languages"]
+        assert "Go" in skills["languages"]
+        assert "Next.js" in skills["frameworks"]
+        assert "Express" in skills["frameworks"]
+
+    # 8. P1.8 - Achievements & Hackathons
+    def test_hackathon_and_achievements_detection(self):
+        """Detects varied hackathon placement formats and strips bullet prefixes."""
+        text = (
+            "Achievements\n"
+            "1. Winner - Hackathon 2023\n"
+            "• Runner-up | Smart India Hackathon\n"
+            "- Finalist (Global AI Hackathon)\n"
+            "Hackathon Champion 2024\n"
+        )
+        items, evidence = extract_certifications_achievements_from_text(text)
+        titles = [i["title"] for i in items]
+        assert any("Winner" in t for t in titles)
+        assert any("Runner-up" in t or "Smart India" in t for t in titles)
+        assert any("Finalist" in t for t in titles)
+        assert any("Champion" in t for t in titles)
+        assert not any(t.startswith(("1.", "•", "-")) for t in titles)
+
+    # 10. P2.10 - Dynamic confidence
+    def test_dynamic_confidence_attached_to_all_12_signals(self):
+        """All 12 produced resume signals include dynamic confidence in [0.0, 1.0] and confidence_rule."""
+        pdf_bytes = make_test_pdf_bytes(STANDARD_RESUME_LINES)
+        member = MemberSchema(
+            member_id="m_conf",
+            name="Conf Candidate",
+            resume_url="resume.pdf",
+            custom_fields={"resume_bytes": pdf_bytes},
+        )
+        signals = ResumeSignalExtractor().extract(member)
+
+        assert len(signals) == 12
+        for s in signals:
+            assert s.status == SignalStatus.EXTRACTED
+            assert s.evidence is not None
+            assert s.evidence.confidence is not None
+            assert 0.0 <= s.evidence.confidence <= 1.0
+            assert "confidence_rule" in s.evidence.metadata
+            assert isinstance(s.evidence.metadata["confidence_rule"], str)
+
