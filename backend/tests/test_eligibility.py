@@ -105,16 +105,16 @@ class TestCatalogAndPresets:
         assert len(items) == 10
         rule_types = {item["rule_type"] for item in items}
         expected = {
-            "team_size_range",
+            "team_size_min",
+            "team_size_max",
             "required_link",
-            "required_fields_present",
             "required_signal_present",
-            "cgpa_minimum",
-            "normalized_cgpa_minimum",
-            "github_repos_minimum",
-            "academic_year_range",
+            "signal_threshold",
+            "signal_contains",
             "allowed_values",
-            "custom_signal_threshold",
+            "track_limit",
+            "duplicate_member_email",
+            "required_fields_present",
         }
         assert rule_types == expected
 

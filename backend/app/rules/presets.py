@@ -1,20 +1,23 @@
 """Built-in rule configuration presets for hackathons and team recruitment.
 
 Presets:
-1. 'basic': Core team size (2-4), at least one GitHub URL (hard), and CGPA >= 6.0 (soft).
-2. 'strict': Team size (2-4), all members have GitHub (hard), all members CGPA >= 7.0 (hard),
-   any member has >= 1 repo (hard), and all members have resume link (soft).
-3. 'open_solo': Permissive team size (1-4), at least one GitHub URL (hard), CGPA >= 6.0 (soft).
+1. 'basic': Standard sizing (2-4 members), at least one GitHub URL (hard), and CGPA >= 6.0 advisory (soft).
+2. 'strict': Rigorous sizing (2-4 members), all members have GitHub (hard), all members CGPA >= 7.0 (hard),
+   any member has >= 1 public repo (hard), and all members have resume link (soft).
+3. 'open_solo': Permissive sizing (1-4 members), at least one GitHub URL (hard), CGPA >= 6.0 advisory (soft).
 
 Condition 3 enforced:
-No preset contains a hard rule that depends on resume signals.
+No preset contains a hard rule that depends on resume-derived signals.
 """
 
 from __future__ import annotations
 
 import datetime
+
 from app.rules.schemas import (
+    AggregationMethod,
     GlobalRuleConfig,
+    MemberSelection,
     OnMissingAction,
     RuleConfiguration,
     RuleDefinition,
@@ -24,7 +27,7 @@ from app.rules.schemas import (
 
 
 def get_default_presets() -> list[RuleConfiguration]:
-    """Generate the standard built-in configuration presets."""
+    """Generate the standard built-in configuration presets using generic rule types."""
     now_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
     # 1. Basic Preset
@@ -36,16 +39,28 @@ def get_default_presets() -> list[RuleConfiguration]:
         global_config=GlobalRuleConfig(lead_field="role"),
         rules=[
             RuleDefinition(
-                rule_id="basic_team_size",
-                rule_type="team_size_range",
-                name="Team Size (2-4 Members)",
-                description="Team must have between 2 and 4 registered members.",
+                rule_id="basic_team_size_min",
+                rule_type="team_size_min",
+                name="Minimum Team Size (>= 2 Members)",
+                description="Team must have at least 2 registered members.",
                 severity=RuleSeverity.HARD,
-                scope=RuleScope.TEAM_LEVEL,
+                scope=RuleScope.TEAM,
                 is_enabled=True,
                 order=1,
                 on_missing=OnMissingAction.MANUAL_REVIEW,
-                parameters={"min_size": 2, "max_size": 4},
+                parameters={"min_size": 2},
+            ),
+            RuleDefinition(
+                rule_id="basic_team_size_max",
+                rule_type="team_size_max",
+                name="Maximum Team Size (<= 4 Members)",
+                description="Team must have no more than 4 registered members.",
+                severity=RuleSeverity.HARD,
+                scope=RuleScope.TEAM,
+                is_enabled=True,
+                order=2,
+                on_missing=OnMissingAction.MANUAL_REVIEW,
+                parameters={"max_size": 4},
             ),
             RuleDefinition(
                 rule_id="basic_github_presence",
@@ -53,23 +68,32 @@ def get_default_presets() -> list[RuleConfiguration]:
                 name="Technical Profile Link (Any Member)",
                 description="At least one team member must provide a GitHub profile link.",
                 severity=RuleSeverity.HARD,
-                scope=RuleScope.ANY_MEMBER,
-                is_enabled=True,
-                order=2,
-                on_missing=OnMissingAction.MANUAL_REVIEW,
-                parameters={"link_type": "github_url"},
-            ),
-            RuleDefinition(
-                rule_id="basic_academic_cgpa",
-                rule_type="cgpa_minimum",
-                name="Academic Standing (CGPA >= 6.0)",
-                description="Members should maintain a minimum CGPA of 6.0.",
-                severity=RuleSeverity.SOFT,  # Soft rule: provides signal without disqualifying
-                scope=RuleScope.ALL_MEMBERS,
+                scope=RuleScope.MEMBER,
+                member_selection=MemberSelection.ANY_MEMBER,
                 is_enabled=True,
                 order=3,
                 on_missing=OnMissingAction.MANUAL_REVIEW,
-                parameters={"min_cgpa": 6.0},
+                parameters={"link_field": "github_url", "member_selection": "any_member"},
+            ),
+            RuleDefinition(
+                rule_id="basic_academic_cgpa",
+                rule_type="signal_threshold",
+                name="Academic Standing (CGPA >= 6.0)",
+                description="Members should maintain a minimum CGPA of 6.0.",
+                severity=RuleSeverity.SOFT,  # Soft advisory rule
+                scope=RuleScope.MEMBER,
+                member_selection=MemberSelection.ALL_MEMBERS,
+                aggregation=AggregationMethod.ALL,
+                is_enabled=True,
+                order=4,
+                on_missing=OnMissingAction.MANUAL_REVIEW,
+                parameters={
+                    "signal_key": "academic_cgpa",
+                    "operator": ">=",
+                    "threshold": 6.0,
+                    "member_selection": "all_members",
+                    "aggregation": "all",
+                },
             ),
         ],
         is_active=True,
@@ -86,16 +110,28 @@ def get_default_presets() -> list[RuleConfiguration]:
         global_config=GlobalRuleConfig(lead_field="role"),
         rules=[
             RuleDefinition(
-                rule_id="strict_team_size",
-                rule_type="team_size_range",
-                name="Team Size (2-4 Members)",
-                description="Team must have between 2 and 4 registered members.",
+                rule_id="strict_team_size_min",
+                rule_type="team_size_min",
+                name="Minimum Team Size (>= 2 Members)",
+                description="Team must have at least 2 registered members.",
                 severity=RuleSeverity.HARD,
-                scope=RuleScope.TEAM_LEVEL,
+                scope=RuleScope.TEAM,
                 is_enabled=True,
                 order=1,
                 on_missing=OnMissingAction.FAIL,
-                parameters={"min_size": 2, "max_size": 4},
+                parameters={"min_size": 2},
+            ),
+            RuleDefinition(
+                rule_id="strict_team_size_max",
+                rule_type="team_size_max",
+                name="Maximum Team Size (<= 4 Members)",
+                description="Team must have no more than 4 registered members.",
+                severity=RuleSeverity.HARD,
+                scope=RuleScope.TEAM,
+                is_enabled=True,
+                order=2,
+                on_missing=OnMissingAction.FAIL,
+                parameters={"max_size": 4},
             ),
             RuleDefinition(
                 rule_id="strict_all_github",
@@ -103,47 +139,65 @@ def get_default_presets() -> list[RuleConfiguration]:
                 name="GitHub Required for All Members",
                 description="Every team member must provide a valid GitHub profile URL.",
                 severity=RuleSeverity.HARD,
-                scope=RuleScope.ALL_MEMBERS,
+                scope=RuleScope.MEMBER,
+                member_selection=MemberSelection.ALL_MEMBERS,
                 is_enabled=True,
-                order=2,
+                order=3,
                 on_missing=OnMissingAction.FAIL,
-                parameters={"link_type": "github_url"},
+                parameters={"link_field": "github_url", "member_selection": "all_members"},
             ),
             RuleDefinition(
                 rule_id="strict_cgpa_min",
-                rule_type="cgpa_minimum",
+                rule_type="signal_threshold",
                 name="High Academic Bar (CGPA >= 7.0)",
-                description="All members must have a CGPA of at least 7.0.",
+                description="All members must have an academic CGPA of at least 7.0.",
                 severity=RuleSeverity.HARD,
-                scope=RuleScope.ALL_MEMBERS,
-                is_enabled=True,
-                order=3,
-                on_missing=OnMissingAction.MANUAL_REVIEW,
-                parameters={"min_cgpa": 7.0},
-            ),
-            RuleDefinition(
-                rule_id="strict_github_activity",
-                rule_type="github_repos_minimum",
-                name="Active Codebase (>= 1 Public Repo)",
-                description="At least one team member must have at least 1 public repository.",
-                severity=RuleSeverity.HARD,
-                scope=RuleScope.ANY_MEMBER,
+                scope=RuleScope.MEMBER,
+                member_selection=MemberSelection.ALL_MEMBERS,
+                aggregation=AggregationMethod.ALL,
                 is_enabled=True,
                 order=4,
                 on_missing=OnMissingAction.MANUAL_REVIEW,
-                parameters={"min_repos": 1},
+                parameters={
+                    "signal_key": "academic_cgpa",
+                    "operator": ">=",
+                    "threshold": 7.0,
+                    "member_selection": "all_members",
+                    "aggregation": "all",
+                },
+            ),
+            RuleDefinition(
+                rule_id="strict_github_activity",
+                rule_type="signal_threshold",
+                name="Active Codebase (>= 1 Public Repo)",
+                description="At least one team member must have at least 1 public repository.",
+                severity=RuleSeverity.HARD,
+                scope=RuleScope.MEMBER,
+                member_selection=MemberSelection.ANY_MEMBER,
+                aggregation=AggregationMethod.ANY,
+                is_enabled=True,
+                order=5,
+                on_missing=OnMissingAction.MANUAL_REVIEW,
+                parameters={
+                    "signal_key": "github_public_repo_count",
+                    "operator": ">=",
+                    "threshold": 1,
+                    "member_selection": "any_member",
+                    "aggregation": "any",
+                },
             ),
             RuleDefinition(
                 rule_id="strict_resume_check",
                 rule_type="required_link",
                 name="Resume Submission Check",
-                description="All members are encouraged to submit a resume.",
-                severity=RuleSeverity.SOFT,  # Soft rule per Condition 3
-                scope=RuleScope.ALL_MEMBERS,
+                description="All members are encouraged to submit a resume link.",
+                severity=RuleSeverity.SOFT,  # Soft advisory rule
+                scope=RuleScope.MEMBER,
+                member_selection=MemberSelection.ALL_MEMBERS,
                 is_enabled=True,
-                order=5,
+                order=6,
                 on_missing=OnMissingAction.MANUAL_REVIEW,
-                parameters={"link_type": "resume_url"},
+                parameters={"link_field": "resume_url", "member_selection": "all_members"},
             ),
         ],
         is_active=True,
@@ -160,16 +214,28 @@ def get_default_presets() -> list[RuleConfiguration]:
         global_config=GlobalRuleConfig(lead_field="role"),
         rules=[
             RuleDefinition(
-                rule_id="solo_team_size",
-                rule_type="team_size_range",
-                name="Solo or Team (1-4 Members)",
-                description="Allows solo participants (1 member) up to teams of 4 members.",
+                rule_id="solo_team_size_min",
+                rule_type="team_size_min",
+                name="Solo or Team (>= 1 Member)",
+                description="Allows solo participants (1 member) or larger squads.",
                 severity=RuleSeverity.HARD,
-                scope=RuleScope.TEAM_LEVEL,
+                scope=RuleScope.TEAM,
                 is_enabled=True,
                 order=1,
                 on_missing=OnMissingAction.MANUAL_REVIEW,
-                parameters={"min_size": 1, "max_size": 4},
+                parameters={"min_size": 1},
+            ),
+            RuleDefinition(
+                rule_id="solo_team_size_max",
+                rule_type="team_size_max",
+                name="Maximum Team Size (<= 4 Members)",
+                description="Teams may have at most 4 members.",
+                severity=RuleSeverity.HARD,
+                scope=RuleScope.TEAM,
+                is_enabled=True,
+                order=2,
+                on_missing=OnMissingAction.MANUAL_REVIEW,
+                parameters={"max_size": 4},
             ),
             RuleDefinition(
                 rule_id="solo_github_presence",
@@ -177,23 +243,32 @@ def get_default_presets() -> list[RuleConfiguration]:
                 name="Technical Profile Link",
                 description="At least one member must provide a GitHub profile link.",
                 severity=RuleSeverity.HARD,
-                scope=RuleScope.ANY_MEMBER,
-                is_enabled=True,
-                order=2,
-                on_missing=OnMissingAction.MANUAL_REVIEW,
-                parameters={"link_type": "github_url"},
-            ),
-            RuleDefinition(
-                rule_id="solo_cgpa_check",
-                rule_type="cgpa_minimum",
-                name="Academic Recommendation (CGPA >= 6.0)",
-                description="At least one member should meet academic baseline.",
-                severity=RuleSeverity.SOFT,  # Soft rule
-                scope=RuleScope.ANY_MEMBER,
+                scope=RuleScope.MEMBER,
+                member_selection=MemberSelection.ANY_MEMBER,
                 is_enabled=True,
                 order=3,
                 on_missing=OnMissingAction.MANUAL_REVIEW,
-                parameters={"min_cgpa": 6.0},
+                parameters={"link_field": "github_url", "member_selection": "any_member"},
+            ),
+            RuleDefinition(
+                rule_id="solo_cgpa_check",
+                rule_type="signal_threshold",
+                name="Academic Recommendation (CGPA >= 6.0)",
+                description="At least one member should meet academic baseline.",
+                severity=RuleSeverity.SOFT,  # Soft advisory rule
+                scope=RuleScope.MEMBER,
+                member_selection=MemberSelection.ANY_MEMBER,
+                aggregation=AggregationMethod.ANY,
+                is_enabled=True,
+                order=4,
+                on_missing=OnMissingAction.MANUAL_REVIEW,
+                parameters={
+                    "signal_key": "academic_cgpa",
+                    "operator": ">=",
+                    "threshold": 6.0,
+                    "member_selection": "any_member",
+                    "aggregation": "any",
+                },
             ),
         ],
         is_active=True,

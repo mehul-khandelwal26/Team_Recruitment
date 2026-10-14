@@ -60,6 +60,10 @@ async def list_configurations() -> list[RuleConfiguration]:
 @router.post("/configs", response_model=RuleConfiguration, status_code=201)
 async def create_configuration(payload: RuleConfigurationCreate) -> RuleConfiguration:
     """Create a new custom eligibility rule configuration (version 1)."""
+    from app.rules.validation import validate_rule_configuration
+
+    validate_rule_configuration(payload)
+
     cfg_id = payload.config_id or f"config_{uuid.uuid4().hex[:8]}"
 
     existing = default_config_store.get(cfg_id)
@@ -110,6 +114,10 @@ async def update_configuration(
     Guarantees immutability by creating a new version with an incremented version number.
     Previous versions are preserved unchanged.
     """
+    from app.rules.validation import validate_rule_configuration
+
+    validate_rule_configuration(payload)
+
     updated = default_config_store.update(config_id, payload)
     if updated is None:
         raise HTTPException(status_code=404, detail=f"Configuration '{config_id}' not found.")

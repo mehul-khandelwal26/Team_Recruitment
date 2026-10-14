@@ -47,6 +47,7 @@ def evaluate_teams(
     signals: list[MemberSignals] | list[dict[str, Any]] | None,
     config: RuleConfiguration,
     evaluated_at: Optional[str] = None,
+    run_id: Optional[str] = None,
 ) -> EligibilityRunResponse:
     """Execute deterministic eligibility evaluation for a collection of teams.
 
@@ -55,11 +56,12 @@ def evaluate_teams(
         signals: Optional pre-extracted signals per member. The engine never calls analyzers.
         config: Versioned RuleConfiguration containing rules and global_config.
         evaluated_at: Optional injected ISO timestamp for deterministic testing.
+        run_id: Optional injected run identifier for deterministic testing.
 
     Returns:
         Standardized EligibilityRunResponse with sorted team results and summary metrics.
     """
-    run_id = f"run_{uuid.uuid4().hex[:12]}"
+    final_run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
     now_ts = evaluated_at or datetime.datetime.now(datetime.timezone.utc).isoformat()
 
     warnings: list[str] = []
@@ -100,6 +102,16 @@ def evaluate_teams(
     ineligible_count = 0
     needs_review_count = 0
     error_count = 0
+    # Pre-collect valid teams for cross-team rules (e.g. duplicate_member_email, track_limit)
+    valid_teams: list[TeamSchema] = []
+    for team_raw in teams:
+        if isinstance(team_raw, TeamSchema):
+            valid_teams.append(team_raw)
+        elif isinstance(team_raw, dict):
+            try:
+                valid_teams.append(TeamSchema.model_validate(team_raw))
+            except Exception:
+                pass
 
     for idx, team_raw in enumerate(teams):
         # 1. Validate team input into TeamSchema (Fault isolation)
@@ -172,12 +184,24 @@ def evaluate_teams(
                 continue
 
             try:
-                res = evaluator.evaluate(
-                    rule=rule,
-                    team=team_obj,
-                    signals_by_member=signals_by_member,
-                    global_config=config.global_config,
-                )
+                try:
+                    res = evaluator.evaluate(
+                        rule=rule,
+                        team=team_obj,
+                        signals_by_member=signals_by_member,
+                        global_config=config.global_config,
+                        all_teams=valid_teams,
+                    )
+                except TypeError as t_err:
+                    if "all_teams" in str(t_err):
+                        res = evaluator.evaluate(
+                            rule=rule,
+                            team=team_obj,
+                            signals_by_member=signals_by_member,
+                            global_config=config.global_config,
+                        )
+                    else:
+                        raise
                 rule_results.append(res)
                 if res.is_evaluable:
                     evaluable_applicable_count += 1
@@ -256,7 +280,7 @@ def evaluate_teams(
     )
 
     return EligibilityRunResponse(
-        run_id=run_id,
+        run_id=final_run_id,
         config_id=config.config_id,
         config_version=config.version,
         evaluated_at=now_ts,

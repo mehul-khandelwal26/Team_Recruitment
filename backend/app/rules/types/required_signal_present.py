@@ -29,9 +29,11 @@ class RequiredSignalPresentEvaluator(RuleEvaluatorBase):
         team: TeamSchema,
         signals_by_member: dict[str, dict[str, ExtractedSignal]],
         global_config: GlobalRuleConfig,
+        all_teams: Optional[list[TeamSchema]] = None,
     ) -> RuleResult:
         signal_key = rule.parameters.get("signal_key", "github_public_repo_count")
-        target_members, lead_error = self.resolve_scope_members(rule.scope, team, global_config)
+        sel = rule.member_selection.value if rule.member_selection else rule.parameters.get("member_selection")
+        target_members, lead_error = self.resolve_scope_members(rule.scope, team, global_config, member_selection=sel)
 
         if lead_error:
             status = self.map_on_missing_to_status(rule.on_missing)

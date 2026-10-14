@@ -57,10 +57,33 @@ class OnMissingAction(str, Enum):
 class RuleScope(str, Enum):
     """Target evaluation scope for a rule."""
 
+    MEMBER = "member"
+    TEAM = "team"
+    CROSS_TEAM = "cross_team"
+
+    # Legacy aliases preserved for backward compatibility with existing tests
     ALL_MEMBERS = "all_members"
     ANY_MEMBER = "any_member"
     TEAM_LEVEL = "team_level"
     TEAM_LEAD = "team_lead"
+
+
+class MemberSelection(str, Enum):
+    """Member selection method within member scope."""
+
+    ALL_MEMBERS = "all_members"
+    ANY_MEMBER = "any_member"
+    TEAM_LEAD = "team_lead"
+
+
+class AggregationMethod(str, Enum):
+    """Aggregation strategy across member values."""
+
+    ALL = "all"
+    ANY = "any"
+    MIN = "min"
+    MAX = "max"
+    MEAN = "mean"
 
 
 # ---------------------------------------------------------------------------
@@ -96,7 +119,7 @@ class RuleDefinition(BaseModel):
     """Definition of an individual eligibility rule within a configuration."""
 
     rule_id: str = Field(..., description="Unique rule identifier within configuration.")
-    rule_type: str = Field(..., description="Type of rule (e.g. 'required_link', 'cgpa_minimum').")
+    rule_type: str = Field(..., description="Type of rule (e.g. 'required_link', 'signal_threshold').")
     name: str = Field(..., description="Human-readable rule name.")
     description: str = Field(default="", description="Detailed description of what this rule verifies.")
     severity: RuleSeverity = Field(
@@ -104,8 +127,16 @@ class RuleDefinition(BaseModel):
         description="Severity: 'hard' impacts team eligibility; 'soft' records results only.",
     )
     scope: RuleScope = Field(
-        default=RuleScope.ALL_MEMBERS,
-        description="Evaluation scope: 'all_members', 'any_member', 'team_level', 'team_lead'.",
+        default=RuleScope.TEAM,
+        description="Evaluation scope: 'member', 'team', or 'cross_team'.",
+    )
+    member_selection: Optional[MemberSelection] = Field(
+        default=None,
+        description="Member selection: 'all_members', 'any_member', 'team_lead'.",
+    )
+    aggregation: Optional[AggregationMethod] = Field(
+        default=None,
+        description="Aggregation method: 'all', 'any', 'min', 'max', 'mean'.",
     )
     is_enabled: bool = Field(default=True, description="Whether this rule is active.")
     order: int = Field(default=0, description="Evaluation order index (lower executes first).")
@@ -324,6 +355,18 @@ class RuleTypeCatalogItem(BaseModel):
     rule_type: str
     name: str
     description: str
+    scope: str = Field(..., description="Evaluation scope: 'member', 'team', or 'cross_team'.")
     default_severity: RuleSeverity
-    supported_scopes: list[RuleScope]
-    parameters_schema: dict[str, Any]
+    supported_severities: list[RuleSeverity] = Field(
+        default_factory=lambda: [RuleSeverity.HARD, RuleSeverity.SOFT],
+        description="Allowed severities: 'hard', 'soft'.",
+    )
+    supported_scopes: list[RuleScope] = Field(default_factory=list)
+    required_parameters: list[str] = Field(default_factory=list)
+    optional_parameters: list[str] = Field(default_factory=list)
+    supported_operators: list[str] = Field(default_factory=list)
+    supported_member_selections: list[str] = Field(default_factory=list)
+    supported_aggregations: list[str] = Field(default_factory=list)
+    accepted_value_types: list[str] = Field(default_factory=list)
+    missing_data_behavior: str = Field(default="")
+    parameters_schema: dict[str, Any] = Field(default_factory=dict)

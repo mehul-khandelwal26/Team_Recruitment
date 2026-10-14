@@ -29,9 +29,12 @@ class RequiredLinkEvaluator(RuleEvaluatorBase):
         team: TeamSchema,
         signals_by_member: dict[str, dict[str, ExtractedSignal]],
         global_config: GlobalRuleConfig,
+        all_teams: Optional[list[TeamSchema]] = None,
     ) -> RuleResult:
-        link_type = rule.parameters.get("link_type", "github_url")
-        target_members, lead_error = self.resolve_scope_members(rule.scope, team, global_config)
+        link_field = rule.parameters.get("link_field") or rule.parameters.get("link_type", "github_url")
+        link_type = link_field
+        sel = rule.member_selection.value if rule.member_selection else rule.parameters.get("member_selection")
+        target_members, lead_error = self.resolve_scope_members(rule.scope, team, global_config, member_selection=sel)
 
         if lead_error:
             status = self.map_on_missing_to_status(rule.on_missing)
@@ -44,7 +47,7 @@ class RequiredLinkEvaluator(RuleEvaluatorBase):
                 status=status,
                 explanation=f"{rule.name}: {lead_error} Action taken: {self.on_missing_str(rule)}.",
                 is_evaluable=False,
-                details={"link_type": link_type, "scope": rule.scope.value},
+                details={"link_field": link_field, "scope": rule.scope.value},
             )
 
         evaluations: list[dict[str, Any]] = []

@@ -47,6 +47,7 @@ class RuleEvaluatorBase(ABC):
         team: TeamSchema,
         signals_by_member: dict[str, dict[str, ExtractedSignal]],
         global_config: GlobalRuleConfig,
+        all_teams: Optional[list[TeamSchema]] = None,
     ) -> RuleResult:
         """Evaluate the rule against the given team and signals."""
         raise NotImplementedError
@@ -185,20 +186,25 @@ class RuleEvaluatorBase(ABC):
 
     @staticmethod
     def resolve_scope_members(
-        scope: RuleScope,
+        scope: Any,
         team: TeamSchema,
         global_config: GlobalRuleConfig,
+        member_selection: Any = None,
     ) -> tuple[list[MemberSchema], Optional[str]]:
-        """Resolve target members based on rule scope.
+        """Resolve target members based on rule scope or member_selection.
 
         Returns:
             (members_list, error_or_unresolved_reason)
             If error_or_unresolved_reason is not None, evaluation should be UNAVAILABLE.
         """
-        if scope in (RuleScope.ALL_MEMBERS, RuleScope.ANY_MEMBER, RuleScope.TEAM_LEVEL):
-            return team.members, None
+        sel = member_selection
+        if sel is None:
+            if hasattr(scope, "value"):
+                sel = scope.value
+            else:
+                sel = str(scope)
 
-        if scope == RuleScope.TEAM_LEAD:
+        if sel in ("team_lead", RuleScope.TEAM_LEAD.value):
             lead_field = global_config.lead_field or "role"
             lead_values = [v.lower() for v in global_config.lead_values]
 
@@ -259,18 +265,15 @@ class RuleEvaluatorBase(ABC):
 
         all_evaluable = all(e.get("is_evaluable", True) for e in evaluations)
 
-        if rule.scope == RuleScope.ALL_MEMBERS:
-            if failed_members:
-                names = ", ".join(f"{m['name']} ({m['reason']})" for m in failed_members)
-                return RuleResultStatus.FAILED, f"{rule.name} failed for: {names}", all_evaluable
-            if unavail_members:
-                status = RuleEvaluatorBase.map_on_missing_to_status(rule.on_missing)
-                names = ", ".join(m["name"] for m in unavail_members)
-                action_str = rule.on_missing.value if hasattr(rule.on_missing, "value") else str(rule.on_missing)
-                return status, f"{rule.name} data unavailable for: {names}. Action taken: {action_str}.", False
-            return RuleResultStatus.PASSED, f"{rule.name} passed for all {len(evaluations)} members.", True
+        # Determine effective selection mode
+        sel = rule.member_selection.value if rule.member_selection else None
+        if sel is None:
+            if hasattr(rule.scope, "value"):
+                sel = rule.scope.value
+            else:
+                sel = str(rule.scope)
 
-        elif rule.scope == RuleScope.ANY_MEMBER:
+        if sel in ("any_member", RuleScope.ANY_MEMBER.value):
             if passed_members:
                 names = ", ".join(m["name"] for m in passed_members)
                 return RuleResultStatus.PASSED, f"{rule.name} satisfied by: {names}.", True
@@ -281,7 +284,7 @@ class RuleEvaluatorBase(ABC):
             names = ", ".join(f"{m['name']} ({m['reason']})" for m in failed_members)
             return RuleResultStatus.FAILED, f"{rule.name} failed for all members: {names}", True
 
-        elif rule.scope == RuleScope.TEAM_LEAD:
+        elif sel in ("team_lead", RuleScope.TEAM_LEAD.value):
             lead_eval = evaluations[0]
             if lead_eval["status"] == "PASSED":
                 return RuleResultStatus.PASSED, f"{rule.name} passed for team lead {lead_eval['name']}.", True
@@ -289,6 +292,17 @@ class RuleEvaluatorBase(ABC):
                 return RuleResultStatus.FAILED, f"{rule.name} failed for team lead {lead_eval['name']}: {lead_eval['reason']}.", True
             status = RuleEvaluatorBase.map_on_missing_to_status(rule.on_missing)
             return status, f"{rule.name} data unavailable for team lead {lead_eval['name']}.", False
+
+        elif sel in ("all_members", RuleScope.ALL_MEMBERS.value, "member", RuleScope.MEMBER.value):
+            if failed_members:
+                names = ", ".join(f"{m['name']} ({m['reason']})" for m in failed_members)
+                return RuleResultStatus.FAILED, f"{rule.name} failed for: {names}", all_evaluable
+            if unavail_members:
+                status = RuleEvaluatorBase.map_on_missing_to_status(rule.on_missing)
+                names = ", ".join(m["name"] for m in unavail_members)
+                action_str = rule.on_missing.value if hasattr(rule.on_missing, "value") else str(rule.on_missing)
+                return status, f"{rule.name} data unavailable for: {names}. Action taken: {action_str}.", False
+            return RuleResultStatus.PASSED, f"{rule.name} passed for all {len(evaluations)} members.", True
 
         # TEAM_LEVEL fallback
         if failed_members:

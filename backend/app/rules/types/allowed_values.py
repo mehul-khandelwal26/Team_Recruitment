@@ -35,9 +35,11 @@ class AllowedValuesEvaluator(RuleEvaluatorBase):
         team: TeamSchema,
         signals_by_member: dict[str, dict[str, ExtractedSignal]],
         global_config: GlobalRuleConfig,
+        all_teams: Optional[list[TeamSchema]] = None,
     ) -> RuleResult:
         field_key = rule.parameters.get("field_key")
-        if not field_key:
+        signal_key = rule.parameters.get("signal_key")
+        if not field_key and not signal_key:
             return RuleResult(
                 rule_id=rule.rule_id,
                 rule_type=self.rule_type,
@@ -45,14 +47,15 @@ class AllowedValuesEvaluator(RuleEvaluatorBase):
                 severity=rule.severity,
                 scope=rule.scope,
                 status=RuleResultStatus.ERROR,
-                explanation=f"{rule.name}: Missing required parameter 'field_key' in rule definition.",
+                explanation=f"{rule.name}: Missing required parameter 'field_key' or 'signal_key' in rule definition.",
                 is_evaluable=False,
             )
 
         allowed = rule.parameters.get("allowed_values", [])
         normalized_allowed = [str(x).strip().lower() for x in allowed]
 
-        target_members, lead_error = self.resolve_scope_members(rule.scope, team, global_config)
+        sel = rule.member_selection.value if rule.member_selection else rule.parameters.get("member_selection")
+        target_members, lead_error = self.resolve_scope_members(rule.scope, team, global_config, member_selection=sel)
 
         if lead_error:
             status = self.map_on_missing_to_status(rule.on_missing)
@@ -65,13 +68,19 @@ class AllowedValuesEvaluator(RuleEvaluatorBase):
                 status=status,
                 explanation=f"{rule.name}: {lead_error} Action taken: {self.on_missing_str(rule)}.",
                 is_evaluable=False,
-                details={"field_key": field_key, "allowed_values": allowed},
+                details={"field_key": field_key or signal_key, "allowed_values": allowed},
             )
 
         evaluations: list[dict[str, Any]] = []
 
         for member in target_members:
-            val, state = self.resolve_field(member, field_key)
+            if signal_key:
+                sig, state = self.resolve_signal(signals_by_member, member.member_id, signal_key)
+                val = sig.value if sig else None
+            else:
+                val, state = self.resolve_field(member, field_key)
+
+            target_name = signal_key if signal_key else field_key
 
             if state == "present" and val is not None:
                 val_str = str(val).strip().lower()
@@ -80,7 +89,7 @@ class AllowedValuesEvaluator(RuleEvaluatorBase):
                         "member_id": member.member_id,
                         "name": member.name,
                         "status": "PASSED",
-                        "reason": f"Field '{field_key}' value '{val}' is permitted",
+                        "reason": f"Value '{val}' is permitted in {target_name}",
                         "is_evaluable": True,
                         "value": str(val),
                     })
@@ -89,7 +98,7 @@ class AllowedValuesEvaluator(RuleEvaluatorBase):
                         "member_id": member.member_id,
                         "name": member.name,
                         "status": "FAILED",
-                        "reason": f"Field '{field_key}' value '{val}' is not in allowed list {allowed}",
+                        "reason": f"Value '{val}' in {target_name} is not in allowed list {allowed}",
                         "is_evaluable": True,
                         "value": str(val),
                     })
@@ -99,7 +108,7 @@ class AllowedValuesEvaluator(RuleEvaluatorBase):
                     "member_id": member.member_id,
                     "name": member.name,
                     "status": "FAILED",
-                    "reason": f"Field '{field_key}' was left blank",
+                    "reason": f"Field/signal '{target_name}' was not provided (blank or NOT_APPLICABLE)",
                     "is_evaluable": True,
                 })
             else:
@@ -107,7 +116,7 @@ class AllowedValuesEvaluator(RuleEvaluatorBase):
                     "member_id": member.member_id,
                     "name": member.name,
                     "status": "UNAVAILABLE",
-                    "reason": f"Field '{field_key}' is unmapped or not in registration data",
+                    "reason": f"Field/signal '{target_name}' is unmapped or unavailable",
                     "is_evaluable": False,
                 })
 
