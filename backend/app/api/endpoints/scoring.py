@@ -1,0 +1,281 @@
+"""FastAPI endpoints for weighted scoring, configuration management, and run auditing."""
+
+from __future__ import annotations
+
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException, Query, status
+
+from app.scoring.config_store import default_scoring_config_store
+from app.scoring.engine import evaluate_scoring
+from app.scoring.schemas import (
+    AggregationMethod,
+    CriterionType,
+    MissingDataPolicy,
+    ScoringCatalogResponse,
+    ScoringConfiguration,
+    ScoringConfigurationCreate,
+    ScoringConfigurationUpdate,
+    ScoringEvaluationRequest,
+    ScoringRunResponse,
+)
+from app.scoring.store import default_scoring_run_store
+from app.scoring.validation import validate_scoring_configuration
+
+router = APIRouter(prefix="/api/scoring", tags=["Scoring"])
+
+
+# ---------------------------------------------------------------------------
+# 1. Catalog Endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.get("/catalog", response_model=ScoringCatalogResponse)
+def get_scoring_catalog() -> ScoringCatalogResponse:
+    """Return catalog of all supported scoring criterion types, normalization methods,
+
+    aggregation methods, and missing-data policies.
+    """
+    return ScoringCatalogResponse(
+        criterion_types=[
+            {
+                "type": CriterionType.NUMERIC_RANGE.value,
+                "name": "Numeric Range Mapping",
+                "description": "Linear min-max normalization scaling numeric signals to [0.0, 1.0].",
+                "supported_value_types": ["integer", "float"],
+            },
+            {
+                "type": CriterionType.BOOLEAN.value,
+                "name": "Boolean Mapping",
+                "description": "Maps True and False states to configurable scores in [0.0, 1.0].",
+                "supported_value_types": ["boolean"],
+            },
+            {
+                "type": CriterionType.CATEGORICAL.value,
+                "name": "Categorical Mapping",
+                "description": "Explicit lookup table mapping discrete category names to scores in [0.0, 1.0].",
+                "supported_value_types": ["string"],
+            },
+        ],
+        normalization_methods=[
+            {
+                "method": "linear_range",
+                "description": "Clamps value to [min_value, max_value] and scales linearly: (v - min) / (max - min).",
+            },
+            {
+                "method": "boolean_mapping",
+                "description": "Maps True -> true_score, False -> false_score.",
+            },
+            {
+                "method": "categorical_mapping",
+                "description": "Looks up category string in category_scores dictionary with optional fallback default.",
+            },
+        ],
+        aggregation_methods=[
+            {
+                "method": AggregationMethod.MEAN.value,
+                "name": "Mean (Average)",
+                "description": "Calculates average of valid member scores across the team.",
+            },
+            {
+                "method": AggregationMethod.MIN.value,
+                "name": "Minimum",
+                "description": "Uses the lowest valid member score as the team criterion score.",
+            },
+            {
+                "method": AggregationMethod.MAX.value,
+                "name": "Maximum",
+                "description": "Uses the highest valid member score as the team criterion score.",
+            },
+            {
+                "method": AggregationMethod.SUM.value,
+                "name": "Sum (Clamped)",
+                "description": "Sums valid member scores, clamped to max 1.0 to guarantee bounds safety.",
+            },
+            {
+                "method": AggregationMethod.LEAD_ONLY.value,
+                "name": "Team Lead Only",
+                "description": "Uses designated team lead score. Lead is identified by lead_field.",
+            },
+            {
+                "method": AggregationMethod.TOP_K.value,
+                "name": "Top K Average",
+                "description": "Averages the highest K valid member scores.",
+            },
+        ],
+        missing_data_policies=[
+            {
+                "policy": MissingDataPolicy.EXCLUDE_AND_RENORMALIZE.value,
+                "name": "Exclude and Renormalize",
+                "description": "Excludes the missing criterion from denominator and renormalizes remaining weights.",
+            },
+            {
+                "policy": MissingDataPolicy.ZERO_SCORE.value,
+                "name": "Zero Score",
+                "description": "Assigns a score of 0.0 and retains criterion in denominator with its configured weight.",
+            },
+        ],
+    )
+
+
+# ---------------------------------------------------------------------------
+# 2. Configuration Management Endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/configs", response_model=list[ScoringConfiguration])
+def list_scoring_configs() -> list[ScoringConfiguration]:
+    """List latest versions of all stored scoring configurations."""
+    return default_scoring_config_store.list_latest()
+
+
+@router.post("/configs", response_model=ScoringConfiguration, status_code=status.HTTP_201_CREATED)
+def create_scoring_config(payload: ScoringConfigurationCreate) -> ScoringConfiguration:
+    """Create a new validated scoring configuration (starts at version 1)."""
+    # Check if config_id already exists
+    existing = default_scoring_config_store.get(payload.config_id)
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Scoring configuration '{payload.config_id}' already exists. Use PUT to create a new version.",
+        )
+
+    config = ScoringConfiguration(
+        config_id=payload.config_id,
+        name=payload.name,
+        version=1,
+        description=payload.description,
+        criteria=payload.criteria,
+        scale_max=payload.scale_max,
+        lead_field=payload.lead_field,
+        lead_values=payload.lead_values,
+        score_ineligible_teams=payload.score_ineligible_teams,
+    )
+
+    validation_errors = validate_scoring_configuration(config)
+    if validation_errors:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"errors": validation_errors},
+        )
+
+    return default_scoring_config_store.save(config)
+
+
+@router.get("/configs/{config_id}", response_model=ScoringConfiguration)
+def get_scoring_config(
+    config_id: str,
+    version: Optional[int] = Query(None, description="Optional explicit version number"),
+) -> ScoringConfiguration:
+    """Fetch a configuration by ID (latest version by default, or specific version)."""
+    config = default_scoring_config_store.get(config_id, version=version)
+    if config is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Scoring configuration '{config_id}' (version: {version or 'latest'}) not found.",
+        )
+    return config
+
+
+@router.put("/configs/{config_id}", response_model=ScoringConfiguration)
+def update_scoring_config(
+    config_id: str,
+    payload: ScoringConfigurationUpdate,
+) -> ScoringConfiguration:
+    """Update a scoring configuration by creating a new immutable version."""
+    current = default_scoring_config_store.get(config_id)
+    if current is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Scoring configuration '{config_id}' not found.",
+        )
+
+    # Construct preview for validation
+    candidate_config = ScoringConfiguration(
+        config_id=config_id,
+        version=current.version + 1,
+        name=payload.name if payload.name is not None else current.name,
+        description=payload.description if payload.description is not None else current.description,
+        criteria=[c.model_copy(deep=True) for c in (payload.criteria if payload.criteria is not None else current.criteria)],
+        scale_max=payload.scale_max if payload.scale_max is not None else current.scale_max,
+        lead_field=payload.lead_field if payload.lead_field is not None else current.lead_field,
+        lead_values=list(payload.lead_values) if payload.lead_values is not None else list(current.lead_values),
+        score_ineligible_teams=payload.score_ineligible_teams if payload.score_ineligible_teams is not None else current.score_ineligible_teams,
+        is_active=payload.is_active if payload.is_active is not None else current.is_active,
+    )
+
+    validation_errors = validate_scoring_configuration(candidate_config)
+    if validation_errors:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"errors": validation_errors},
+        )
+
+    updated = default_scoring_config_store.update(config_id, payload)
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Update failed.")
+    return updated
+
+
+@router.get("/configs/{config_id}/versions", response_model=list[int])
+def get_scoring_config_versions(config_id: str) -> list[int]:
+    """List all available version numbers for a scoring configuration."""
+    versions = default_scoring_config_store.list_versions(config_id)
+    if not versions:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Scoring configuration '{config_id}' not found.",
+        )
+    return versions
+
+
+# ---------------------------------------------------------------------------
+# 3. Evaluation & Run Audit Endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post("/evaluate", response_model=ScoringRunResponse)
+def evaluate_teams_endpoint(request: ScoringEvaluationRequest) -> ScoringRunResponse:
+    """Evaluate teams against a scoring configuration and return detailed breakdowns."""
+    config: Optional[ScoringConfiguration] = None
+
+    if request.inline_config is not None:
+        config = request.inline_config
+        val_errors = validate_scoring_configuration(config)
+        if val_errors:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"errors": val_errors},
+            )
+    else:
+        cfg_id = request.config_id or "balanced"
+        config = default_scoring_config_store.get(cfg_id, version=request.config_version)
+        if config is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Scoring configuration '{cfg_id}' (version: {request.config_version or 'latest'}) not found.",
+            )
+
+    result = evaluate_scoring(
+        teams=request.teams,
+        signals=request.signals,
+        config=config,
+        eligibility_run_id=request.eligibility_run_id,
+        eligibility_results=request.eligibility_results,
+    )
+
+    # Persist in run store
+    default_scoring_run_store.save(result)
+    return result
+
+
+@router.get("/runs/{run_id}", response_model=ScoringRunResponse)
+def get_scoring_run(run_id: str) -> ScoringRunResponse:
+    """Retrieve a recorded scoring run with all team scores and criteria breakdowns."""
+    run_record = default_scoring_run_store.get(run_id)
+    if run_record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Scoring run '{run_id}' not found.",
+        )
+    return run_record

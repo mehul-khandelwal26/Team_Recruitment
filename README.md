@@ -22,10 +22,11 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 - **Deterministic eligibility evaluation** – 3-state classification (`ELIGIBLE`, `INELIGIBLE`, `NEEDS_REVIEW`) with human-readable explanations for every rule.
 - **10 spec-compliant rule evaluators** – team size limits, required links, signal presence, generic signal thresholds, keyword containment, allowed categorical values, track distribution caps, cross-team email duplicates, and mandatory fields.
 - **Universal threshold & 5 aggregation strategies** – numeric safety rejecting bools/NaN/inf, preserving zero, supporting all 5 aggregations (`all`, `any`, `min`, `max`, `mean`).
+- **Configurable weighted scoring & team aggregation** – relative weight normalization, normalization methods (linear min-max, boolean, categorical), member aggregation (mean, min, max, clamped sum, lead_only, top_k), explicit missing-data policies, and exact score reconciliation.
 - **Configuration versioning & manual organizer overrides** – immutable configuration version history, historic run auditing, and reason-backed manual eligibility overrides.
 - **Fault-isolated multi-team evaluation** – failure or missing data for one member or signal never halts execution of others.
 - **Variable team sizes** – handle teams of any size without hard-coded member limits.
-- **Scoring separation** – extraction and eligibility filtering remain cleanly decoupled from scoring rules, weighting, and ranking.
+- **Scoring separation** – extraction, eligibility filtering, and scoring remain cleanly decoupled from ranking and top-X selection.
 
 ## 🛠️ Technology Stack
 
@@ -36,7 +37,7 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 | Data           | Pandas                                       |
 | HTTP / API     | HTTPX                                        |
 | Document Parsers | PyPDF (`pypdf`) · Python-Docx (`python-docx`) |
-| Testing        | Pytest · Starlette TestClient (220 tests)    |
+| Testing        | Pytest · Starlette TestClient (256 tests)    |
 | Frontend       | React + Vite *(planned)*                     |
 | Database       | PostgreSQL *(planned)*                       |
 
@@ -51,8 +52,8 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 | **Phase 3** | Evaluation signal extraction framework, GitHub analyzer, and Academic analyzer | ✅ Completed |
 | *Phase 3.1 (Milestone)* | **Resume Analyzer**: PDF/DOCX parsing, SSRF security, 12 signals, direct file upload | ✅ Completed |
 | **Phase 4** | Configurable eligibility rules and hard filters (Rules Engine) | ✅ Completed |
-| **Phase 5** | Weighted scoring and team-level aggregation | 🔲 *Next Up* |
-| **Phase 6** | Ranking, top-X selection, and human-readable explanations | 🔲 Planned |
+| **Phase 5** | Weighted scoring and team-level aggregation (Scoring Engine) | ✅ Completed |
+| **Phase 6** | Ranking, top-X selection, and human-readable explanations | 🔲 *Next Up* |
 | **Phase 7** | Frontend integration and organizer dashboard | 🔲 Planned |
 | **Phase 8** | End-to-end testing and final improvements | 🔲 Planned |
 
@@ -73,10 +74,9 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 | Academic Analyzer | ✅ Implemented | CGPA/CPI normalization, academic year/batch, scale checks |
 | **Resume Analyzer** | ✅ Implemented | **12 signals**, PDF & DOCX extraction, SSRF security, direct upload API |
 | **Eligibility Rules Engine (Phase 4)** | ✅ Implemented | **10 rule types**, universal threshold evaluator (5 aggregations), cross-team duplicate detection, track caps, config versioning, manual overrides, and audit trails |
+| **Weighted Scoring Engine (Phase 5)** | ✅ Implemented | Relative weight normalization, criteria normalizations (numeric range, boolean, categorical), 6 aggregation methods, explicit missing-data policies, audit runs |
 | Portfolio Analyzer | 🔲 Staged Contract | `PortfolioAnalyzerContract` registered as planned capability |
-| Scoring engine (Phase 5) | 🔲 Staged Schema | Criteria schemas defined; evaluation planned |
-| Aggregation (Phase 5) | 🔲 Not started | Planned with scoring engine |
-| Ranking & Selection (Phase 6) | 🔲 Not started | Planned after aggregation |
+| Ranking & Selection (Phase 6) | 🔲 Not started | Planned after scoring engine |
 | React frontend (Phase 7) | 🔲 Not started | Planned after backend completion |
 
 ---
@@ -302,6 +302,66 @@ The `duplicate_member_email` evaluator inspects candidate emails across the enti
 
 ---
 
+## 📊 Configurable Weighted Scoring & Team Aggregation (Phase 5)
+
+Stage 5 of the recruitment pipeline computes transparent, explainable composite scores in `[0.0, 100.0]` for candidate teams based on configurable criteria, normalization models, and member-to-team aggregation methods.
+
+### Core Architecture & Calculation Formula
+
+1. **Relative Weight Normalization**:
+   Organizers define non-negative weights for enabled criteria without needing them to total 1.0 or 100. The engine normalizes weights proportionally over applicable criteria:
+   $$w'_c = \frac{w_c}{\sum_{j \in \text{applicable}} w_j}$$
+2. **Score Calculation**:
+   For each applicable criterion $c$, its weighted contribution toward the final score is:
+   $$\text{contribution}_c = S_c \times w'_c \times \text{scale\_max}$$
+   where $S_c \in [0.0, 1.0]$ is the aggregated team criterion score. The composite team score is:
+   $$\text{final\_score} = \sum_{c \in \text{applicable}} \text{contribution}_c$$
+   Reconciliation is exact: $\sum \text{contribution}_c == \text{final\_score}$ (subject only to documented 2-decimal output rounding).
+
+### Normalization Methods
+
+- **Linear Min-Max (`numeric_range`)**: Clamps raw values to $[min, max]$ and scales linearly: $(v - min) / (max - min) \in [0.0, 1.0]$. Strict numeric safety rejects `bool`, `NaN`, and `inf` while validating legitimate numeric zero (`0`, `0.0`).
+- **Boolean Mapping (`boolean`)**: Maps `True` &rarr; `true_score` (default 1.0) and `False` &rarr; `false_score` (default 0.0). Missing booleans are never conflated with False.
+- **Categorical Mapping (`categorical`)**: Explicit dictionary lookup mapping string values (e.g. academic batches or degree levels) to scores in $[0.0, 1.0]$, with optional default fallback.
+
+### Member-to-Team Aggregations
+
+Combines member-level normalized scores $s_i$ into a team criterion score $S_c$:
+- **`mean`**: Average valid member scores: $\sum s_i / N$.
+- **`min`**: Lowest valid member score in team.
+- **`max`**: Highest valid member score in team (e.g. strongest developer).
+- **`sum`**: Clamped sum of valid scores: $\min(1.0, \sum s_i)$ preventing team scores from exceeding bounds.
+- **`lead_only`**: Evaluates only the designated team lead (identified via `lead_field`).
+- **`top_k`**: Averages the highest $K$ valid member scores: $\sum_{j=1}^{\min(K, N)} s_j / \min(K, N)$.
+
+### Missing Data Policies
+
+- **`EXCLUDE_AND_RENORMALIZE`**: Drops the missing criterion from the denominator and renormalizes the remaining applicable criterion weights. If all criteria are missing, returns `NO_SCORE` rather than an invented zero.
+- **`ZERO_SCORE`**: Retains the criterion in the denominator and assigns an imputed score of $0.0$, recording the policy justification in the audit breakdown.
+
+### Eligibility Integration & Auditing
+
+- Operates as a pure downstream stage: Scoring evaluates candidate fitness without modifying eligibility decisions.
+- If eligibility outcomes are provided (`ELIGIBLE`, `INELIGIBLE`, `NEEDS_REVIEW`), they are preserved in the scoring result.
+- Organizers can configure `score_ineligible_teams: bool` (default True for informational scoring, or False to assign `0.0` with a `DISQUALIFIED` status).
+
+---
+
+## 📡 Scoring Engine API Endpoints
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/scoring/catalog` | Catalog of criterion types, normalization methods, aggregations, and missing-data policies |
+| `GET` | `/api/scoring/configs` | List latest versions of all stored scoring configurations |
+| `POST` | `/api/scoring/configs` | Create a new validated scoring configuration (starts at version 1) |
+| `GET` | `/api/scoring/configs/{config_id}` | Fetch a configuration (latest or specific `?version=n`) |
+| `PUT` | `/api/scoring/configs/{config_id}` | Update configuration with validation; creates new immutable version |
+| `GET` | `/api/scoring/configs/{config_id}/versions` | List all historical version numbers for a scoring configuration |
+| `POST` | `/api/scoring/evaluate` | Evaluate teams against a scoring configuration; returns full score breakdowns |
+| `GET` | `/api/scoring/runs/{run_id}` | Retrieve a recorded scoring run with all team breakdowns and audit logs |
+
+---
+
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -363,13 +423,14 @@ Run the complete automated test suite locally:
 pytest -v
 ```
 
-The test suite includes **220 automated tests** with 100% pass rate:
+The test suite includes **256 automated tests** with 100% pass rate:
 - **`backend/tests/test_ingestion.py`** (47 tests): CSV/JSON ingestion, header discovery, dynamic form mapping, custom field preservation, and validation.
 - **`backend/tests/test_duplicate_teams_regression.py`** (15 tests): Duplicate team name detection, automatic ID generation, temporary non-merging IDs (`TEMP_TEAM_...`), and warning generation.
 - **`backend/tests/test_signals.py`** (39 tests): Extensible signal registry, catalog discovery, GitHub API analysis, Academic CGPA/batch normalization, and cross-analyzer fault isolation.
 - **`backend/tests/test_resume_analyzer.py`** (45 tests): PDF & DOCX text parsing, all 12 resume signals, SSRF security defenses, size limits, direct file upload endpoint, and multi-analyzer compatibility.
 - **`backend/tests/test_eligibility.py`** (22 tests): Eligibility engine foundation, catalog schemas, configuration versioning, missing data contradiction resolution, numeric safety, team lead resolution, and manual overrides.
 - **`backend/tests/test_eligibility_spec.py`** (52 tests): Specification compliance for all 10 rule types, threshold operators, boundary conditions, all 5 aggregation reductions, cross-team email duplicates, fault isolation, determinism, and HTTP 422 configuration validation.
+- **`backend/tests/test_scoring.py`** (36 tests): Configurable scoring criteria, relative weight normalization, min-max/boolean/categorical normalization, 6 member-to-team aggregations, missing data policies (exclude and renormalize, zero score), confidence adjustment, eligibility integration, and API endpoints.
 
 All external HTTP calls in the test suite are mocked; no real GitHub API tokens or external network access are required.
 
@@ -377,8 +438,8 @@ All external HTTP calls in the test suite are mocked; no real GitHub API tokens 
 
 ## ⚠️ Current Limitations & Next Steps
 
-1. **Next Milestone (Phase 5 - Weighted Scoring & Team-Level Aggregation)**: Implementing criteria-based scoring, weight normalization, missing-data imputation strategies, and team-level score aggregation.
-2. **Ranking & Top-X Selection (Phase 6)**: Multi-attribute sorting, tie-breaking, quota enforcement, and explanation generation.
+1. **Next Milestone (Phase 6 - Ranking, Top-X Selection & Explanations)**: Implementing multi-attribute sorting, tie-breaking rules, quota/diversity enforcement, Top-X shortlisting, and natural language summary generation.
+2. **Frontend Integration & Organizer Dashboard (Phase 7)**: React + Vite web application with interactive CSV upload, signal selection, eligibility rule builder, scoring criteria weights slider, and live ranking leaderboard.
 3. **Future AI Resume Analyzer**: An architectural audit confirmed that an advanced external AI/LLM resume provider can be plugged in via strategy pattern without altering existing signal contracts or downstream scoring.
 4. **Database Persistence**: Currently in-memory and request/response-based. Relational database persistence will be introduced in a future milestone.
 5. **GitHub Unauthenticated Rate Limits**: Unauthenticated calls to GitHub API are limited to 60 requests per hour per IP. Set `GITHUB_TOKEN` in `.env` for production workloads to achieve 5,000 req/hr.
