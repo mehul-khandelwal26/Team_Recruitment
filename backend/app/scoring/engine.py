@@ -23,7 +23,7 @@ import uuid
 from typing import Any, Optional
 
 from app.rules.schemas import EligibilityStatus
-from app.rules.store import default_run_store
+from app.rules.store import default_run_store, get_effective_run
 from app.schemas.ingestion import KNOWN_MEMBER_FIELDS, MemberSchema, TeamSchema
 from app.scoring.schemas import (
     AggregationMethod,
@@ -634,13 +634,20 @@ def evaluate_scoring(
                 except Exception:
                     pass
             summ = er.get("summary") or er.get("explanation")
+            if not summ and er.get("reasons"):
+                reasons = er.get("reasons")
+                if isinstance(reasons, list):
+                    summ = "; ".join(str(r) for r in reasons) or None
+                elif isinstance(reasons, str):
+                    summ = reasons
             eligibility_by_team[t_id] = (status_enum, summ)
 
     elif eligibility_run_id:
-        cached_elig = default_run_store.get(eligibility_run_id)
+        cached_elig = get_effective_run(eligibility_run_id)
         if cached_elig:
             for t_res in cached_elig.teams:
-                eligibility_by_team[t_res.team_id] = (t_res.status, t_res.summary)
+                summary_text = "; ".join(t_res.reasons) or None
+                eligibility_by_team[t_res.team_id] = (t_res.status, summary_text)
         else:
             warnings.append(f"Eligibility run '{eligibility_run_id}' not found in store; continuing without eligibility.")
 

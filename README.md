@@ -10,9 +10,9 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 
 ## ✨ Key Features
 
-- **CSV / JSON ingestion** – upload registration data in common formats with dynamic form discovery.
+- **CSV / JSON ingestion** – upload registration data in common formats (JSON root must be an array of team objects: `[{"team_name": ..., "members": [...]}]`, not a bare object) with dynamic form discovery.
 - **Dynamic schema mapping** – map custom organizer column names to canonical target fields without code changes.
-- **Missing ID generation & duplicate team handling** – autogenerates missing member/team IDs, detects ambiguous duplicate team names, assigns non-merging temporary IDs (`TEMP_TEAM_...`), and surfaces actionable organizer warnings.
+- **Missing ID generation & duplicate team handling** – autogenerates missing member/team IDs, detects ambiguous duplicate team names, assigns non-merging temporary IDs (`TEMP_TEAM_...`), disambiguates colliding cross-team member IDs, and surfaces actionable organizer warnings.
 - **Arbitrary field preservation** – unmapped form fields and raw records are safely preserved in `custom_fields` and `raw_data`.
 - **Extensible signal extraction** – pluggable analyzers for GitHub activity, academics, resume documents, and future data sources.
 - **Document parsing & resume analysis** – extracts skills, projects, education, work experience, certifications, and links from PDF and DOCX documents without OCR.
@@ -37,7 +37,7 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 | Data           | Pandas                                       |
 | HTTP / API     | HTTPX                                        |
 | Document Parsers | PyPDF (`pypdf`) · Python-Docx (`python-docx`) |
-| Testing        | Pytest · Starlette TestClient (256 tests)    |
+| Testing        | Pytest · Starlette TestClient (260 tests)    |
 | Frontend       | React + Vite *(planned)*                     |
 | Database       | PostgreSQL *(planned)*                       |
 
@@ -214,6 +214,7 @@ default_signal_registry.register(MyCustomAnalyzer())
 | `GET` | `/api/signals/analyzers` | List metadata descriptors of all registered analyzers |
 | `GET` | `/api/signals/signals` | List all individual evaluation signals |
 | `POST` | `/api/signals/extract` | Run selective extraction on pre-parsed team structures |
+| `POST` | `/api/signals/flatten` | Flatten an `ExtractionRunResponse` into a list of member-signals dictionaries (`list[MemberSignals]`) for direct input to rules or scoring |
 | `POST` | `/api/signals/extract-file` | Upload CSV/JSON and run selective signal extraction in one step |
 | `POST` | `/api/signals/extract-resume` | Direct upload of a candidate's PDF or DOCX resume document |
 
@@ -298,7 +299,7 @@ The `duplicate_member_email` evaluator inspects candidate emails across the enti
 | `GET` | `/api/rules/configs/{config_id}/versions` | List all historical version numbers for a configuration |
 | `POST` | `/api/rules/evaluate` | Evaluate teams against a rule configuration; returns eligibility results |
 | `GET` | `/api/rules/runs/{run_id}` | Retrieve evaluation run results with merged manual overrides |
-| `POST` | `/api/rules/runs/{run_id}/override` | Apply an organizer manual override to a team result |
+| `POST` | `/api/rules/runs/{run_id}/teams/{team_id}/override` | Apply an organizer manual override to a team result |
 
 ---
 
@@ -423,7 +424,7 @@ Run the complete automated test suite locally:
 pytest -v
 ```
 
-The test suite includes **256 automated tests** with 100% pass rate:
+The test suite includes **260 automated tests** with 100% pass rate:
 - **`backend/tests/test_ingestion.py`** (47 tests): CSV/JSON ingestion, header discovery, dynamic form mapping, custom field preservation, and validation.
 - **`backend/tests/test_duplicate_teams_regression.py`** (15 tests): Duplicate team name detection, automatic ID generation, temporary non-merging IDs (`TEMP_TEAM_...`), and warning generation.
 - **`backend/tests/test_signals.py`** (39 tests): Extensible signal registry, catalog discovery, GitHub API analysis, Academic CGPA/batch normalization, and cross-analyzer fault isolation.
@@ -431,6 +432,7 @@ The test suite includes **256 automated tests** with 100% pass rate:
 - **`backend/tests/test_eligibility.py`** (22 tests): Eligibility engine foundation, catalog schemas, configuration versioning, missing data contradiction resolution, numeric safety, team lead resolution, and manual overrides.
 - **`backend/tests/test_eligibility_spec.py`** (52 tests): Specification compliance for all 10 rule types, threshold operators, boundary conditions, all 5 aggregation reductions, cross-team email duplicates, fault isolation, determinism, and HTTP 422 configuration validation.
 - **`backend/tests/test_scoring.py`** (36 tests): Configurable scoring criteria, relative weight normalization, min-max/boolean/categorical normalization, 6 member-to-team aggregations, missing data policies (exclude and renormalize, zero score), confidence adjustment, eligibility integration, and API endpoints.
+- **`backend/tests/test_phase5_integration_fixes.py`** (4 tests): Integration fixes for scoring with eligibility run IDs, manual overrides applied to scoring, cross-team member ID disambiguation in CSV/JSON ingestion, and signals extraction output flattening.
 
 All external HTTP calls in the test suite are mocked; no real GitHub API tokens or external network access are required.
 

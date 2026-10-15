@@ -2,6 +2,7 @@
 
 from app.signals.academic import AcademicMetricsAnalyzer
 from app.signals.base import BaseSignalExtractor, SignalExtractorRegistry
+from app.signals.flatten import flatten_extraction_signals
 from app.signals.github import GitHubAnalyzer
 from app.signals.registry import default_signal_registry
 from app.signals.schemas import (
@@ -35,4 +36,5 @@ __all__ = [
     "SignalStatus",
     "TeamExtractionResult",
     "default_signal_registry",
+    "flatten_extraction_signals",
 ]

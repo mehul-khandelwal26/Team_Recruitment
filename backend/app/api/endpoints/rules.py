@@ -34,7 +34,7 @@ from app.rules.schemas import (
     RuleConfigurationUpdate,
     RuleTypeCatalogItem,
 )
-from app.rules.store import default_override_store, default_run_store
+from app.rules.store import default_override_store, default_run_store, get_effective_run
 from app.rules.types import RULE_TYPE_CATALOG
 
 router = APIRouter(prefix="/api/rules", tags=["Rules"])
@@ -186,40 +186,9 @@ async def evaluate_eligibility(payload: EligibilityEvaluateRequest) -> Eligibili
 @router.get("/runs/{run_id}", response_model=EligibilityRunResponse)
 async def get_run_results(run_id: str) -> EligibilityRunResponse:
     """Retrieve an evaluation run's results, with any manual overrides merged."""
-    run_record = default_run_store.get(run_id)
+    run_record = get_effective_run(run_id)
     if run_record is None:
         raise HTTPException(status_code=404, detail=f"Evaluation run '{run_id}' not found.")
-
-    # Merge manual overrides
-    overrides = default_override_store.get_for_run(run_id)
-    override_by_team = {o.team_id: o for o in overrides}
-
-    eligible_count = 0
-    ineligible_count = 0
-    needs_review_count = 0
-
-    for team in run_record.teams:
-        if team.team_id in override_by_team:
-            o = override_by_team[team.team_id]
-            team.has_override = True
-            team.override = o
-            team.status = o.override_status
-            team.reasons = [
-                f"Manual override by {o.overridden_by} to {o.override_status.value}: {o.reason}"
-            ] + team.reasons
-
-        if team.status == EligibilityStatus.ELIGIBLE:
-            eligible_count += 1
-        elif team.status == EligibilityStatus.INELIGIBLE:
-            ineligible_count += 1
-        elif team.status == EligibilityStatus.NEEDS_REVIEW:
-            needs_review_count += 1
-
-    # Update summary with overridden counts
-    run_record.summary.eligible_count = eligible_count
-    run_record.summary.ineligible_count = ineligible_count
-    run_record.summary.needs_review_count = needs_review_count
-
     return run_record
 
 

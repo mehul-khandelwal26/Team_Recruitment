@@ -12,13 +12,14 @@ Endpoints:
 from __future__ import annotations
 
 import json
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from starlette.concurrency import run_in_threadpool
 
 from app.api.endpoints.ingestion import _resolve_parser
 from app.schemas.ingestion import MemberSchema, TeamSchema
+from app.signals.flatten import flatten_extraction_signals
 from app.signals.registry import default_signal_registry
 from app.signals.schemas import (
     CategoryDefinition,
@@ -74,6 +75,18 @@ async def extract_signals(request: ExtractionRunRequest) -> ExtractionRunRespons
         selected_signals=request.selected_signals,
         config=request.config,
     )
+
+
+@router.post("/flatten", response_model=list[dict[str, Any]])
+async def flatten_signals(request: ExtractionRunResponse) -> list[dict[str, Any]]:
+    """Flatten an ExtractionRunResponse into a list of member-signals dictionaries.
+
+    Produces:
+        [{"member_id": ..., "signals": [...]}]
+    Enables API clients to pipe signal extraction outputs directly into
+    /api/rules/evaluate and /api/scoring/evaluate without custom scripts.
+    """
+    return flatten_extraction_signals(request)
 
 
 @router.post("/extract-file", response_model=ExtractionRunResponse)

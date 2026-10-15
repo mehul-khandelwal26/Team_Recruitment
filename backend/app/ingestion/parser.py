@@ -539,6 +539,9 @@ def parse_csv(
     team_id_errors = _check_duplicate_team_ids(teams)
     errors.extend(team_id_errors)
 
+    disambig_warnings = _disambiguate_cross_team_member_ids(teams, warnings)
+    warnings.extend(disambig_warnings)
+
     success = len(teams) > 0 and len(errors) == 0
     members_count = sum(len(t.members) for t in teams)
 
@@ -853,6 +856,9 @@ def parse_json(
     team_id_errors = _check_duplicate_team_ids(teams)
     errors.extend(team_id_errors)
 
+    disambig_warnings = _disambiguate_cross_team_member_ids(teams, warnings)
+    warnings.extend(disambig_warnings)
+
     success = len(teams) > 0 and len(errors) == 0
     members_count = sum(len(t.members) for t in teams)
 
@@ -1008,3 +1014,53 @@ def _missing_profile_warnings(team: TeamSchema) -> list[ValidationWarning]:
                     )
                 )
     return warns
+
+
+def _disambiguate_cross_team_member_ids(
+    teams: list[TeamSchema],
+    existing_warnings: Optional[list[ValidationWarning]] = None,
+) -> list[ValidationWarning]:
+    """Detect any explicit member_id that appears in more than one team and disambiguate it.
+
+    For colliding IDs only:
+    - rewrites member.member_id to f"{team.team_id}_{member.member_id}"
+    - preserves original in member.raw_data["original_member_id"] = original_id
+    - creates a ValidationWarning
+    - updates any prior warnings referencing old_id to new_id
+    Non-colliding IDs are never modified.
+    """
+    member_to_teams: dict[str, set[str]] = {}
+    for team in teams:
+        for member in team.members:
+            member_to_teams.setdefault(member.member_id, set()).add(team.team_id)
+
+    colliding_ids = {m_id for m_id, t_ids in member_to_teams.items() if len(t_ids) > 1}
+    if not colliding_ids:
+        return []
+
+    disambig_warnings: list[ValidationWarning] = []
+
+    for team in teams:
+        for member in team.members:
+            if member.member_id in colliding_ids:
+                old_id = member.member_id
+                new_id = f"{team.team_id}_{old_id}"
+                member.raw_data["original_member_id"] = old_id
+                member.member_id = new_id
+
+                if existing_warnings:
+                    for w in existing_warnings:
+                        if w.team_id == team.team_id and w.member_id == old_id:
+                            w.member_id = new_id
+
+                disambig_warnings.append(
+                    ValidationWarning(
+                        team_id=team.team_id,
+                        member_id=new_id,
+                        field="member_id",
+                        message=f"Disambiguated colliding member_id '{old_id}' -> '{new_id}' across teams.",
+                    )
+                )
+
+    return disambig_warnings
+

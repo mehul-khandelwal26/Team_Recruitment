@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Optional, Protocol
 
-from app.rules.schemas import EligibilityRunResponse, ManualOverride
+from app.rules.schemas import EligibilityRunResponse, EligibilityStatus, ManualOverride
 
 
 # ---------------------------------------------------------------------------
@@ -98,3 +98,52 @@ class InMemoryOverrideStore:
 
 default_run_store = InMemoryRunStore()
 default_override_store = InMemoryOverrideStore()
+
+
+def get_effective_run(
+    run_id: str,
+    run_store: Optional[RunStore] = None,
+    override_store: Optional[OverrideStore] = None,
+) -> Optional[EligibilityRunResponse]:
+    """Retrieve an evaluation run's results with any manual overrides merged in.
+
+    Applies manual overrides to team status, reasons, has_override, and recalculates
+    the summary counts. Returns None if the run does not exist.
+    """
+    r_store = run_store or default_run_store
+    o_store = override_store or default_override_store
+
+    run_record = r_store.get(run_id)
+    if run_record is None:
+        return None
+
+    overrides = o_store.get_for_run(run_id)
+    override_by_team = {o.team_id: o for o in overrides}
+
+    eligible_count = 0
+    ineligible_count = 0
+    needs_review_count = 0
+
+    for team in run_record.teams:
+        if team.team_id in override_by_team:
+            o = override_by_team[team.team_id]
+            team.has_override = True
+            team.override = o
+            team.status = o.override_status
+            team.reasons = [
+                f"Manual override by {o.overridden_by} to {o.override_status.value}: {o.reason}"
+            ] + team.reasons
+
+        if team.status == EligibilityStatus.ELIGIBLE:
+            eligible_count += 1
+        elif team.status == EligibilityStatus.INELIGIBLE:
+            ineligible_count += 1
+        elif team.status == EligibilityStatus.NEEDS_REVIEW:
+            needs_review_count += 1
+
+    run_record.summary.eligible_count = eligible_count
+    run_record.summary.ineligible_count = ineligible_count
+    run_record.summary.needs_review_count = needs_review_count
+
+    return run_record
+
