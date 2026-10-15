@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.endpoints.ingestion import router as ingestion_router
+from app.api.endpoints.ranking import router as ranking_router
 from app.api.endpoints.rules import router as rules_router
 from app.api.endpoints.scoring import router as scoring_router
 from app.api.endpoints.signals import router as signals_router
@@ -45,6 +46,7 @@ app.include_router(ingestion_router)
 app.include_router(signals_router)
 app.include_router(rules_router)
 app.include_router(scoring_router)
+app.include_router(ranking_router)
 
 
 # ---------------------------------------------------------------------------

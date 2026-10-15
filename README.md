@@ -26,7 +26,7 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 - **Configuration versioning & manual organizer overrides** – immutable configuration version history, historic run auditing, and reason-backed manual eligibility overrides.
 - **Fault-isolated multi-team evaluation** – failure or missing data for one member or signal never halts execution of others.
 - **Variable team sizes** – handle teams of any size without hard-coded member limits.
-- **Scoring separation** – extraction, eligibility filtering, and scoring remain cleanly decoupled from ranking and top-X selection.
+- **Deterministic Top-X ranking & explainable shortlisting (Phase 6)** – 3-level deterministic ranking, tiebreak criteria, boundary cutoff tie protection, shortage diagnostics, review candidate suggestions, and full scoring breakdown preservation.
 
 ## 🛠️ Technology Stack
 
@@ -37,7 +37,7 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 | Data           | Pandas                                       |
 | HTTP / API     | HTTPX                                        |
 | Document Parsers | PyPDF (`pypdf`) · Python-Docx (`python-docx`) |
-| Testing        | Pytest · Starlette TestClient (260 tests)    |
+| Testing        | Pytest · Starlette TestClient (290 tests)    |
 | Frontend       | React + Vite *(planned)*                     |
 | Database       | PostgreSQL *(planned)*                       |
 
@@ -53,8 +53,8 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 | *Phase 3.1 (Milestone)* | **Resume Analyzer**: PDF/DOCX parsing, SSRF security, 12 signals, direct file upload | ✅ Completed |
 | **Phase 4** | Configurable eligibility rules and hard filters (Rules Engine) | ✅ Completed |
 | **Phase 5** | Weighted scoring and team-level aggregation (Scoring Engine) | ✅ Completed |
-| **Phase 6** | Ranking, top-X selection, and human-readable explanations | 🔲 *Next Up* |
-| **Phase 7** | Frontend integration and organizer dashboard | 🔲 Planned |
+| **Phase 6** | Ranking, top-X selection, and human-readable explanations | ✅ Completed |
+| **Phase 7** | Frontend integration and organizer dashboard | 🔲 *Next Up* |
 | **Phase 8** | End-to-end testing and final improvements | 🔲 Planned |
 
 ---
@@ -75,9 +75,9 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 | **Resume Analyzer** | ✅ Implemented | **12 signals**, PDF & DOCX extraction, SSRF security, direct upload API |
 | **Eligibility Rules Engine (Phase 4)** | ✅ Implemented | **10 rule types**, universal threshold evaluator (5 aggregations), cross-team duplicate detection, track caps, config versioning, manual overrides, and audit trails |
 | **Weighted Scoring Engine (Phase 5)** | ✅ Implemented | Relative weight normalization, criteria normalizations (numeric range, boolean, categorical), 6 aggregation methods, explicit missing-data policies, audit runs |
+| **Ranking & Top-X Selection (Phase 6)** | ✅ Implemented | Deterministic 3-level ordering, tiebreak criteria, cutoff tie handling, shortage diagnostics, review suggestions, and run persistence |
 | Portfolio Analyzer | 🔲 Staged Contract | `PortfolioAnalyzerContract` registered as planned capability |
-| Ranking & Selection (Phase 6) | 🔲 Not started | Planned after scoring engine |
-| React frontend (Phase 7) | 🔲 Not started | Planned after backend completion |
+| React frontend (Phase 7) | 🔲 Not started | Planned next |
 
 ---
 
@@ -363,6 +363,42 @@ Combines member-level normalized scores $s_i$ into a team criterion score $S_c$:
 
 ---
 
+## 🏆 Ranking, Top-X Selection & Explainable Shortlisting (Phase 6)
+
+Stage 6 of the recruitment pipeline consumes evaluation outputs from the eligibility and scoring engines to generate an explainable, deterministic shortlist of the Top-X teams.
+
+### Core Architecture & Ranking Rules
+
+1. **Deterministic 3-Level Ordering**:
+   - **Level 1**: Higher composite final score first (descending). Legitimate numerical `0.0` scores are valid and distinguishable from `NO_SCORE`.
+   - **Level 2 (Optional Tiebreak Criterion)**: If primary scores are equal, compare the configured `tiebreak_criterion_id` score in descending order. Teams with an available criterion score appear before teams lacking data for that criterion. Missing data never invents scores.
+   - **Level 3 (Deterministic Tiebreaker)**: If still tied (or when no tiebreak criterion is configured), sort deterministically by `team_id` in ascending alphabetical order.
+2. **Top-X Shortlist Selection**:
+   - Requires a positive integer `top_x > 0` (zero, negative, or invalid values are rejected with HTTP 422).
+   - Shortlists up to `top_x` qualifying teams.
+   - **Cutoff Tie Handling**: If multiple teams share the identical primary final score at the `top_x` cutoff boundary, the shortlist never silently expands beyond `top_x`. `tie_at_cutoff: True` is flagged and a transparent cutoff warning explains the tie-breaking decision.
+   - **Shortage Diagnostics**: When fewer than `top_x` teams qualify, a clear shortage warning is emitted. If scored `NEEDS_REVIEW` teams are available, the highest-ranked review candidates are surfaced as recommendations for organizer review without automatically approving them.
+3. **Strict Status Handling**:
+   - `ELIGIBLE`: Scored eligible teams participate in automatic ranking and selection.
+   - `INELIGIBLE`: Excluded from automatic selection with `INELIGIBLE` reason code; original eligibility failure reasons are preserved.
+   - `NEEDS_REVIEW`: Kept in a dedicated `needs_review_teams` section by default with provisional rankings and review explanations. When `include_needs_review: True` is configured, scored review teams participate in selection without mutating their underlying `NEEDS_REVIEW` status.
+   - `NO_SCORE`: Excluded with `NO_SCORE` reason code.
+   - `DISQUALIFIED`: Excluded with `DISQUALIFIED` reason code; cannot be bypassed by general inclusion flags.
+   - `UNRESOLVED`: Teams with temporary or ambiguous duplicate-name registrations (`is_unresolved: True`) are isolated with `UNRESOLVED` reason code.
+   - **Missing Eligibility Data**: If run without upstream eligibility, teams are scored and ranked with a warning explicitly noting that eligibility was unverified.
+
+---
+
+## 📡 Ranking & Shortlisting API Endpoints
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/ranking/evaluate` | Execute Top-X ranking and selection from scoring run, explicit results, or end-to-end evaluation |
+| `GET` | `/api/ranking/runs/{run_id}` | Retrieve a recorded ranking run with all shortlisted teams, breakdowns, and exclusions |
+| `GET` | `/api/ranking/runs` | List all historical recorded ranking evaluation runs |
+
+---
+
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -424,7 +460,7 @@ Run the complete automated test suite locally:
 pytest -v
 ```
 
-The test suite includes **260 automated tests** with 100% pass rate:
+The test suite includes **290 automated tests** with 100% pass rate:
 - **`backend/tests/test_ingestion.py`** (47 tests): CSV/JSON ingestion, header discovery, dynamic form mapping, custom field preservation, and validation.
 - **`backend/tests/test_duplicate_teams_regression.py`** (15 tests): Duplicate team name detection, automatic ID generation, temporary non-merging IDs (`TEMP_TEAM_...`), and warning generation.
 - **`backend/tests/test_signals.py`** (39 tests): Extensible signal registry, catalog discovery, GitHub API analysis, Academic CGPA/batch normalization, and cross-analyzer fault isolation.
@@ -433,6 +469,7 @@ The test suite includes **260 automated tests** with 100% pass rate:
 - **`backend/tests/test_eligibility_spec.py`** (52 tests): Specification compliance for all 10 rule types, threshold operators, boundary conditions, all 5 aggregation reductions, cross-team email duplicates, fault isolation, determinism, and HTTP 422 configuration validation.
 - **`backend/tests/test_scoring.py`** (36 tests): Configurable scoring criteria, relative weight normalization, min-max/boolean/categorical normalization, 6 member-to-team aggregations, missing data policies (exclude and renormalize, zero score), confidence adjustment, eligibility integration, and API endpoints.
 - **`backend/tests/test_phase5_integration_fixes.py`** (4 tests): Integration fixes for scoring with eligibility run IDs, manual overrides applied to scoring, cross-team member ID disambiguation in CSV/JSON ingestion, and signals extraction output flattening.
+- **`backend/tests/test_ranking.py`** (30 tests): Deterministic 3-level ranking, Top-X selection with strict boundary checks, shortage detection and recommendations, status and missing data handling, tie-breaking criteria, explainability audit trails, and end-to-end pipeline evaluation.
 
 All external HTTP calls in the test suite are mocked; no real GitHub API tokens or external network access are required.
 
@@ -440,8 +477,7 @@ All external HTTP calls in the test suite are mocked; no real GitHub API tokens 
 
 ## ⚠️ Current Limitations & Next Steps
 
-1. **Next Milestone (Phase 6 - Ranking, Top-X Selection & Explanations)**: Implementing multi-attribute sorting, tie-breaking rules, quota/diversity enforcement, Top-X shortlisting, and natural language summary generation.
-2. **Frontend Integration & Organizer Dashboard (Phase 7)**: React + Vite web application with interactive CSV upload, signal selection, eligibility rule builder, scoring criteria weights slider, and live ranking leaderboard.
+1. **Next Milestone (Phase 7 - Frontend Integration & Organizer Dashboard)**: React + Vite web application with interactive CSV upload, signal selection, eligibility rule builder, scoring criteria weights slider, and live ranking leaderboard.
+2. **Database Persistence**: Currently in-memory and request/response-based stores. Relational database persistence (e.g., PostgreSQL / SQLAlchemy) can be introduced in a future milestone.
 3. **Future AI Resume Analyzer**: An architectural audit confirmed that an advanced external AI/LLM resume provider can be plugged in via strategy pattern without altering existing signal contracts or downstream scoring.
-4. **Database Persistence**: Currently in-memory and request/response-based. Relational database persistence will be introduced in a future milestone.
-5. **GitHub Unauthenticated Rate Limits**: Unauthenticated calls to GitHub API are limited to 60 requests per hour per IP. Set `GITHUB_TOKEN` in `.env` for production workloads to achieve 5,000 req/hr.
+4. **GitHub Unauthenticated Rate Limits**: Unauthenticated calls to GitHub API are limited to 60 requests per hour per IP. Set `GITHUB_TOKEN` in `.env` for production workloads to achieve 5,000 req/hr.
