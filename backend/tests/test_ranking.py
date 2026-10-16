@@ -594,10 +594,27 @@ def test_integration_manual_override_respected_in_ranking():
         json={"override_status": "INELIGIBLE", "reason": "Disqualified by organizer committee"},
     )
 
-    # Score with eligibility_run_id
+    # Score with eligibility_run_id and signals so team has a valid calculated score
     score = client.post(
         "/api/scoring/evaluate",
-        json={"teams": [team_data], "config_id": "balanced", "eligibility_run_id": elig_id},
+        json={
+            "teams": [team_data],
+            "signals": [
+                {
+                    "member_id": "m1",
+                    "signals": [
+                        {
+                            "signal_key": "academic_cgpa",
+                            "category": "academic",
+                            "value": 8.5,
+                            "status": "extracted",
+                        }
+                    ],
+                }
+            ],
+            "config_id": "balanced",
+            "eligibility_run_id": elig_id,
+        },
     ).json()
 
     # Rank
@@ -667,3 +684,192 @@ def test_integration_run_parameters_and_traceability_retained():
     assert rank_res.top_x == 5
     assert rank_res.include_needs_review is True
     assert rank_res.tiebreak_criterion_id == "crit_alpha"
+
+
+# ---------------------------------------------------------------------------
+# Phase 6.1: Integration Fixes & Regression Verification Tests
+# ---------------------------------------------------------------------------
+
+
+def test_fix1_ranking_uses_effective_eligibility_status_and_overrides():
+    """Phase 6.1 FIX 1: Ranking uses effective eligibility status with overrides in both directions."""
+    teams = [
+        {
+            "team_id": "T_A",
+            "team_name": "Team A",
+            "members": [
+                {"member_id": "m1", "name": "Alice", "github_url": "https://github.com/alice"},
+                {"member_id": "m2", "name": "Aaron", "github_url": "https://github.com/aaron"},
+            ],
+        },
+        {
+            "team_id": "T_B",
+            "team_name": "Team B",
+            "members": [
+                {"member_id": "m3", "name": "Bob", "github_url": "https://github.com/bob"},
+                {"member_id": "m4", "name": "Bella", "github_url": "https://github.com/bella"},
+            ],
+        },
+    ]
+    signals_elig = [
+        {
+            "member_id": "m1",
+            "signals": [
+                {"signal_key": "academic_cgpa", "category": "academic", "value": 8.5, "status": "extracted"},
+                {"signal_key": "github_public_repo_count", "category": "github", "value": 3, "status": "extracted"},
+            ],
+        },
+        {
+            "member_id": "m2",
+            "signals": [
+                {"signal_key": "academic_cgpa", "category": "academic", "value": 8.0, "status": "extracted"},
+                {"signal_key": "github_public_repo_count", "category": "github", "value": 2, "status": "extracted"},
+            ],
+        },
+    ]
+
+    # Evaluate rules under strict preset: T_A is ELIGIBLE, T_B is NEEDS_REVIEW (CGPA missing)
+    res_elig = client.post(
+        "/api/rules/evaluate",
+        json={"teams": teams, "signals": signals_elig, "config_id": "strict"},
+    ).json()
+    elig_id = res_elig["run_id"]
+    assert next(t["status"] for t in res_elig["teams"] if t["team_id"] == "T_A") == "ELIGIBLE"
+    assert next(t["status"] for t in res_elig["teams"] if t["team_id"] == "T_B") == "NEEDS_REVIEW"
+
+    # Score teams under balanced preset (provide signals for all members so both teams have calculated scores)
+    signals_score = signals_elig + [
+        {"member_id": "m3", "signals": [{"signal_key": "academic_cgpa", "category": "academic", "value": 9.0, "status": "extracted"}]},
+        {"member_id": "m4", "signals": [{"signal_key": "academic_cgpa", "category": "academic", "value": 9.0, "status": "extracted"}]},
+    ]
+    score_res = client.post(
+        "/api/scoring/evaluate",
+        json={
+            "teams": teams,
+            "signals": signals_score,
+            "config_id": "balanced",
+            "eligibility_run_id": elig_id,
+        },
+    ).json()
+    score_id = score_res["run_id"]
+
+    # Verify initial scoring record in store has T_A ELIGIBLE and T_B NEEDS_REVIEW
+    stored_score_before = default_scoring_run_store.get(score_id)
+    assert stored_score_before is not None
+    assert next(t.eligibility_status for t in stored_score_before.teams if t.team_id == "T_A") == EligibilityStatus.ELIGIBLE
+    assert next(t.eligibility_status for t in stored_score_before.teams if t.team_id == "T_B") == EligibilityStatus.NEEDS_REVIEW
+
+    # Apply manual overrides in BOTH directions:
+    # 1. T_A: ELIGIBLE -> INELIGIBLE (excludes candidate)
+    ovr_a = client.post(
+        f"/api/rules/runs/{elig_id}/teams/T_A/override",
+        json={"override_status": "INELIGIBLE", "reason": "Disqualified post-scoring by organizer committee"},
+    )
+    assert ovr_a.status_code == 200
+
+    # 2. T_B: NEEDS_REVIEW -> ELIGIBLE (selects candidate)
+    ovr_b = client.post(
+        f"/api/rules/runs/{elig_id}/teams/T_B/override",
+        json={"override_status": "ELIGIBLE", "reason": "Academic transcripts verified offline"},
+    )
+    assert ovr_b.status_code == 200
+
+    # Rank with scoring_run_id + eligibility_run_id
+    rank_res = client.post(
+        "/api/ranking/evaluate",
+        json={"top_x": 2, "scoring_run_id": score_id, "eligibility_run_id": elig_id},
+    )
+    assert rank_res.status_code == 200
+    rank_data = rank_res.json()
+
+    # Assert overridden status is used in both directions:
+    # T_A (overridden to INELIGIBLE) is excluded
+    assert len(rank_data["selected_teams"]) == 1
+    assert rank_data["selected_teams"][0]["team_id"] == "T_B"
+    assert rank_data["selected_teams"][0]["selection_status"] == SelectionStatus.SELECTED
+
+    # T_A is in excluded_teams with reason_code INELIGIBLE and explanation containing override reason
+    assert len(rank_data["excluded_teams"]) == 1
+    excl_a = rank_data["excluded_teams"][0]
+    assert excl_a["team_id"] == "T_A"
+    assert excl_a["reason_code"] == ExclusionReason.INELIGIBLE
+    assert "Disqualified post-scoring by organizer committee" in excl_a["explanation"]
+
+    # Assert stored scoring run is NOT mutated
+    stored_score_after = default_scoring_run_store.get(score_id)
+    assert stored_score_after is not None
+    assert next(t.eligibility_status for t in stored_score_after.teams if t.team_id == "T_A") == EligibilityStatus.ELIGIBLE
+    assert next(t.eligibility_status for t in stored_score_after.teams if t.team_id == "T_B") == EligibilityStatus.NEEDS_REVIEW
+
+    # Missing eligibility_run_id returns HTTP 404
+    resp_404 = client.post(
+        "/api/ranking/evaluate",
+        json={"top_x": 1, "scoring_run_id": score_id, "eligibility_run_id": "nonexistent_elig_id_999"},
+    )
+    assert resp_404.status_code == 404
+
+    # Unmatched team in eligibility run leaves status as-is and adds warning
+    unmatched_team = make_scored_team("T_UNMATCHED", final_score=80.0, eligibility_status=EligibilityStatus.ELIGIBLE)
+    res_unmatched = evaluate_ranking([unmatched_team], top_x=1, eligibility_run_id=elig_id)
+    assert res_unmatched.selected_teams[0].team_id == "T_UNMATCHED"
+    assert res_unmatched.selected_teams[0].eligibility_status == EligibilityStatus.ELIGIBLE
+    assert any("Team 'T_UNMATCHED' was not found in eligibility run" in w for w in res_unmatched.warnings)
+
+
+def test_fix2_balanced_preset_no_signals_yields_no_score():
+    """Phase 6.1 FIX 2: Team with no extracted signals scored with 'balanced' gets NO_SCORE and is excluded by ranking."""
+    team_data = {
+        "team_id": "t_no_signals",
+        "team_name": "Team Zero Signal",
+        "members": [{"member_id": "m1", "name": "Member One", "email": "m1@example.com"}],
+    }
+
+    # Score with balanced preset without extracting signals
+    score_resp = client.post(
+        "/api/scoring/evaluate",
+        json={"teams": [team_data], "config_id": "balanced"},
+    )
+    assert score_resp.status_code == 200
+    score_body = score_resp.json()
+    team_res = score_body["teams"][0]
+    assert team_res["score_status"] == ScoreStatus.NO_SCORE
+    assert team_res["final_score"] is None
+
+    # Ranking must exclude this team with reason code NO_SCORE
+    rank_resp = client.post(
+        "/api/ranking/evaluate",
+        json={"top_x": 1, "scoring_run_id": score_body["run_id"]},
+    )
+    assert rank_resp.status_code == 200
+    rank_body = rank_resp.json()
+    assert len(rank_body["selected_teams"]) == 0
+    assert len(rank_body["excluded_teams"]) == 1
+    excl = rank_body["excluded_teams"][0]
+    assert excl["team_id"] == "t_no_signals"
+    assert excl["reason_code"] == ExclusionReason.NO_SCORE
+
+
+def test_fix3_ranking_duplicate_team_id_and_boolean_top_x():
+    """Phase 6.1 FIX 3: Deduplicate duplicate team_id with warning, and reject boolean top_x."""
+    # 1. Deduplicate team_id in scoring_results
+    t_dup_1 = make_scored_team("T_DUP", final_score=90.0, team_name="First T_DUP")
+    t_dup_2 = make_scored_team("T_DUP", final_score=50.0, team_name="Second T_DUP")
+    t_other = make_scored_team("T_OTHER", final_score=80.0, team_name="Other Team")
+
+    res = evaluate_ranking([t_dup_1, t_dup_2, t_other], top_x=2)
+    assert len(res.selected_teams) == 2
+    assert res.selected_teams[0].team_id == "T_DUP"
+    assert res.selected_teams[0].final_score == 90.0
+    assert res.selected_teams[1].team_id == "T_OTHER"
+    assert any("Duplicate team_id 'T_DUP'" in w for w in res.warnings)
+
+    # 2. Schema rejection of boolean top_x (HTTP 422)
+    api_resp = client.post(
+        "/api/ranking/evaluate",
+        json={"top_x": True, "scoring_results": [t_other.model_dump()]},
+    )
+    assert api_resp.status_code == 422
+
+    # 3. Engine rejection of boolean top_x (ValueError)
+    with pytest.raises(ValueError, match="top_x must be a positive integer"):
+        evaluate_ranking([t_other], top_x=True)  # type: ignore[arg-type]

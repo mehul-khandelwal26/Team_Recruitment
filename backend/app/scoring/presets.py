@@ -76,7 +76,7 @@ def get_default_scoring_presets() -> list[ScoringConfiguration]:
                         boolean_mapping=BooleanMappingConfig(true_score=1.0, false_score=0.0),
                     ),
                     aggregation=AggregationMethod.MAX,
-                    missing_data_policy=MissingDataPolicy.ZERO_SCORE,
+                    missing_data_policy=MissingDataPolicy.EXCLUDE_AND_RENORMALIZE,
                 ),
             ],
         ),

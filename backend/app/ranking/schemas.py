@@ -256,9 +256,16 @@ class RankingEvaluationRequest(BaseModel):
         description="Optional injected ISO timestamp for deterministic testing.",
     )
 
-    @field_validator("top_x")
+    @field_validator("top_x", mode="before")
     @classmethod
-    def validate_top_x_positive(cls, v: int) -> int:
+    def validate_top_x_not_bool(cls, v: Any) -> Any:
+        if isinstance(v, bool):
+            raise ValueError("top_x cannot be a boolean value")
+        if not isinstance(v, int):
+            try:
+                v = int(v)
+            except (ValueError, TypeError):
+                raise ValueError("top_x must be a positive integer (> 0)")
         if v <= 0:
             raise ValueError(f"top_x must be a positive integer (> 0), got {v}")
         return v

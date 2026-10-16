@@ -23,7 +23,8 @@ from app.ranking.schemas import (
     RankingRunSummary,
     SelectionStatus,
 )
-from app.rules.schemas import EligibilityStatus
+from app.rules.schemas import EligibilityRunResponse, EligibilityStatus
+from app.rules.store import get_effective_run
 from app.scoring.schemas import ScoreStatus, TeamScoringResult
 
 
@@ -44,7 +45,10 @@ def extract_tiebreak_score(
     return None
 
 
-def is_unresolved_team(team: TeamScoringResult | dict[str, Any]) -> bool:
+def is_unresolved_team(
+    team: TeamScoringResult | dict[str, Any],
+    unresolved_team_ids: Optional[set[str]] = None,
+) -> bool:
     """Check whether a team has a temporary or ambiguous duplicate identity."""
     if isinstance(team, dict):
         if team.get("is_unresolved") or team.get("is_temporary_id"):
@@ -55,7 +59,11 @@ def is_unresolved_team(team: TeamScoringResult | dict[str, Any]) -> bool:
             return True
         t_id = str(team.team_id)
 
-    return t_id.startswith("temp_team_") or "_unresolved_" in t_id
+    if unresolved_team_ids and t_id in unresolved_team_ids:
+        return True
+
+    lower_id = t_id.lower()
+    return lower_id.startswith("temp_team_") or "_unresolved_" in lower_id
 
 
 def build_ranking_sort_key(
@@ -93,6 +101,7 @@ def evaluate_ranking(
     eligibility_run_id: Optional[str] = None,
     evaluated_at: Optional[str] = None,
     run_id: Optional[str] = None,
+    effective_eligibility_run: Optional[EligibilityRunResponse] = None,
 ) -> RankingRunResponse:
     """Execute deterministic Top-X ranking and selection from scoring results.
 
@@ -105,11 +114,12 @@ def evaluate_ranking(
         eligibility_run_id: Optional linked eligibility run ID.
         evaluated_at: Optional injected ISO timestamp for deterministic testing.
         run_id: Optional injected run ID for deterministic testing.
+        effective_eligibility_run: Optional pre-loaded effective eligibility run with overrides applied.
 
     Returns:
         RankingRunResponse with shortlist, all ranked teams, review teams, and exclusions.
     """
-    if not isinstance(top_x, int) or top_x <= 0:
+    if isinstance(top_x, bool) or not isinstance(top_x, int) or top_x <= 0:
         raise ValueError(f"top_x must be a positive integer (> 0), got: {top_x}")
 
     now_ts = evaluated_at or datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -118,18 +128,51 @@ def evaluate_ranking(
     warnings: list[str] = []
     errors: list[str] = []
 
-    # 1. Parse into TeamScoringResult instances
+    # 1. Parse into TeamScoringResult instances (deep copy to avoid mutating stored records)
     parsed_teams: list[TeamScoringResult] = []
     for item in scoring_results:
         if isinstance(item, TeamScoringResult):
-            parsed_teams.append(item)
+            parsed_teams.append(item.model_copy(deep=True))
         elif isinstance(item, dict):
             try:
                 parsed_teams.append(TeamScoringResult.model_validate(item))
             except Exception as exc:
                 errors.append(f"Failed to parse scoring result for team '{item.get('team_id', '?')}': {exc}")
 
-    # 2. Categorize candidates
+    # 2. Deduplicate team_id: keep the first occurrence and emit a warning for duplicates
+    seen_team_ids: set[str] = set()
+    deduped_teams: list[TeamScoringResult] = []
+    for t in parsed_teams:
+        if t.team_id in seen_team_ids:
+            warnings.append(
+                f"Duplicate team_id '{t.team_id}' encountered in scoring results; keeping the first occurrence and ignoring subsequent ones."
+            )
+            continue
+        seen_team_ids.add(t.team_id)
+        deduped_teams.append(t)
+    parsed_teams = deduped_teams
+
+    # 3. Synchronize with effective eligibility run if provided or resolvable
+    eff_run = effective_eligibility_run
+    if eff_run is None and eligibility_run_id:
+        eff_run = get_effective_run(eligibility_run_id)
+
+    unresolved_team_ids: set[str] = set()
+    if eff_run is not None:
+        eff_teams_by_id = {team.team_id: team for team in eff_run.teams}
+        for t in parsed_teams:
+            if t.team_id in eff_teams_by_id:
+                elig_t = eff_teams_by_id[t.team_id]
+                t.eligibility_status = elig_t.status
+                t.eligibility_summary = "; ".join(elig_t.reasons) if elig_t.reasons else None
+                if getattr(elig_t, "is_unresolved", False) or getattr(elig_t, "is_temporary_id", False):
+                    unresolved_team_ids.add(t.team_id)
+            else:
+                warnings.append(
+                    f"Team '{t.team_id}' was not found in eligibility run '{eff_run.run_id}'; retaining existing eligibility status."
+                )
+
+    # 4. Categorize candidates
     qualifying_candidates: list[TeamScoringResult] = []
     needs_review_candidates: list[TeamScoringResult] = []
     unresolved_candidates: list[ExcludedTeamResult] = []
@@ -139,7 +182,7 @@ def evaluate_ranking(
 
     for t in parsed_teams:
         # A. Check unresolved team identity
-        if is_unresolved_team(t):
+        if is_unresolved_team(t, unresolved_team_ids):
             excl = ExcludedTeamResult(
                 team_id=t.team_id,
                 team_name=t.team_name,

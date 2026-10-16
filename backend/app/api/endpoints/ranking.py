@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, status
 from app.ranking.engine import evaluate_ranking
 from app.ranking.schemas import RankingEvaluationRequest, RankingRunResponse
 from app.ranking.store import default_ranking_run_store
+from app.rules.store import get_effective_run
 from app.scoring.config_store import default_scoring_config_store
 from app.scoring.engine import evaluate_scoring
 from app.scoring.schemas import ScoringConfiguration
@@ -20,6 +21,15 @@ router = APIRouter(prefix="/api/ranking", tags=["Ranking"])
 @router.post("/evaluate", response_model=RankingRunResponse)
 def evaluate_ranking_endpoint(request: RankingEvaluationRequest) -> RankingRunResponse:
     """Execute deterministic Top-X ranking and selection from scoring results or end-to-end evaluation."""
+    effective_elig_run = None
+    if request.eligibility_run_id:
+        effective_elig_run = get_effective_run(request.eligibility_run_id)
+        if effective_elig_run is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Eligibility run '{request.eligibility_run_id}' not found.",
+            )
+
     scoring_results = None
     derived_scoring_run_id = request.scoring_run_id
 
@@ -80,6 +90,7 @@ def evaluate_ranking_endpoint(request: RankingEvaluationRequest) -> RankingRunRe
         eligibility_run_id=request.eligibility_run_id,
         evaluated_at=request.evaluated_at,
         run_id=request.run_id,
+        effective_eligibility_run=effective_elig_run,
     )
 
     # 5. Persist run record

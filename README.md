@@ -12,7 +12,7 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 
 - **CSV / JSON ingestion** – upload registration data in common formats (JSON root must be an array of team objects: `[{"team_name": ..., "members": [...]}]`, not a bare object) with dynamic form discovery.
 - **Dynamic schema mapping** – map custom organizer column names to canonical target fields without code changes.
-- **Missing ID generation & duplicate team handling** – autogenerates missing member/team IDs, detects ambiguous duplicate team names, assigns non-merging temporary IDs (`TEMP_TEAM_...`), disambiguates colliding cross-team member IDs, and surfaces actionable organizer warnings.
+- **Missing ID generation & duplicate team handling** – autogenerates missing member/team IDs, detects ambiguous duplicate team names, assigns non-merging temporary IDs (`temp_team_...`), disambiguates colliding cross-team member IDs, and surfaces actionable organizer warnings.
 - **Arbitrary field preservation** – unmapped form fields and raw records are safely preserved in `custom_fields` and `raw_data`.
 - **Extensible signal extraction** – pluggable analyzers for GitHub activity, academics, resume documents, and future data sources.
 - **Document parsing & resume analysis** – extracts skills, projects, education, work experience, certifications, and links from PDF and DOCX documents without OCR.
@@ -67,7 +67,7 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 | FastAPI app skeleton | ✅ Done | Application instance, health check, CORS, router mounts |
 | Ingestion & Discovery | ✅ Done | CSV/JSON upload, dynamic header discovery, schema mapping |
 | Missing ID generation | ✅ Done | Generates missing Team/Member IDs without overwriting explicit IDs |
-| Duplicate team detection | ✅ Done | Detects same-name teams, assigns temporary IDs (`TEMP_TEAM_...`), preserves separation |
+| Duplicate team detection | ✅ Done | Detects same-name teams, assigns temporary IDs (`temp_team_...`), preserves separation |
 | Dynamic form mapping | ✅ Done | Preserves arbitrary custom fields, tracks missing states |
 | Signal Extraction Framework | ✅ Implemented | Extensible registry, selective signals, catalog APIs |
 | GitHub Analyzer | ✅ Implemented | Public repo count, repo metadata, recent activity, profile verification |
@@ -381,7 +381,7 @@ Stage 6 of the recruitment pipeline consumes evaluation outputs from the eligibi
 3. **Strict Status Handling**:
    - `ELIGIBLE`: Scored eligible teams participate in automatic ranking and selection.
    - `INELIGIBLE`: Excluded from automatic selection with `INELIGIBLE` reason code; original eligibility failure reasons are preserved.
-   - `NEEDS_REVIEW`: Kept in a dedicated `needs_review_teams` section by default with provisional rankings and review explanations. When `include_needs_review: True` is configured, scored review teams participate in selection without mutating their underlying `NEEDS_REVIEW` status.
+   - `NEEDS_REVIEW`: Kept in a dedicated `needs_review_teams` section by default with provisional rankings and review explanations. When `include_needs_review: False` (the default), `NEEDS_REVIEW` teams also appear in `excluded_teams` and are included in `summary.excluded_count`. When `include_needs_review: True` is configured, scored review teams participate in selection without mutating their underlying `NEEDS_REVIEW` status.
    - `NO_SCORE`: Excluded with `NO_SCORE` reason code.
    - `DISQUALIFIED`: Excluded with `DISQUALIFIED` reason code; cannot be bypassed by general inclusion flags.
    - `UNRESOLVED`: Teams with temporary or ambiguous duplicate-name registrations (`is_unresolved: True`) are isolated with `UNRESOLVED` reason code.
@@ -460,16 +460,16 @@ Run the complete automated test suite locally:
 pytest -v
 ```
 
-The test suite includes **290 automated tests** with 100% pass rate:
+The test suite includes **293 automated tests** with 100% pass rate:
 - **`backend/tests/test_ingestion.py`** (47 tests): CSV/JSON ingestion, header discovery, dynamic form mapping, custom field preservation, and validation.
-- **`backend/tests/test_duplicate_teams_regression.py`** (15 tests): Duplicate team name detection, automatic ID generation, temporary non-merging IDs (`TEMP_TEAM_...`), and warning generation.
+- **`backend/tests/test_duplicate_teams_regression.py`** (15 tests): Duplicate team name detection, automatic ID generation, temporary non-merging IDs (`temp_team_...`), and warning generation.
 - **`backend/tests/test_signals.py`** (39 tests): Extensible signal registry, catalog discovery, GitHub API analysis, Academic CGPA/batch normalization, and cross-analyzer fault isolation.
 - **`backend/tests/test_resume_analyzer.py`** (45 tests): PDF & DOCX text parsing, all 12 resume signals, SSRF security defenses, size limits, direct file upload endpoint, and multi-analyzer compatibility.
 - **`backend/tests/test_eligibility.py`** (22 tests): Eligibility engine foundation, catalog schemas, configuration versioning, missing data contradiction resolution, numeric safety, team lead resolution, and manual overrides.
 - **`backend/tests/test_eligibility_spec.py`** (52 tests): Specification compliance for all 10 rule types, threshold operators, boundary conditions, all 5 aggregation reductions, cross-team email duplicates, fault isolation, determinism, and HTTP 422 configuration validation.
 - **`backend/tests/test_scoring.py`** (36 tests): Configurable scoring criteria, relative weight normalization, min-max/boolean/categorical normalization, 6 member-to-team aggregations, missing data policies (exclude and renormalize, zero score), confidence adjustment, eligibility integration, and API endpoints.
 - **`backend/tests/test_phase5_integration_fixes.py`** (4 tests): Integration fixes for scoring with eligibility run IDs, manual overrides applied to scoring, cross-team member ID disambiguation in CSV/JSON ingestion, and signals extraction output flattening.
-- **`backend/tests/test_ranking.py`** (30 tests): Deterministic 3-level ranking, Top-X selection with strict boundary checks, shortage detection and recommendations, status and missing data handling, tie-breaking criteria, explainability audit trails, and end-to-end pipeline evaluation.
+- **`backend/tests/test_ranking.py`** (33 tests): Deterministic 3-level ranking, Top-X selection with strict boundary checks, shortage detection and recommendations, status and missing data handling, tie-breaking criteria, explainability audit trails, end-to-end pipeline evaluation, effective eligibility sync, manual override bidirectional ranking, balanced preset NO_SCORE handling, deduplication, and boolean top_x rejection.
 
 All external HTTP calls in the test suite are mocked; no real GitHub API tokens or external network access are required.
 
