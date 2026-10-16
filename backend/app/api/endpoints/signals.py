@@ -11,6 +11,7 @@ Endpoints:
 
 from __future__ import annotations
 
+import datetime
 import json
 from typing import Any, Optional
 
@@ -168,6 +169,7 @@ async def extract_signals_from_file(
             total_teams=0,
             total_members=0,
             errors=err_msgs,
+            created_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
         )
 
     return await run_in_threadpool(

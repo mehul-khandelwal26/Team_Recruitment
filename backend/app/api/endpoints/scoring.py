@@ -256,6 +256,8 @@ def evaluate_teams_endpoint(request: ScoringEvaluationRequest) -> ScoringRunResp
                 detail=f"Scoring configuration '{cfg_id}' (version: {request.config_version or 'latest'}) not found.",
             )
 
+    is_inline = request.inline_config is not None
+
     result = evaluate_scoring(
         teams=request.teams,
         signals=request.signals,
@@ -263,6 +265,9 @@ def evaluate_teams_endpoint(request: ScoringEvaluationRequest) -> ScoringRunResp
         eligibility_run_id=request.eligibility_run_id,
         eligibility_results=request.eligibility_results,
     )
+    result.config_source = "inline" if is_inline else "stored"
+    result.config_snapshot = config.model_copy(deep=True) if is_inline else None
+    result.eligibility_run_id = request.eligibility_run_id
 
     # Persist in run store
     default_scoring_run_store.save(result)

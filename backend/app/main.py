@@ -5,6 +5,9 @@ registers routers. Additional routers will be mounted here
 as features are implemented.
 """
 
+import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -13,7 +16,15 @@ from app.api.endpoints.ranking import router as ranking_router
 from app.api.endpoints.rules import router as rules_router
 from app.api.endpoints.scoring import router as scoring_router
 from app.api.endpoints.signals import router as signals_router
-from app.config import APP_ENV, CORS_ORIGINS
+from app.config import APP_ENV, CORS_ORIGINS, STORAGE_BACKEND, validate_startup_configuration
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Validate environment configuration at application startup."""
+    validate_startup_configuration()
+    yield
+
 
 # ---------------------------------------------------------------------------
 # Application instance
@@ -26,6 +37,7 @@ app = FastAPI(
         "and weighted scoring."
     ),
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # ---------------------------------------------------------------------------
@@ -57,7 +69,8 @@ async def health_check():
     """Return a simple status indicating the backend is running."""
     return {
         "status": "healthy",
-        "environment": APP_ENV,
+        "environment": os.getenv("APP_ENV", APP_ENV),
         "version": app.version,
+        "storage_backend": os.getenv("STORAGE_BACKEND", STORAGE_BACKEND),
     }
 

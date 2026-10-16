@@ -347,6 +347,14 @@ class EligibilityRunResponse(BaseModel):
     )
     warnings: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    dataset_id: Optional[str] = Field(
+        default=None,
+        description="Optional dataset identifier if evaluated against a stored dataset snapshot.",
+    )
+    extraction_run_id: Optional[str] = Field(
+        default=None,
+        description="Optional extraction run identifier if signals were loaded from a stored extraction run.",
+    )
 
 
 class RuleTypeCatalogItem(BaseModel):

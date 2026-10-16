@@ -50,8 +50,10 @@ def evaluate_ranking_endpoint(request: RankingEvaluationRequest) -> RankingRunRe
     # 3. Option C: Evaluate scoring on the fly from teams & signals
     elif request.teams is not None:
         scoring_config: Optional[ScoringConfiguration] = None
+        is_inline_scoring = False
         if request.inline_scoring_config is not None:
             scoring_config = request.inline_scoring_config
+            is_inline_scoring = True
         else:
             cfg_id = request.scoring_config_id or "balanced"
             scoring_config = default_scoring_config_store.get(
@@ -70,6 +72,9 @@ def evaluate_ranking_endpoint(request: RankingEvaluationRequest) -> RankingRunRe
             eligibility_run_id=request.eligibility_run_id,
             eligibility_results=request.eligibility_results,
         )
+        scoring_run.config_source = "inline" if is_inline_scoring else "stored"
+        scoring_run.config_snapshot = scoring_config.model_copy(deep=True) if is_inline_scoring else None
+        scoring_run.eligibility_run_id = request.eligibility_run_id
         default_scoring_run_store.save(scoring_run)
         scoring_results = scoring_run.teams
         derived_scoring_run_id = scoring_run.run_id

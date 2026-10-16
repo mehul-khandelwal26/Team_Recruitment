@@ -6,6 +6,7 @@ without tight coupling to the data ingestion engine or premature scoring calcula
 
 from __future__ import annotations
 
+import datetime
 import uuid
 from abc import ABC, abstractmethod
 from typing import Any, Optional
@@ -302,4 +303,5 @@ class SignalExtractorRegistry:
             total_members=total_members,
             warnings=warnings,
             errors=errors,
+            created_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
         )

@@ -193,6 +193,14 @@ class RankingRunResponse(BaseModel):
         default_factory=list,
         description="Run-level non-fatal errors encountered.",
     )
+    dataset_id: Optional[str] = Field(
+        default=None,
+        description="Source dataset ID if evaluated from a stored dataset.",
+    )
+    extraction_run_id: Optional[str] = Field(
+        default=None,
+        description="Source extraction run ID if linked.",
+    )
 
 
 class RankingEvaluationRequest(BaseModel):

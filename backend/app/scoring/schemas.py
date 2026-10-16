@@ -359,6 +359,26 @@ class ScoringRunResponse(BaseModel):
     summary: ScoringRunSummary
     warnings: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    eligibility_run_id: Optional[str] = Field(
+        default=None,
+        description="Source eligibility run ID if linked.",
+    )
+    dataset_id: Optional[str] = Field(
+        default=None,
+        description="Source dataset ID if evaluated from a stored dataset.",
+    )
+    extraction_run_id: Optional[str] = Field(
+        default=None,
+        description="Source extraction run ID if linked.",
+    )
+    config_source: Optional[str] = Field(
+        default=None,
+        description="Configuration origin: 'stored' for store presets/configs or 'inline' for ad-hoc configs.",
+    )
+    config_snapshot: Optional[ScoringConfiguration] = Field(
+        default=None,
+        description="Full snapshot of the exact scoring configuration used (set only for inline runs).",
+    )
 
 
 class ScoringEvaluationRequest(BaseModel):

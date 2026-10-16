@@ -184,6 +184,14 @@ class ExtractionRunResponse(BaseModel):
     total_members: int = 0
     warnings: list[str] = Field(default_factory=list, description="Run-level warnings")
     errors: list[str] = Field(default_factory=list, description="Run-level non-fatal errors")
+    dataset_id: Optional[str] = Field(
+        default=None,
+        description="Optional dataset identifier if extraction was executed against a stored dataset snapshot.",
+    )
+    created_at: Optional[str] = Field(
+        default=None,
+        description="ISO 8601 execution and creation timestamp.",
+    )
 
 
 class SignalCatalogResponse(BaseModel):
