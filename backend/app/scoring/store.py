@@ -48,4 +48,6 @@ class InMemoryScoringRunStore:
         self._runs.clear()
 
 
-default_scoring_run_store = InMemoryScoringRunStore()
+from app.storage import DelegatingScoringRunStore
+
+default_scoring_run_store = DelegatingScoringRunStore()

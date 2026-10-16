@@ -70,6 +70,7 @@ def normalize_database_url(url: str) -> str:
     if not has_sslmode:
         query_params.append(("sslmode", "require"))
 
+    query_params.sort(key=lambda x: (x[0].lower(), x[1]))
     new_query = urllib.parse.urlencode(query_params)
     return urllib.parse.urlunsplit(
         (new_scheme, parsed.netloc, parsed.path, new_query, parsed.fragment)

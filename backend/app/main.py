@@ -17,12 +17,17 @@ from app.api.endpoints.rules import router as rules_router
 from app.api.endpoints.scoring import router as scoring_router
 from app.api.endpoints.signals import router as signals_router
 from app.config import APP_ENV, CORS_ORIGINS, STORAGE_BACKEND, validate_startup_configuration
+from app.db.errors import register_database_error_handlers
+from app.db.seeding import seed_database_presets
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Validate environment configuration at application startup."""
+    """Validate environment configuration and seed presets in PostgreSQL mode at startup."""
     validate_startup_configuration()
+    storage_backend = os.getenv("STORAGE_BACKEND", STORAGE_BACKEND).strip().lower()
+    if storage_backend == "postgres":
+        seed_database_presets()
     yield
 
 
@@ -39,6 +44,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# Register centralized database error handlers
+register_database_error_handlers(app)
 
 # ---------------------------------------------------------------------------
 # CORS middleware – allow the Vite dev server during development

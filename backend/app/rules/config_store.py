@@ -108,4 +108,6 @@ class RuleConfigStore:
         return True
 
 
-default_config_store = RuleConfigStore()
+from app.storage import DelegatingRuleConfigStore
+
+default_config_store = DelegatingRuleConfigStore()

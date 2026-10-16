@@ -1,6 +1,7 @@
-"""Database connection, models, and session management."""
+"""Database connection, models, session management, and PostgreSQL stores."""
 
 from app.db.base import Base
+from app.db.errors import register_database_error_handlers
 from app.db.models import (
     DatasetModel,
     EligibilityRunModel,
@@ -19,12 +20,21 @@ from app.db.models import (
     derive_scoring_configuration_columns,
     derive_scoring_run_columns,
 )
+from app.db.seeding import seed_database_presets
 from app.db.session import (
     assert_safe_test_database,
     create_app_engine,
     get_session_factory,
     is_database_unavailable_error,
     session_scope,
+)
+from app.db.stores import (
+    PostgresEligibilityRunStore,
+    PostgresManualOverrideStore,
+    PostgresRankingRunStore,
+    PostgresRuleConfigStore,
+    PostgresScoringConfigStore,
+    PostgresScoringRunStore,
 )
 
 __all__ = [
@@ -50,4 +60,12 @@ __all__ = [
     "session_scope",
     "assert_safe_test_database",
     "is_database_unavailable_error",
+    "PostgresRuleConfigStore",
+    "PostgresScoringConfigStore",
+    "PostgresEligibilityRunStore",
+    "PostgresManualOverrideStore",
+    "PostgresScoringRunStore",
+    "PostgresRankingRunStore",
+    "seed_database_presets",
+    "register_database_error_handlers",
 ]

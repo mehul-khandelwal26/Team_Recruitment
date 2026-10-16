@@ -44,4 +44,6 @@ class InMemoryRankingRunStore:
         self._runs.clear()
 
 
-default_ranking_run_store = InMemoryRankingRunStore()
+from app.storage import DelegatingRankingRunStore
+
+default_ranking_run_store = DelegatingRankingRunStore()

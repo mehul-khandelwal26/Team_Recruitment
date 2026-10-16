@@ -96,8 +96,10 @@ class InMemoryOverrideStore:
         self._overrides.clear()
 
 
-default_run_store = InMemoryRunStore()
-default_override_store = InMemoryOverrideStore()
+from app.storage import DelegatingOverrideStore, DelegatingRunStore
+
+default_run_store = DelegatingRunStore()
+default_override_store = DelegatingOverrideStore()
 
 
 def get_effective_run(

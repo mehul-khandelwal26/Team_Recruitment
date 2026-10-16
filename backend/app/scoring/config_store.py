@@ -100,4 +100,6 @@ class ScoringConfigStore:
         return new_config
 
 
-default_scoring_config_store = ScoringConfigStore()
+from app.storage import DelegatingScoringConfigStore
+
+default_scoring_config_store = DelegatingScoringConfigStore()
