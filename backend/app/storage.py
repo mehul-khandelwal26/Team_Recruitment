@@ -20,7 +20,9 @@ from sqlalchemy.engine import Engine
 
 from app.config import STORAGE_BACKEND, assert_safe_test_database
 from app.db.stores import (
+    PostgresDatasetStore,
     PostgresEligibilityRunStore,
+    PostgresExtractionRunStore,
     PostgresManualOverrideStore,
     PostgresRankingRunStore,
     PostgresRuleConfigStore,
@@ -32,6 +34,8 @@ if TYPE_CHECKING:
     from app.ranking.schemas import RankingRunResponse
     from app.ranking.store import InMemoryRankingRunStore, RankingRunStoreProtocol
     from app.rules.config_store import RuleConfigStore
+    from app.schemas.ingestion import DatasetRecord
+    from app.signals.schemas import ExtractionRunResponse
     from app.rules.schemas import (
         EligibilityRunResponse,
         ManualOverride,
@@ -153,6 +157,26 @@ class StorageFactory:
             else:
                 from app.ranking.store import InMemoryRankingRunStore
                 self._stores[key] = InMemoryRankingRunStore()
+        return self._stores[key]
+
+    def get_dataset_store(self) -> Any:
+        key = f"dataset_{self.backend}"
+        if key not in self._stores:
+            if self.backend == "postgres":
+                self._stores[key] = PostgresDatasetStore(engine=self._engine)
+            else:
+                from app.ingestion.store import InMemoryDatasetStore
+                self._stores[key] = InMemoryDatasetStore()
+        return self._stores[key]
+
+    def get_extraction_run_store(self) -> Any:
+        key = f"extraction_run_{self.backend}"
+        if key not in self._stores:
+            if self.backend == "postgres":
+                self._stores[key] = PostgresExtractionRunStore(engine=self._engine)
+            else:
+                from app.signals.store import InMemoryExtractionRunStore
+                self._stores[key] = InMemoryExtractionRunStore()
         return self._stores[key]
 
 
@@ -336,6 +360,57 @@ class DelegatingRankingRunStore:
 
     def list_runs(self) -> list[RankingRunResponse]:
         return self._store.list_runs()
+
+    def reset(self) -> None:
+        return self._store.reset()
+
+
+class DelegatingDatasetStore:
+    """Delegates dataset persistence operations to the factory-selected active store."""
+
+    def __init__(self, factory: Optional[StorageFactory] = None) -> None:
+        self._factory = factory
+
+    @property
+    def _store(self) -> Any:
+        f = self._factory or default_storage_factory
+        return f.get_dataset_store()
+
+    def save(self, record: DatasetRecord) -> DatasetRecord:
+        return self._store.save(record)
+
+    def get(self, dataset_id: str) -> Optional[DatasetRecord]:
+        return self._store.get(dataset_id)
+
+    def list_datasets(self) -> list[DatasetRecord]:
+        return self._store.list_datasets()
+
+    def delete(self, dataset_id: str) -> bool:
+        return self._store.delete(dataset_id)
+
+    def reset(self) -> None:
+        return self._store.reset()
+
+
+class DelegatingExtractionRunStore:
+    """Delegates extraction run operations to the factory-selected active store."""
+
+    def __init__(self, factory: Optional[StorageFactory] = None) -> None:
+        self._factory = factory
+
+    @property
+    def _store(self) -> Any:
+        f = self._factory or default_storage_factory
+        return f.get_extraction_run_store()
+
+    def save(self, record: ExtractionRunResponse) -> None:
+        self._store.save(record)
+
+    def get(self, run_id: str) -> Optional[ExtractionRunResponse]:
+        return self._store.get(run_id)
+
+    def list_runs(self, dataset_id: Optional[str] = None) -> list[ExtractionRunResponse]:
+        return self._store.list_runs(dataset_id=dataset_id)
 
     def reset(self) -> None:
         return self._store.reset()

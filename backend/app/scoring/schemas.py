@@ -400,6 +400,14 @@ class ScoringEvaluationRequest(BaseModel):
         None,
         description="Optional explicit team eligibility results to associate directly",
     )
+    dataset_id: Optional[str] = Field(
+        None,
+        description="Optional dataset identifier if evaluated from a stored dataset.",
+    )
+    extraction_run_id: Optional[str] = Field(
+        None,
+        description="Optional extraction run identifier if linked.",
+    )
 
 
 class ScoringCatalogResponse(BaseModel):

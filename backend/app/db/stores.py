@@ -28,13 +28,17 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.models import (
+    DatasetModel,
     EligibilityRunModel,
+    ExtractionRunModel,
     ManualOverrideModel,
     RankingRunModel,
     RuleConfigurationModel,
     ScoringConfigurationModel,
     ScoringRunModel,
+    derive_dataset_columns,
     derive_eligibility_run_columns,
+    derive_extraction_run_columns,
     derive_manual_override_columns,
     derive_ranking_run_columns,
     derive_rule_configuration_columns,
@@ -51,11 +55,13 @@ if TYPE_CHECKING:
         RuleConfiguration,
         RuleConfigurationUpdate,
     )
+    from app.schemas.ingestion import DatasetRecord
     from app.scoring.schemas import (
         ScoringConfiguration,
         ScoringConfigurationUpdate,
         ScoringRunResponse,
     )
+    from app.signals.schemas import ExtractionRunResponse
 
 
 class BasePostgresStore:
@@ -576,3 +582,172 @@ class PostgresRankingRunStore(BasePostgresStore):
         """Test isolation helper: clears all ranking runs."""
         with self.session() as s:
             s.execute(sa.text("DELETE FROM ranking_runs;"))
+
+
+# ---------------------------------------------------------------------------
+# 7. Dataset Store
+# ---------------------------------------------------------------------------
+
+
+class PostgresDatasetStore(BasePostgresStore):
+    """PostgreSQL store for uploaded and validated registration datasets."""
+
+    def save(self, record: DatasetRecord) -> DatasetRecord:
+        derived = derive_dataset_columns(
+            payload=record.payload or record.model_dump(),
+            dataset_id=record.dataset_id,
+            filename=record.filename,
+            file_type=record.file_type,
+            uploaded_at=record.uploaded_at,
+            mapping=record.mapping,
+            teams_count=record.teams_count,
+            members_count=record.members_count,
+            warnings=record.warnings,
+            unmapped_fields=record.unmapped_fields,
+        )
+        stmt = pg_insert(DatasetModel).values(**derived)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["dataset_id"],
+            set_={
+                "filename": stmt.excluded.filename,
+                "file_type": stmt.excluded.file_type,
+                "teams_count": stmt.excluded.teams_count,
+                "members_count": stmt.excluded.members_count,
+                "uploaded_at": stmt.excluded.uploaded_at,
+                "mapping": stmt.excluded.mapping,
+                "warnings": stmt.excluded.warnings,
+                "unmapped_fields": stmt.excluded.unmapped_fields,
+                "payload": stmt.excluded.payload,
+            },
+        )
+        with self.session() as s:
+            s.execute(stmt)
+        return record
+
+    def get(self, dataset_id: str) -> Optional[DatasetRecord]:
+        from app.schemas.ingestion import DatasetRecord
+
+        with self.session() as s:
+            stmt = select(DatasetModel).where(DatasetModel.dataset_id == dataset_id)
+            row = s.execute(stmt).scalars().first()
+            if row is None:
+                return None
+            return DatasetRecord(
+                dataset_id=row.dataset_id,
+                filename=row.filename,
+                file_type=row.file_type,
+                teams_count=row.teams_count,
+                members_count=row.members_count,
+                uploaded_at=(
+                    row.uploaded_at.isoformat()
+                    if hasattr(row.uploaded_at, "isoformat")
+                    else str(row.uploaded_at)
+                ),
+                mapping=row.mapping,
+                warnings=row.warnings,
+                unmapped_fields=row.unmapped_fields,
+                created_at=(
+                    row.created_at.isoformat()
+                    if hasattr(row.created_at, "isoformat")
+                    else str(row.created_at)
+                ),
+                payload=row.payload,
+            )
+
+    def list_datasets(self) -> list[DatasetRecord]:
+        from app.schemas.ingestion import DatasetRecord
+
+        with self.session() as s:
+            stmt = select(DatasetModel).order_by(DatasetModel.uploaded_at.desc())
+            rows = s.execute(stmt).scalars().all()
+            return [
+                DatasetRecord(
+                    dataset_id=row.dataset_id,
+                    filename=row.filename,
+                    file_type=row.file_type,
+                    teams_count=row.teams_count,
+                    members_count=row.members_count,
+                    uploaded_at=(
+                        row.uploaded_at.isoformat()
+                        if hasattr(row.uploaded_at, "isoformat")
+                        else str(row.uploaded_at)
+                    ),
+                    mapping=row.mapping,
+                    warnings=row.warnings,
+                    unmapped_fields=row.unmapped_fields,
+                    created_at=(
+                        row.created_at.isoformat()
+                        if hasattr(row.created_at, "isoformat")
+                        else str(row.created_at)
+                    ),
+                    payload=row.payload,
+                )
+                for row in rows
+            ]
+
+    def delete(self, dataset_id: str) -> bool:
+        with self.session() as s:
+            stmt = select(DatasetModel).where(DatasetModel.dataset_id == dataset_id)
+            row = s.execute(stmt).scalars().first()
+            if row is None:
+                return False
+            s.delete(row)
+            return True
+
+    def reset(self) -> None:
+        """Test isolation helper: clears all dataset records."""
+        with self.session() as s:
+            s.execute(sa.text("DELETE FROM datasets;"))
+
+
+# ---------------------------------------------------------------------------
+# 8. Extraction Run Store
+# ---------------------------------------------------------------------------
+
+
+class PostgresExtractionRunStore(BasePostgresStore):
+    """PostgreSQL store for historical signal extraction runs."""
+
+    def save(self, record: ExtractionRunResponse) -> None:
+        derived = derive_extraction_run_columns(record)
+        stmt = pg_insert(ExtractionRunModel).values(**derived)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["run_id"],
+            set_={
+                "dataset_id": stmt.excluded.dataset_id,
+                "selected_signals": stmt.excluded.selected_signals,
+                "analyzers_executed": stmt.excluded.analyzers_executed,
+                "total_teams": stmt.excluded.total_teams,
+                "total_members": stmt.excluded.total_members,
+                "payload": stmt.excluded.payload,
+            },
+        )
+        with self.session() as s:
+            s.execute(stmt)
+
+    def get(self, run_id: str) -> Optional[ExtractionRunResponse]:
+        from app.signals.schemas import ExtractionRunResponse
+
+        with self.session() as s:
+            stmt = select(ExtractionRunModel).where(ExtractionRunModel.run_id == run_id)
+            row = s.execute(stmt).scalars().first()
+            if row is None:
+                return None
+            return ExtractionRunResponse.model_validate(row.payload)
+
+    def list_runs(self, dataset_id: Optional[str] = None) -> list[ExtractionRunResponse]:
+        from app.signals.schemas import ExtractionRunResponse
+
+        with self.session() as s:
+            stmt = select(ExtractionRunModel)
+            if dataset_id:
+                stmt = stmt.where(ExtractionRunModel.dataset_id == dataset_id)
+            stmt = stmt.order_by(ExtractionRunModel.created_at.desc())
+            rows = s.execute(stmt).scalars().all()
+            return [ExtractionRunResponse.model_validate(r.payload) for r in rows]
+
+    def reset(self) -> None:
+        """Test isolation helper: clears all extraction runs."""
+        with self.session() as s:
+            s.execute(sa.text("DELETE FROM extraction_runs;"))
+

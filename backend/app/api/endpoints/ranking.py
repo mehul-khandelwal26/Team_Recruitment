@@ -98,6 +98,11 @@ def evaluate_ranking_endpoint(request: RankingEvaluationRequest) -> RankingRunRe
         effective_eligibility_run=effective_elig_run,
     )
 
+    if request.dataset_id:
+        ranking_run.dataset_id = request.dataset_id
+    if request.extraction_run_id:
+        ranking_run.extraction_run_id = request.extraction_run_id
+
     # 5. Persist run record
     default_ranking_run_store.save(ranking_run)
     return ranking_run

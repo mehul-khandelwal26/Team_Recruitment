@@ -263,6 +263,14 @@ class RankingEvaluationRequest(BaseModel):
         default=None,
         description="Optional injected ISO timestamp for deterministic testing.",
     )
+    dataset_id: Optional[str] = Field(
+        default=None,
+        description="Optional dataset ID if evaluated from a stored dataset.",
+    )
+    extraction_run_id: Optional[str] = Field(
+        default=None,
+        description="Optional extraction run ID if linked.",
+    )
 
     @field_validator("top_x", mode="before")
     @classmethod

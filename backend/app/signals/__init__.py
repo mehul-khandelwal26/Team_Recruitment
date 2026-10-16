@@ -18,6 +18,11 @@ from app.signals.schemas import (
     SignalStatus,
     TeamExtractionResult,
 )
+from app.signals.store import (
+    ExtractionRunStoreProtocol,
+    InMemoryExtractionRunStore,
+    default_extraction_run_store,
+)
 
 __all__ = [
     "AcademicMetricsAnalyzer",
@@ -27,7 +32,9 @@ __all__ = [
     "ExtractionRunRequest",
     "ExtractionRunResponse",
     "ExtractorDescriptor",
+    "ExtractionRunStoreProtocol",
     "GitHubAnalyzer",
+    "InMemoryExtractionRunStore",
     "MemberExtractionResult",
     "SignalCatalogResponse",
     "SignalDefinition",
@@ -35,6 +42,7 @@ __all__ = [
     "SignalExtractorRegistry",
     "SignalStatus",
     "TeamExtractionResult",
+    "default_extraction_run_store",
     "default_signal_registry",
     "flatten_extraction_signals",
 ]

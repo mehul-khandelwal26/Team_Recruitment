@@ -14,12 +14,14 @@ from __future__ import annotations
 import datetime
 import json
 from typing import Any, Optional
+import uuid
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from starlette.concurrency import run_in_threadpool
 
 from app.api.endpoints.ingestion import _resolve_parser
-from app.schemas.ingestion import MemberSchema, TeamSchema
+from app.ingestion.store import default_dataset_store
+from app.schemas.ingestion import DatasetRecord, MemberSchema, TeamSchema
 from app.signals.flatten import flatten_extraction_signals
 from app.signals.registry import default_signal_registry
 from app.signals.schemas import (
@@ -30,6 +32,7 @@ from app.signals.schemas import (
     SignalCatalogResponse,
     SignalDefinition,
 )
+from app.signals.store import default_extraction_run_store
 
 router = APIRouter(prefix="/api/signals", tags=["Signals"])
 
@@ -68,14 +71,34 @@ async def extract_signals(request: ExtractionRunRequest) -> ExtractionRunRespons
 
     Only runs the analyzers and signals explicitly requested in ``selected_signals``.
     Preserves all member and team associations without combining results into
-    composite scores.
+    composite scores. Automatically persists the run into the extraction run store.
     """
-    return await run_in_threadpool(
+    teams_to_extract = request.teams
+    if not teams_to_extract and request.dataset_id:
+        ds = default_dataset_store.get(request.dataset_id)
+        if ds is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Dataset '{request.dataset_id}' not found.",
+            )
+        teams_to_extract = ds.payload.get("teams", [])
+    elif not teams_to_extract:
+        raise HTTPException(
+            status_code=400,
+            detail="Must provide either teams or dataset_id.",
+        )
+
+    response = await run_in_threadpool(
         default_signal_registry.execute_extraction,
-        teams=request.teams,
+        teams=teams_to_extract,
         selected_signals=request.selected_signals,
         config=request.config,
     )
+    if request.dataset_id:
+        response.dataset_id = request.dataset_id
+
+    default_extraction_run_store.save(response)
+    return response
 
 
 @router.post("/flatten", response_model=list[dict[str, Any]])
@@ -172,12 +195,38 @@ async def extract_signals_from_file(
             created_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
         )
 
-    return await run_in_threadpool(
+    # Persist the valid uploaded dataset
+    ds_id = f"ds_{uuid.uuid4().hex[:12]}"
+    file_type = "csv"
+    content_type = (file.content_type or "").split(";")[0].strip().lower()
+    if content_type == "application/json" or (file.filename and file.filename.lower().endswith(".json")):
+        file_type = "json"
+
+    now_dt = datetime.datetime.now(datetime.timezone.utc)
+    ds_record = DatasetRecord(
+        dataset_id=ds_id,
+        filename=file.filename or f"uploaded.{file_type}",
+        file_type=file_type,
+        teams_count=upload_result.teams_count,
+        members_count=upload_result.members_count,
+        uploaded_at=now_dt.isoformat(),
+        mapping=mapping_dict,
+        warnings=[w.model_dump() for w in upload_result.warnings],
+        unmapped_fields=upload_result.unmapped_fields,
+        created_at=now_dt.isoformat(),
+        payload=upload_result.model_dump(),
+    )
+    default_dataset_store.save(ds_record)
+
+    run_response = await run_in_threadpool(
         default_signal_registry.execute_extraction,
         teams=upload_result.teams,
         selected_signals=active_signals,
         config=config_dict,
     )
+    run_response.dataset_id = ds_id
+    default_extraction_run_store.save(run_response)
+    return run_response
 
 
 @router.post("/extract-resume", response_model=ExtractionRunResponse)
@@ -257,10 +306,31 @@ async def extract_signals_from_resume_file(
         members=[single_member],
     )
 
-    return await run_in_threadpool(
+    run_response = await run_in_threadpool(
         default_signal_registry.execute_extraction,
         teams=[single_team],
         selected_signals=active_signals,
         config=config_dict,
     )
+    default_extraction_run_store.save(run_response)
+    return run_response
+
+
+@router.get("/runs/{run_id}", response_model=ExtractionRunResponse)
+async def get_extraction_run(run_id: str) -> ExtractionRunResponse:
+    """Retrieve a recorded signal extraction run with all team and member results."""
+    record = default_extraction_run_store.get(run_id)
+    if record is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Extraction run '{run_id}' not found.",
+        )
+    return record
+
+
+@router.get("/runs", response_model=list[ExtractionRunResponse])
+async def list_extraction_runs(dataset_id: Optional[str] = None) -> list[ExtractionRunResponse]:
+    """List recorded extraction runs, optionally filtered by dataset_id."""
+    return default_extraction_run_store.list_runs(dataset_id=dataset_id)
+
 

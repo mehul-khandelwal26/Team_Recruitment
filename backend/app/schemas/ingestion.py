@@ -7,8 +7,9 @@ All schemas use Pydantic v2 conventions.
 
 from __future__ import annotations
 
+import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -262,3 +263,42 @@ class UploadResponse(BaseModel):
         default_factory=list,
         description="Discovered fields retained as custom fields without canonical mapping",
     )
+    dataset_id: Optional[str] = Field(
+        default=None,
+        description="Dataset identifier for persistent storage (populated when saved).",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Dataset persistence record
+# ---------------------------------------------------------------------------
+
+
+class DatasetRecord(BaseModel):
+    """Persisted registration dataset record with upload metadata and parsed payload."""
+
+    dataset_id: str = Field(..., min_length=1, description="Unique dataset identifier")
+    filename: str = Field(..., description="Original upload filename")
+    file_type: str = Field(..., description="File format type ('csv' or 'json')")
+    teams_count: int = Field(0, description="Total number of teams in dataset")
+    members_count: int = Field(0, description="Total number of members across teams")
+    uploaded_at: Union[str, datetime.datetime] = Field(
+        default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        description="ISO 8601 upload timestamp",
+    )
+    mapping: Optional[dict[str, Any]] = Field(None, description="Applied column mapping dictionary")
+    warnings: list[Any] = Field(default_factory=list, description="Validation warnings from ingestion")
+    unmapped_fields: list[Any] = Field(default_factory=list, description="Custom fields retained unmapped")
+    created_at: Optional[Union[str, datetime.datetime]] = Field(None, description="ISO 8601 database persistence timestamp")
+    payload: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Full parsed UploadResponse payload including teams structure",
+    )
+
+    @field_validator("uploaded_at", "created_at", mode="before")
+    @classmethod
+    def _coerce_dt_to_iso(cls, val: Any) -> Any:
+        if isinstance(val, (datetime.datetime, datetime.date)):
+            return val.isoformat()
+        return val
+

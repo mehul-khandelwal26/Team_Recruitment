@@ -328,6 +328,14 @@ class EligibilityEvaluateRequest(BaseModel):
         default=None,
         description="Optional ISO timestamp injected for deterministic evaluations.",
     )
+    dataset_id: Optional[str] = Field(
+        default=None,
+        description="Optional dataset identifier if evaluated against a stored dataset snapshot.",
+    )
+    extraction_run_id: Optional[str] = Field(
+        default=None,
+        description="Optional extraction run identifier if signals were loaded from a stored extraction run.",
+    )
 
 
 class EligibilityRunResponse(BaseModel):

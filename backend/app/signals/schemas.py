@@ -159,9 +159,13 @@ class TeamExtractionResult(BaseModel):
 class ExtractionRunRequest(BaseModel):
     """Request model for running signal extraction against teams."""
 
-    teams: list[dict[str, Any]] = Field(
-        ...,
-        description="List of teams (e.g. from /api/ingestion/upload) with member hierarchies",
+    teams: Optional[list[dict[str, Any]]] = Field(
+        default=None,
+        description="List of teams (e.g. from /api/ingestion/upload) with member hierarchies. If omitted, loaded from dataset_id.",
+    )
+    dataset_id: Optional[str] = Field(
+        default=None,
+        description="Optional dataset identifier to load teams from stored dataset or associate run with dataset.",
     )
     selected_signals: Optional[list[str]] = Field(
         None,

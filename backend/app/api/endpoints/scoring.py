@@ -268,6 +268,10 @@ def evaluate_teams_endpoint(request: ScoringEvaluationRequest) -> ScoringRunResp
     result.config_source = "inline" if is_inline else "stored"
     result.config_snapshot = config.model_copy(deep=True) if is_inline else None
     result.eligibility_run_id = request.eligibility_run_id
+    if request.dataset_id:
+        result.dataset_id = request.dataset_id
+    if request.extraction_run_id:
+        result.extraction_run_id = request.extraction_run_id
 
     # Persist in run store
     default_scoring_run_store.save(result)

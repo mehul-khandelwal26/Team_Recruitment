@@ -29,7 +29,9 @@ from app.db.session import (
     session_scope,
 )
 from app.db.stores import (
+    PostgresDatasetStore,
     PostgresEligibilityRunStore,
+    PostgresExtractionRunStore,
     PostgresManualOverrideStore,
     PostgresRankingRunStore,
     PostgresRuleConfigStore,
@@ -66,6 +68,8 @@ __all__ = [
     "PostgresManualOverrideStore",
     "PostgresScoringRunStore",
     "PostgresRankingRunStore",
+    "PostgresDatasetStore",
+    "PostgresExtractionRunStore",
     "seed_database_presets",
     "register_database_error_handlers",
 ]

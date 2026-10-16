@@ -9,14 +9,17 @@ Endpoints:
 
 from __future__ import annotations
 
+import datetime
 import json
 from typing import Optional
+import uuid
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.ingestion.discovery import CANONICAL_FIELD_CATALOG, discover_fields_from_bytes
 from app.ingestion.parser import parse_csv, parse_json
-from app.schemas.ingestion import UploadResponse, ValidationError
+from app.ingestion.store import default_dataset_store
+from app.schemas.ingestion import DatasetRecord, UploadResponse, ValidationError
 from app.schemas.mapping import CanonicalFieldInfo, FieldDiscoveryResponse
 
 router = APIRouter(prefix="/api/ingestion", tags=["Ingestion"])
@@ -41,11 +44,16 @@ async def upload_registration_file(
         None,
         description="Optional JSON-encoded dictionary of field mappings (original_name -> target_field)",
     ),
+    dataset_id: Optional[str] = Form(
+        None,
+        description="Optional explicit dataset identifier to assign to this upload",
+    ),
 ) -> UploadResponse:
     """Accept a registration file, validate it, and return structured results.
 
     Supports optional explicit column/field mapping. Unmapped fields are
     preserved in ``custom_fields`` and ``raw_data`` without causing errors.
+    If valid, persistently stores the dataset snapshot and returns dataset_id.
     """
     parser = _resolve_parser(file)
     if parser is None:
@@ -82,7 +90,49 @@ async def upload_registration_file(
     raw_bytes = await file.read()
     result = parser(raw_bytes, mapping=mapping_dict)
 
+    if result.success:
+        ds_id = dataset_id.strip() if dataset_id and dataset_id.strip() else f"ds_{uuid.uuid4().hex[:12]}"
+        file_type = "csv"
+        content_type = (file.content_type or "").split(";")[0].strip().lower()
+        if content_type == "application/json" or (file.filename and file.filename.lower().endswith(".json")):
+            file_type = "json"
+
+        now_dt = datetime.datetime.now(datetime.timezone.utc)
+        record = DatasetRecord(
+            dataset_id=ds_id,
+            filename=file.filename or f"uploaded.{file_type}",
+            file_type=file_type,
+            teams_count=result.teams_count,
+            members_count=result.members_count,
+            uploaded_at=now_dt.isoformat(),
+            mapping=mapping_dict,
+            warnings=[w.model_dump() for w in result.warnings],
+            unmapped_fields=result.unmapped_fields,
+            created_at=now_dt.isoformat(),
+            payload=result.model_dump(),
+        )
+        saved = default_dataset_store.save(record)
+        result.dataset_id = saved.dataset_id
+
     return result
+
+
+@router.get("/datasets/{dataset_id}", response_model=DatasetRecord)
+async def get_dataset(dataset_id: str) -> DatasetRecord:
+    """Retrieve an uploaded dataset snapshot by dataset_id."""
+    record = default_dataset_store.get(dataset_id)
+    if record is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Dataset '{dataset_id}' not found.",
+        )
+    return record
+
+
+@router.get("/datasets", response_model=list[DatasetRecord])
+async def list_datasets() -> list[DatasetRecord]:
+    """List all uploaded datasets ordered by upload timestamp."""
+    return default_dataset_store.list_datasets()
 
 
 @router.post("/inspect", response_model=FieldDiscoveryResponse)

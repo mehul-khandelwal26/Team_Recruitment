@@ -207,6 +207,10 @@ def derive_dataset_columns(
     file_type: str,
     uploaded_at: str | datetime.datetime | None = None,
     mapping: dict[str, Any] | None = None,
+    teams_count: int | None = None,
+    members_count: int | None = None,
+    warnings: list[Any] | None = None,
+    unmapped_fields: list[Any] | None = None,
 ) -> dict[str, Any]:
     """Derive typed columns for `datasets` from payload and explicit file metadata.
 
@@ -224,19 +228,29 @@ def derive_dataset_columns(
         raise ValueError("file_type is required for dataset persistence.")
 
     parsed_uploaded = _parse_dt(uploaded_at) or now
-    teams_count = int(data.get("teams_count", len(data.get("teams", []))))
-    members_count = int(data.get("members_count", 0))
+    if teams_count is not None:
+        effective_teams_count = int(teams_count)
+    else:
+        effective_teams_count = int(data.get("teams_count", len(data.get("teams", []))))
+
+    if members_count is not None:
+        effective_members_count = int(members_count)
+    else:
+        effective_members_count = int(data.get("members_count", 0))
+
+    effective_warnings = warnings if warnings is not None else data.get("warnings", [])
+    effective_unmapped = unmapped_fields if unmapped_fields is not None else data.get("unmapped_fields", [])
 
     return {
         "dataset_id": dataset_id,
         "filename": filename,
         "file_type": file_type.lower(),
-        "teams_count": teams_count,
-        "members_count": members_count,
+        "teams_count": effective_teams_count,
+        "members_count": effective_members_count,
         "uploaded_at": parsed_uploaded,
         "mapping": mapping,
-        "warnings": data.get("warnings", []),
-        "unmapped_fields": data.get("unmapped_fields", []),
+        "warnings": effective_warnings,
+        "unmapped_fields": effective_unmapped,
         "payload": data,
     }
 

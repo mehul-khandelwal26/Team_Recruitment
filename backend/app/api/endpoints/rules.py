@@ -176,6 +176,10 @@ async def evaluate_eligibility(payload: EligibilityEvaluateRequest) -> Eligibili
         config=config,
         evaluated_at=payload.evaluated_at,
     )
+    if payload.dataset_id:
+        run_response.dataset_id = payload.dataset_id
+    if payload.extraction_run_id:
+        run_response.extraction_run_id = payload.extraction_run_id
 
     # Persist in run store
     default_run_store.save(run_response)
