@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 if TYPE_CHECKING:
     from app.schemas.ingestion import TeamSchema
@@ -175,6 +175,12 @@ class ExtractionRunRequest(BaseModel):
         default_factory=dict,
         description="Optional organizer-provided configuration (e.g. scale settings, column overrides)",
     )
+
+    @model_validator(mode="after")
+    def validate_teams_or_dataset(self) -> ExtractionRunRequest:
+        if self.teams is None and self.dataset_id is None:
+            raise ValueError("Must provide either teams or dataset_id.")
+        return self
 
 
 class ExtractionRunResponse(BaseModel):

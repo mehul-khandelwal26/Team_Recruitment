@@ -133,3 +133,98 @@ EXCLUDED,,T06,Solo Flyers,87.50,INELIGIBLE,CALCULATED,,,INELIGIBLE,"Team failed 
 EXCLUDED,,T07,Strict Review Crew,56.25,INELIGIBLE,CALCULATED,,,INELIGIBLE,"Team failed mandatory eligibility criteria. Reasons: Technical Profile Link (Any Member) failed for all members: Laura Croft (Missing required github_url (not provided)), Michael Scott (Missing required github_url (not provided))"
 EXCLUDED,,T08,Zero Data Zone,,ELIGIBLE,NO_SCORE,,,NO_SCORE,Team has no calculable score; missing data prevented score calculation.
 ```
+
+---
+
+## Mixed Eligibility & Reviewer Override Workflow Demo
+
+To demonstrate a realistic review workflow where both `ELIGIBLE` and `NEEDS_REVIEW` candidates occur simultaneously, and where an organizer inspects and overrides a team's status, use the custom `demo_mixed_review` configuration.
+
+### 1. Configuration Setup
+
+Create a custom rule configuration `demo_mixed_review` via `POST /api/rules/configs`:
+
+```json
+{
+  "config_id": "demo_mixed_review",
+  "name": "Demo Mixed Review",
+  "description": "Requires team lead academic verification (CGPA >= 7.0)",
+  "global_config": {
+    "lead_field": "role"
+  },
+  "rules": [
+    {
+      "rule_id": "min_size",
+      "rule_type": "team_size_min",
+      "name": "Minimum Team Size (>= 2 Members)",
+      "severity": "hard",
+      "scope": "team",
+      "order": 1,
+      "parameters": {"min_size": 2}
+    },
+    {
+      "rule_id": "github_req",
+      "rule_type": "required_link",
+      "name": "Technical Profile Link (Any Member)",
+      "severity": "hard",
+      "scope": "member",
+      "member_selection": "any_member",
+      "order": 2,
+      "parameters": {"link_field": "github_url", "member_selection": "any_member"}
+    },
+    {
+      "rule_id": "lead_cgpa",
+      "rule_type": "signal_threshold",
+      "name": "Team Lead Academic Standing (CGPA >= 7.0)",
+      "severity": "hard",
+      "scope": "member",
+      "member_selection": "team_lead",
+      "order": 3,
+      "on_missing": "manual_review",
+      "parameters": {
+        "signal_key": "academic_cgpa",
+        "operator": ">=",
+        "threshold": 7.0,
+        "member_selection": "team_lead"
+      }
+    }
+  ]
+}
+```
+
+### 2. Eligibility Outcomes Under Mixed Review
+
+Evaluating `demo_teams.csv` against `demo_mixed_review` produces:
+- **Total Teams**: 15
+- **Eligible Teams (10)**: `T01`, `T12`, `T10`, `T11`, `T05`, `T03`, `T04`, `T13`, and 2 duplicate unresolved teams.
+- **Ineligible Teams (4)**: `T06` (size < 2), `T07` (missing GitHub), `T08` (missing CGPA), `T09` (lead CGPA 0.0 < 7.0).
+- **Needs Review Teams (1)**: `T02 (Beta Builders)` – Charlie Brown and Diana Prince are both listed as `member`; the team has no designated team lead in the `role` field. Because `on_missing=manual_review`, this hard rule flags the team for organizer inspection instead of automatic rejection.
+
+### 3. Initial Top-5 Ranking (Before Override)
+
+When Top-5 ranking is executed (`top_x = 5`), `T02` is placed in `needs_review_teams` and excluded from automatic selection:
+- **Selected Teams (5)**: `T01 (75.0)`, `T12 (70.0)`, `T10 (57.5)`, `T11 (55.0)`, `T05 (52.5)`.
+- **Needs Review (1)**: `T02 (57.5)`.
+- Notice that `T05` takes the 5th shortlist spot because `T02` is held in review.
+
+### 4. Reviewer Manual Override Workflow
+
+An organizer reviews `T02` and confirms Charlie Brown acts as the lead with CGPA 8.4:
+
+`POST /api/rules/runs/{run_id}/teams/T02/override`
+
+```json
+{
+  "override_status": "ELIGIBLE",
+  "reason": "Team lead Charlie Brown verified manually; CGPA 8.4 meets threshold.",
+  "overridden_by": "reviewer"
+}
+```
+
+### 5. Subsequent Top-5 Ranking (After Override)
+
+Evaluating Top-5 ranking referencing the same `eligibility_run_id` automatically reflects the manual override:
+- **Selected Teams (5)**: `T01 (Rank #1, 75.0)`, `T12 (Rank #2, 70.0)`, `T02 (Rank #3, 57.5)`, `T10 (Rank #4, 57.5)`, `T11 (Rank #5, 55.0)`.
+- **Cutoff Impact**: `T02` is restored to Rank #3 (breaking the 57.50 tie with `T10` via alphabetical team ID `'T02' < 'T10'`). `T05 (52.5)` is pushed down to Rank #6 (`NOT_SELECTED`).
+- **Needs Review**: Empty (`[]`).
+

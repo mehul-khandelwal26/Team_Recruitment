@@ -95,9 +95,14 @@ class BasePostgresStore:
         from app.config import assert_safe_test_database
         from app.db.session import create_app_engine
 
-        target_engine = self._engine or create_app_engine()
+        try:
+            target_engine = self._engine or create_app_engine()
+        except RuntimeError:
+            raise ValueError("Safety check failed: Unable to resolve database engine for reset.") from None
+
         url_str = target_engine.url.render_as_string(hide_password=False)
         assert_safe_test_database(url_str)
+
 
 
 # ---------------------------------------------------------------------------

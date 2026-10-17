@@ -84,7 +84,7 @@ def evaluate_ranking_endpoint(request: RankingEvaluationRequest) -> RankingRunRe
     # Option C: Evaluate scoring on the fly from teams & signals (or dataset_id / extraction_run_id)
     else:
         teams_to_use = request.teams
-        if not teams_to_use and request.dataset_id:
+        if teams_to_use is None and request.dataset_id:
             ds = default_dataset_store.get(request.dataset_id)
             if ds is None:
                 raise HTTPException(
@@ -92,14 +92,14 @@ def evaluate_ranking_endpoint(request: RankingEvaluationRequest) -> RankingRunRe
                     detail=f"Dataset '{request.dataset_id}' not found.",
                 )
             teams_to_use = ds.payload.get("teams", [])
-        elif not teams_to_use:
+        elif teams_to_use is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Must provide either scoring_run_id, scoring_results, teams, or dataset_id.",
             )
 
         signals_to_use = request.signals
-        if not signals_to_use and request.extraction_run_id:
+        if signals_to_use is None and request.extraction_run_id:
             ext_run = default_extraction_run_store.get(request.extraction_run_id)
             signals_to_use = flatten_extraction_signals(ext_run)
 

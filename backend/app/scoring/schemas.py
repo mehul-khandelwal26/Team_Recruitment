@@ -414,9 +414,10 @@ class ScoringEvaluationRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_teams_or_dataset(self) -> ScoringEvaluationRequest:
-        if not self.teams and not self.dataset_id and not self.eligibility_run_id:
-            raise ValueError("Must provide either 'teams' or 'dataset_id'.")
+        if self.teams is None and self.dataset_id is None and self.eligibility_run_id is None:
+            raise ValueError("Must provide either 'teams', 'dataset_id', or 'eligibility_run_id'.")
         return self
+
 
 
 class ScoringCatalogResponse(BaseModel):

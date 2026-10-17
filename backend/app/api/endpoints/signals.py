@@ -74,7 +74,7 @@ async def extract_signals(request: ExtractionRunRequest) -> ExtractionRunRespons
     composite scores. Automatically persists the run into the extraction run store.
     """
     teams_to_extract = request.teams
-    if not teams_to_extract and request.dataset_id:
+    if teams_to_extract is None and request.dataset_id:
         ds = default_dataset_store.get(request.dataset_id)
         if ds is None:
             raise HTTPException(
@@ -82,7 +82,7 @@ async def extract_signals(request: ExtractionRunRequest) -> ExtractionRunRespons
                 detail=f"Dataset '{request.dataset_id}' not found.",
             )
         teams_to_extract = ds.payload.get("teams", [])
-    elif not teams_to_extract:
+    elif teams_to_extract is None:
         raise HTTPException(
             status_code=400,
             detail="Must provide either teams or dataset_id.",

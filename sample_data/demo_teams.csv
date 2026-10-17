@@ -1,7 +1,7 @@
 team_id,team_name,member_id,name,email,github_url,cgpa,academic_year,role
 T01,Alpha Algorithmic,M01,Alice Smith,alice@example.com,https://github.com/alicesmith,9.2,2025,lead
 T01,Alpha Algorithmic,M02,Bob Jones,bob@example.com,https://github.com/bobjones,8.8,2025,member
-T02,Beta Builders,M03,Charlie Brown,charlie@example.com,https://github.com/charlieb,8.4,2026,lead
+T02,Beta Builders,M03,Charlie Brown,charlie@example.com,https://github.com/charlieb,8.4,2026,member
 T02,Beta Builders,M04,Diana Prince,diana@example.com,https://github.com/dianap,8.2,2026,member
 T03,Gamma Guardians,M05,Evan Wright,evan@example.com,https://github.com/evanw,7.5,2025,lead
 T03,Gamma Guardians,M06,Fiona Gallagher,fiona@example.com,https://github.com/fionag,7.5,2025,member

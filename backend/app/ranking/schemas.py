@@ -291,8 +291,8 @@ class RankingEvaluationRequest(BaseModel):
         if (
             not self.scoring_run_id
             and self.scoring_results is None
-            and not self.teams
-            and not self.dataset_id
+            and self.teams is None
+            and self.dataset_id is None
         ):
             raise ValueError(
                 "Must provide either scoring_run_id, scoring_results, teams, or dataset_id."

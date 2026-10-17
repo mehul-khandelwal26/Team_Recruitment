@@ -175,23 +175,24 @@ async def evaluate_eligibility(payload: EligibilityEvaluateRequest) -> Eligibili
 
     # 1. Resolve teams
     teams_to_evaluate = payload.teams
-    if not teams_to_evaluate and payload.dataset_id:
-        ds = default_dataset_store.get(payload.dataset_id)
-        if ds is None:
+    if teams_to_evaluate is None:
+        if payload.dataset_id:
+            ds = default_dataset_store.get(payload.dataset_id)
+            if ds is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Dataset '{payload.dataset_id}' not found.",
+                )
+            teams_to_evaluate = ds.payload.get("teams", [])
+        else:
             raise HTTPException(
-                status_code=404,
-                detail=f"Dataset '{payload.dataset_id}' not found.",
+                status_code=400,
+                detail="Must provide either teams or dataset_id.",
             )
-        teams_to_evaluate = ds.payload.get("teams", [])
-    elif not teams_to_evaluate:
-        raise HTTPException(
-            status_code=400,
-            detail="Must provide either teams or dataset_id.",
-        )
 
     # 2. Resolve signals
     signals_to_evaluate = payload.signals
-    if not signals_to_evaluate and payload.extraction_run_id:
+    if signals_to_evaluate is None and payload.extraction_run_id:
         ext_run = default_extraction_run_store.get(payload.extraction_run_id)
         if ext_run is None:
             raise HTTPException(
@@ -205,7 +206,7 @@ async def evaluate_eligibility(payload: EligibilityEvaluateRequest) -> Eligibili
             )
         flat = flatten_extraction_signals(ext_run)
         signals_to_evaluate = [MemberSignals.model_validate(item) for item in flat]
-    elif payload.extraction_run_id:
+    elif signals_to_evaluate is not None and payload.extraction_run_id:
         ext_run = default_extraction_run_store.get(payload.extraction_run_id)
         if ext_run is None:
             raise HTTPException(
@@ -217,6 +218,7 @@ async def evaluate_eligibility(payload: EligibilityEvaluateRequest) -> Eligibili
                 status_code=400,
                 detail=f"Extraction run dataset_id '{ext_run.dataset_id}' does not match supplied dataset_id '{payload.dataset_id}'.",
             )
+
 
     # Execute evaluation
     run_response = evaluate_teams(

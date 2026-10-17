@@ -312,8 +312,8 @@ class EligibilityEvaluateRequest(BaseModel):
         default=None,
         description="List of TeamSchema objects or team dicts (from ingestion). Optional if dataset_id is provided.",
     )
-    signals: list[MemberSignals] = Field(
-        default_factory=list,
+    signals: Optional[list[MemberSignals]] = Field(
+        default=None,
         description="Optional pre-extracted signals per member. Evaluator never calls analyzers.",
     )
     config_id: Optional[str] = Field(
@@ -339,7 +339,7 @@ class EligibilityEvaluateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_teams_or_dataset(self) -> EligibilityEvaluateRequest:
-        if not self.teams and not self.dataset_id:
+        if self.teams is None and self.dataset_id is None:
             raise ValueError("Must provide either 'teams' or 'dataset_id'.")
         return self
 

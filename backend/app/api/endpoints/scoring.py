@@ -273,23 +273,24 @@ def evaluate_teams_endpoint(request: ScoringEvaluationRequest) -> ScoringRunResp
 
     # 2. Resolve teams
     teams_to_evaluate = request.teams
-    if not teams_to_evaluate and request.dataset_id:
-        ds = default_dataset_store.get(request.dataset_id)
-        if ds is None:
+    if teams_to_evaluate is None:
+        if request.dataset_id:
+            ds = default_dataset_store.get(request.dataset_id)
+            if ds is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Dataset '{request.dataset_id}' not found.",
+                )
+            teams_to_evaluate = ds.payload.get("teams", [])
+        else:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Dataset '{request.dataset_id}' not found.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Must provide either teams or dataset_id.",
             )
-        teams_to_evaluate = ds.payload.get("teams", [])
-    elif not teams_to_evaluate:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Must provide either teams or dataset_id.",
-        )
 
     # 3. Resolve signals
     signals_to_evaluate = request.signals
-    if not signals_to_evaluate and request.extraction_run_id:
+    if signals_to_evaluate is None and request.extraction_run_id:
         ext_run = default_extraction_run_store.get(request.extraction_run_id)
         if ext_run is None:
             raise HTTPException(
@@ -302,7 +303,7 @@ def evaluate_teams_endpoint(request: ScoringEvaluationRequest) -> ScoringRunResp
                 detail=f"Extraction run dataset_id '{ext_run.dataset_id}' does not match supplied dataset_id '{request.dataset_id}'.",
             )
         signals_to_evaluate = flatten_extraction_signals(ext_run)
-    elif request.extraction_run_id:
+    elif signals_to_evaluate is not None and request.extraction_run_id:
         ext_run = default_extraction_run_store.get(request.extraction_run_id)
         if ext_run is None:
             raise HTTPException(
@@ -314,6 +315,7 @@ def evaluate_teams_endpoint(request: ScoringEvaluationRequest) -> ScoringRunResp
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Extraction run dataset_id '{ext_run.dataset_id}' does not match supplied dataset_id '{request.dataset_id}'.",
             )
+
 
     result = evaluate_scoring(
         teams=teams_to_evaluate,
