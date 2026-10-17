@@ -21,6 +21,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.ingestion.store import default_dataset_store
 from app.rules.config_store import default_config_store
 from app.rules.engine import evaluate_teams
 from app.rules.schemas import (
@@ -29,6 +30,7 @@ from app.rules.schemas import (
     EligibilityStatus,
     ManualOverride,
     ManualOverrideCreate,
+    MemberSignals,
     RuleConfiguration,
     RuleConfigurationCreate,
     RuleConfigurationUpdate,
@@ -36,6 +38,8 @@ from app.rules.schemas import (
 )
 from app.rules.store import default_override_store, default_run_store, get_effective_run
 from app.rules.types import RULE_TYPE_CATALOG
+from app.signals.flatten import flatten_extraction_signals
+from app.signals.store import default_extraction_run_store
 
 router = APIRouter(prefix="/api/rules", tags=["Rules"])
 
@@ -169,10 +173,55 @@ async def evaluate_eligibility(payload: EligibilityEvaluateRequest) -> Eligibili
             ),
         )
 
+    # 1. Resolve teams
+    teams_to_evaluate = payload.teams
+    if not teams_to_evaluate and payload.dataset_id:
+        ds = default_dataset_store.get(payload.dataset_id)
+        if ds is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Dataset '{payload.dataset_id}' not found.",
+            )
+        teams_to_evaluate = ds.payload.get("teams", [])
+    elif not teams_to_evaluate:
+        raise HTTPException(
+            status_code=400,
+            detail="Must provide either teams or dataset_id.",
+        )
+
+    # 2. Resolve signals
+    signals_to_evaluate = payload.signals
+    if not signals_to_evaluate and payload.extraction_run_id:
+        ext_run = default_extraction_run_store.get(payload.extraction_run_id)
+        if ext_run is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Extraction run '{payload.extraction_run_id}' not found.",
+            )
+        if payload.dataset_id and getattr(ext_run, "dataset_id", None) and ext_run.dataset_id != payload.dataset_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Extraction run dataset_id '{ext_run.dataset_id}' does not match supplied dataset_id '{payload.dataset_id}'.",
+            )
+        flat = flatten_extraction_signals(ext_run)
+        signals_to_evaluate = [MemberSignals.model_validate(item) for item in flat]
+    elif payload.extraction_run_id:
+        ext_run = default_extraction_run_store.get(payload.extraction_run_id)
+        if ext_run is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Extraction run '{payload.extraction_run_id}' not found.",
+            )
+        if payload.dataset_id and getattr(ext_run, "dataset_id", None) and ext_run.dataset_id != payload.dataset_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Extraction run dataset_id '{ext_run.dataset_id}' does not match supplied dataset_id '{payload.dataset_id}'.",
+            )
+
     # Execute evaluation
     run_response = evaluate_teams(
-        teams=payload.teams,
-        signals=payload.signals,
+        teams=teams_to_evaluate,
+        signals=signals_to_evaluate,
         config=config,
         evaluated_at=payload.evaluated_at,
     )

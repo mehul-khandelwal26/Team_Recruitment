@@ -6,6 +6,8 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
 
+from app.ingestion.store import default_dataset_store
+from app.rules.store import get_effective_run
 from app.scoring.config_store import default_scoring_config_store
 from app.scoring.engine import evaluate_scoring
 from app.scoring.schemas import (
@@ -21,6 +23,8 @@ from app.scoring.schemas import (
 )
 from app.scoring.store import default_scoring_run_store
 from app.scoring.validation import validate_scoring_configuration
+from app.signals.flatten import flatten_extraction_signals
+from app.signals.store import default_extraction_run_store
 
 router = APIRouter(prefix="/api/scoring", tags=["Scoring"])
 
@@ -258,9 +262,62 @@ def evaluate_teams_endpoint(request: ScoringEvaluationRequest) -> ScoringRunResp
 
     is_inline = request.inline_config is not None
 
+    # 1. Provenance inheritance
+    if request.eligibility_run_id:
+        elig_run = get_effective_run(request.eligibility_run_id)
+        if elig_run is not None:
+            if request.dataset_id is None and getattr(elig_run, "dataset_id", None):
+                request.dataset_id = elig_run.dataset_id
+            if request.extraction_run_id is None and getattr(elig_run, "extraction_run_id", None):
+                request.extraction_run_id = elig_run.extraction_run_id
+
+    # 2. Resolve teams
+    teams_to_evaluate = request.teams
+    if not teams_to_evaluate and request.dataset_id:
+        ds = default_dataset_store.get(request.dataset_id)
+        if ds is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Dataset '{request.dataset_id}' not found.",
+            )
+        teams_to_evaluate = ds.payload.get("teams", [])
+    elif not teams_to_evaluate:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Must provide either teams or dataset_id.",
+        )
+
+    # 3. Resolve signals
+    signals_to_evaluate = request.signals
+    if not signals_to_evaluate and request.extraction_run_id:
+        ext_run = default_extraction_run_store.get(request.extraction_run_id)
+        if ext_run is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Extraction run '{request.extraction_run_id}' not found.",
+            )
+        if request.dataset_id and getattr(ext_run, "dataset_id", None) and ext_run.dataset_id != request.dataset_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Extraction run dataset_id '{ext_run.dataset_id}' does not match supplied dataset_id '{request.dataset_id}'.",
+            )
+        signals_to_evaluate = flatten_extraction_signals(ext_run)
+    elif request.extraction_run_id:
+        ext_run = default_extraction_run_store.get(request.extraction_run_id)
+        if ext_run is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Extraction run '{request.extraction_run_id}' not found.",
+            )
+        if request.dataset_id and getattr(ext_run, "dataset_id", None) and ext_run.dataset_id != request.dataset_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Extraction run dataset_id '{ext_run.dataset_id}' does not match supplied dataset_id '{request.dataset_id}'.",
+            )
+
     result = evaluate_scoring(
-        teams=request.teams,
-        signals=request.signals,
+        teams=teams_to_evaluate,
+        signals=signals_to_evaluate,
         config=config,
         eligibility_run_id=request.eligibility_run_id,
         eligibility_results=request.eligibility_results,

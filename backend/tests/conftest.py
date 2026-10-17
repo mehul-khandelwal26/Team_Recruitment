@@ -12,3 +12,15 @@ import os
 os.environ["STORAGE_BACKEND"] = "memory"
 if "APP_ENV" not in os.environ:
     os.environ["APP_ENV"] = "development"
+
+import pytest
+from app.storage import default_storage_factory
+
+
+@pytest.fixture(autouse=True)
+def ensure_memory_storage_backend():
+    """Ensure every test begins and ends with storage factory set to memory."""
+    default_storage_factory.configure(backend="memory")
+    yield
+    default_storage_factory.configure(backend="memory")
+

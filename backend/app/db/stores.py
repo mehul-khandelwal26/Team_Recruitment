@@ -85,6 +85,20 @@ class BasePostgresStore:
         with session_scope(self._session_factory) as s:
             yield s
 
+    def _assert_safe_reset(self) -> None:
+        """Resolve effective engine and verify it targets a safe test database before reset.
+
+        Raises:
+            ValueError: If the engine targets a non-test database or unsafe configuration.
+                        Never includes the database URL or credentials in the error message.
+        """
+        from app.config import assert_safe_test_database
+        from app.db.session import create_app_engine
+
+        target_engine = self._engine or create_app_engine()
+        url_str = target_engine.url.render_as_string(hide_password=False)
+        assert_safe_test_database(url_str)
+
 
 # ---------------------------------------------------------------------------
 # 1. Rule Configuration Store
@@ -233,6 +247,7 @@ class PostgresRuleConfigStore(BasePostgresStore):
 
     def reset(self) -> None:
         """Test isolation helper: clears all rule configurations."""
+        self._assert_safe_reset()
         with self.session() as s:
             s.execute(sa.text("DELETE FROM rule_configurations;"))
 
@@ -399,6 +414,7 @@ class PostgresScoringConfigStore(BasePostgresStore):
 
     def reset(self) -> None:
         """Test isolation helper: clears all scoring configurations."""
+        self._assert_safe_reset()
         with self.session() as s:
             s.execute(sa.text("DELETE FROM scoring_configurations;"))
 
@@ -440,6 +456,7 @@ class PostgresEligibilityRunStore(BasePostgresStore):
 
     def reset(self) -> None:
         """Test isolation helper: clears all eligibility runs."""
+        self._assert_safe_reset()
         with self.session() as s:
             s.execute(sa.text("DELETE FROM eligibility_runs;"))
 
@@ -501,6 +518,7 @@ class PostgresManualOverrideStore(BasePostgresStore):
 
     def reset(self) -> None:
         """Test isolation helper: clears all manual overrides."""
+        self._assert_safe_reset()
         with self.session() as s:
             s.execute(sa.text("DELETE FROM manual_overrides;"))
 
@@ -542,6 +560,7 @@ class PostgresScoringRunStore(BasePostgresStore):
 
     def reset(self) -> None:
         """Test isolation helper: clears all scoring runs."""
+        self._assert_safe_reset()
         with self.session() as s:
             s.execute(sa.text("DELETE FROM scoring_runs;"))
 
@@ -580,6 +599,7 @@ class PostgresRankingRunStore(BasePostgresStore):
 
     def reset(self) -> None:
         """Test isolation helper: clears all ranking runs."""
+        self._assert_safe_reset()
         with self.session() as s:
             s.execute(sa.text("DELETE FROM ranking_runs;"))
 
@@ -696,6 +716,7 @@ class PostgresDatasetStore(BasePostgresStore):
 
     def reset(self) -> None:
         """Test isolation helper: clears all dataset records."""
+        self._assert_safe_reset()
         with self.session() as s:
             s.execute(sa.text("DELETE FROM datasets;"))
 
@@ -748,6 +769,7 @@ class PostgresExtractionRunStore(BasePostgresStore):
 
     def reset(self) -> None:
         """Test isolation helper: clears all extraction runs."""
+        self._assert_safe_reset()
         with self.session() as s:
             s.execute(sa.text("DELETE FROM extraction_runs;"))
 

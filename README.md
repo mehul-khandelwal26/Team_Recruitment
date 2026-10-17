@@ -37,9 +37,9 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 | Data           | Pandas                                       |
 | HTTP / API     | HTTPX                                        |
 | Document Parsers | PyPDF (`pypdf`) · Python-Docx (`python-docx`) |
-| Testing        | Pytest · Starlette TestClient (290 tests)    |
+| Testing        | Pytest · Starlette TestClient (379 tests)    |
+| Database       | PostgreSQL (Neon Cloud) · SQLAlchemy 2.0 · Alembic · Psycopg 3 |
 | Frontend       | React + Vite *(planned)*                     |
-| Database       | PostgreSQL *(planned)*                       |
 
 ## 🗺️ Project Roadmap
 
@@ -54,6 +54,7 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 | **Phase 4** | Configurable eligibility rules and hard filters (Rules Engine) | ✅ Completed |
 | **Phase 5** | Weighted scoring and team-level aggregation (Scoring Engine) | ✅ Completed |
 | **Phase 6** | Ranking, top-X selection, and human-readable explanations | ✅ Completed |
+| **Database Phase** | Persistent PostgreSQL storage on Neon (8 stores, Alembic migration, safety checks, ID-only pipeline, CSV export) | ✅ Completed |
 | **Phase 7** | Frontend integration and organizer dashboard | 🔲 *Next Up* |
 | **Phase 8** | End-to-end testing and final improvements | 🔲 Planned |
 
@@ -76,6 +77,8 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 | **Eligibility Rules Engine (Phase 4)** | ✅ Implemented | **10 rule types**, universal threshold evaluator (5 aggregations), cross-team duplicate detection, track caps, config versioning, manual overrides, and audit trails |
 | **Weighted Scoring Engine (Phase 5)** | ✅ Implemented | Relative weight normalization, criteria normalizations (numeric range, boolean, categorical), 6 aggregation methods, explicit missing-data policies, audit runs |
 | **Ranking & Top-X Selection (Phase 6)** | ✅ Implemented | Deterministic 3-level ordering, tiebreak criteria, cutoff tie handling, shortage diagnostics, review suggestions, and run persistence |
+| **PostgreSQL Persistence** | ✅ Implemented | **8 PostgreSQL stores**, Alembic migrations, Neon SSL connection pooling, centralized `StorageFactory` with delegating proxies |
+| **Safety Guards & ID-Only Flow** | ✅ Implemented | Reset guard (`assert_safe_test_database`), ID-only evaluation pipeline (`dataset_id`, `extraction_run_id`), provenance inheritance, and UTF-8 BOM CSV export |
 | Portfolio Analyzer | 🔲 Staged Contract | `PortfolioAnalyzerContract` registered as planned capability |
 | React frontend (Phase 7) | 🔲 Not started | Planned next |
 
@@ -439,14 +442,104 @@ Configuration is loaded from environment variables or `.env`:
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
-| `APP_ENV` | `development` | Application environment (`development` / `production`) |
+| `APP_ENV` | `development` | Application environment (`development` / `production`). In production, `STORAGE_BACKEND=postgres` and `DATABASE_URL` are strictly required. |
 | `APP_DEBUG` | `true` | Debug mode |
 | `APP_HOST` | `0.0.0.0` | Host binding |
 | `APP_PORT` | `8000` | Port binding |
+| `STORAGE_BACKEND` | `memory` | Active storage engine (`memory` for in-memory development or `postgres` for persistent PostgreSQL). |
+| `DATABASE_URL` | *None* | Connection URL for Neon/PostgreSQL database and migrations. Scheme is normalized to `postgresql+psycopg://` with `sslmode=require`. |
+| `DATABASE_URL_POOLED` | *None* | Optional transaction-pooled connection URL (e.g. Neon PgBouncer) with server-side prepared statements disabled (`prepare_threshold=None`). |
+| `TEST_DATABASE_URL` | *None* | Dedicated test database URL strictly enforced for PostgreSQL integration tests. Validated by `assert_safe_test_database`. |
 | `MAX_UPLOAD_SIZE_MB` | `10` | Maximum upload file size |
 | `GITHUB_TOKEN` | *None* | Optional GitHub Personal Access Token (increases rate limit from 60 to 5,000 req/hr) |
 | `GITHUB_API_BASE_URL` | `https://api.github.com` | GitHub API base URL (overridable for testing) |
 | `GITHUB_REQUEST_TIMEOUT`| `10.0` | Request timeout in seconds for GitHub API calls |
+
+---
+
+## 🗄️ Database Setup & Persistent Storage
+
+The application supports persistent storage powered by **Neon serverless PostgreSQL** with **SQLAlchemy 2.0**, **Alembic**, and the **Psycopg 3** driver.
+
+### 1. Database Configuration & Neon Setup
+
+Configure your Neon connection strings in `.env` (never commit real credentials to version control):
+
+```env
+# Application & Migration Database (Direct connection)
+DATABASE_URL=postgresql://user:password@ep-calm-rice-xxx.neon.tech/neondb?sslmode=require
+
+# Optional Pooled Connection (PgBouncer)
+DATABASE_URL_POOLED=postgresql://user:password@ep-calm-rice-xxx-pooler.neon.tech/neondb?sslmode=require
+
+# Separate Dedicated Test Database (Used exclusively for test suite migrations and isolation)
+TEST_DATABASE_URL=postgresql://user:password@ep-calm-rice-xxx-test.neon.tech/test_db?sslmode=require
+
+# Active Backend ('memory' for fast local testing, 'postgres' for persistent deployment)
+STORAGE_BACKEND=postgres
+```
+
+### 2. Alembic Migrations
+
+The database schema is managed via Alembic. Apply the initial migration defining all 8 persistence tables, indexes, and foreign keys:
+
+```bash
+# From the backend directory
+alembic upgrade head
+```
+
+The initial schema (`001_initial_schema`) creates:
+- `rule_configurations`: Versioned rule sets with soft-delete flags.
+- `scoring_configurations`: Versioned scoring criteria, weightings, and snapshots.
+- `datasets`: Ingested team registration snapshots and raw payloads.
+- `extraction_runs`: Candidate signal extraction runs and audit logs.
+- `eligibility_runs`: Immutable eligibility evaluation snapshots.
+- `manual_overrides`: Organizer manual overrides on `(run_id, team_id)`.
+- `scoring_runs`: Calculated team scores, weights, and criteria breakdowns.
+- `ranking_runs`: Top-X shortlisted candidates, cutoff boundary ties, and shortage metrics.
+
+### 3. Startup Preset Upsert & Current-Only Overrides
+
+- **Startup Preset Seeding**: When `STORAGE_BACKEND=postgres`, the application automatically and idempotently upserts standard built-in presets (`basic`, `strict`, `open_solo`, `balanced`, `technical_heavy`, `academic_heavy`) into PostgreSQL during server lifespan startup. User configurations are never overwritten.
+- **Current-Only Overrides**: Organizer manual overrides (`POST /api/rules/runs/{run_id}/teams/{team_id}/override`) are stored as independent audit records without mutating historical evaluation run snapshots. Effective runs dynamically merge manual overrides.
+
+### 4. ID-Only Evaluation Pipeline & Provenance Inheritance
+
+Evaluation endpoints support ID-only requests without re-submitting inline payloads:
+- `POST /api/rules/evaluate`: Provide `dataset_id` and `extraction_run_id` to automatically load candidate teams and signals from persistent stores.
+- `POST /api/scoring/evaluate`: Provide `eligibility_run_id` to inherit `dataset_id` and `extraction_run_id` automatically.
+- `POST /api/ranking/evaluate`: Option C ID-only flow automatically evaluates scoring and ranking from stored snapshots.
+- Existing payload mode (`teams` and `signals` provided inline) remains 100% backward compatible.
+
+### 5. CSV Shortlist Export
+
+Export Top-X ranking runs as an RFC 4180-compliant CSV file with formula-injection mitigation:
+- **Endpoint**: `GET /api/ranking/runs/{run_id}/export`
+- **Encoding**: UTF-8 with BOM (`\xef\xbb\xbf`) for automatic spreadsheet parsing.
+- **Row Ordering**: `SELECTED` $\rightarrow$ `NOT_SELECTED` $\rightarrow$ `NEEDS_REVIEW` $\rightarrow$ `UNRESOLVED` $\rightarrow$ `EXCLUDED`.
+- **Columns**: `selection_status`, `rank`, `team_id`, `team_name`, `final_score`, `eligibility_status`, `score_status`, `is_tied`, `criteria_evaluated` (e.g. `"1 of 4"`), `reason_code`, `explanation`.
+- **Security**: Neutralizes CSV formula injection by prepending single quotes to text cells starting with `=`, `+`, `-`, or `@`.
+
+### 6. Corrected API Routes
+
+- `GET /api/ingestion/datasets/{dataset_id}`: Retrieve stored dataset metadata and raw payloads.
+- `GET /api/signals/runs/{run_id}`: Retrieve stored signal extraction runs.
+- `GET /api/rules/runs/{run_id}`: Retrieve effective eligibility runs with manual overrides merged.
+- `GET /api/scoring/runs/{run_id}`: Retrieve historical scoring runs.
+- `GET /api/ranking/runs/{run_id}`: Retrieve ranking runs.
+- `GET /api/ranking/runs/{run_id}/export`: Export ranking run as CSV.
+
+### 7. Known Differences (Memory vs. PostgreSQL Backend)
+
+| Behavior | Memory Backend (`STORAGE_BACKEND=memory`) | PostgreSQL Backend (`STORAGE_BACKEND=postgres`) |
+| :--- | :--- | :--- |
+| **Duplicate Run IDs** | Overwrites previous run snapshot in memory. | Returns HTTP 409 Conflict on primary key conflict. |
+| **Foreign Key Labels** | Accepts arbitrary or unknown `dataset_id` strings. | Enforces relational foreign keys (returns HTTP 409/404 if parent does not exist). |
+| **Deleted Presets** | Deleted presets remain deleted until process restart. | Deleted built-in presets are re-seeded on server restart. |
+| **Data Persistence** | Cleared upon process exit. | Persisted in Neon cloud storage. |
+| **Security Note** | Local testing only. | Datasets contain candidate emails; deploy behind authentication gateway (e.g. API key / OAuth) before public production use. |
+
+---
 
 ### Running Tests
 
@@ -460,7 +553,7 @@ Run the complete automated test suite locally:
 pytest -v
 ```
 
-The test suite includes **293 automated tests** with 100% pass rate:
+The test suite includes **379 automated tests** with 100% pass rate:
 - **`backend/tests/test_ingestion.py`** (47 tests): CSV/JSON ingestion, header discovery, dynamic form mapping, custom field preservation, and validation.
 - **`backend/tests/test_duplicate_teams_regression.py`** (15 tests): Duplicate team name detection, automatic ID generation, temporary non-merging IDs (`temp_team_...`), and warning generation.
 - **`backend/tests/test_signals.py`** (39 tests): Extensible signal registry, catalog discovery, GitHub API analysis, Academic CGPA/batch normalization, and cross-analyzer fault isolation.
@@ -470,14 +563,19 @@ The test suite includes **293 automated tests** with 100% pass rate:
 - **`backend/tests/test_scoring.py`** (36 tests): Configurable scoring criteria, relative weight normalization, min-max/boolean/categorical normalization, 6 member-to-team aggregations, missing data policies (exclude and renormalize, zero score), confidence adjustment, eligibility integration, and API endpoints.
 - **`backend/tests/test_phase5_integration_fixes.py`** (4 tests): Integration fixes for scoring with eligibility run IDs, manual overrides applied to scoring, cross-team member ID disambiguation in CSV/JSON ingestion, and signals extraction output flattening.
 - **`backend/tests/test_ranking.py`** (33 tests): Deterministic 3-level ranking, Top-X selection with strict boundary checks, shortage detection and recommendations, status and missing data handling, tie-breaking criteria, explainability audit trails, end-to-end pipeline evaluation, effective eligibility sync, manual override bidirectional ranking, balanced preset NO_SCORE handling, deduplication, and boolean top_x rejection.
+- **`backend/tests/test_database_phase.py`** (28 tests): URL normalization, safety checks, startup configuration validation, typed column derivations, and schema integrity.
+- **`backend/tests/test_postgres_stores.py`** (21 tests): PostgreSQL-backed store CRUD, versioning, manual overrides, error handlers, and transactional resets.
+- **`backend/tests/test_dataset_extraction_persistence.py`** (20 tests): Persistent storage for datasets and signal extraction runs in PostgreSQL and memory modes.
+- **`backend/tests/test_prompt5_features.py`** (17 tests): Reset security guard on all 8 stores, ID-only evaluation pipeline, provenance inheritance, payload mode compatibility, CSV export with formula injection mitigation, and sample data pipeline validation.
 
-All external HTTP calls in the test suite are mocked; no real GitHub API tokens or external network access are required.
+All external HTTP calls in the test suite are mocked; no real GitHub API tokens or external network access are required. Unit tests default to `STORAGE_BACKEND=memory`; PostgreSQL integration tests execute safely against `TEST_DATABASE_URL` (skipped if unset).
 
 ---
 
 ## ⚠️ Current Limitations & Next Steps
 
-1. **Next Milestone (Phase 7 - Frontend Integration & Organizer Dashboard)**: React + Vite web application with interactive CSV upload, signal selection, eligibility rule builder, scoring criteria weights slider, and live ranking leaderboard.
-2. **Database Persistence**: Currently in-memory and request/response-based stores. Relational database persistence (e.g., PostgreSQL / SQLAlchemy) can be introduced in a future milestone.
+1. **Next Milestone (Phase 7 - Frontend Integration & Organizer Dashboard)**: React + Vite web application with interactive CSV upload, signal selection, eligibility rule builder, scoring criteria weights slider, live ranking leaderboard, and CSV export.
+2. **Production Authentication**: The backend endpoints currently operate without authentication. Add an API key or JWT gateway before deploying the PostgreSQL backend publicly.
 3. **Future AI Resume Analyzer**: An architectural audit confirmed that an advanced external AI/LLM resume provider can be plugged in via strategy pattern without altering existing signal contracts or downstream scoring.
 4. **GitHub Unauthenticated Rate Limits**: Unauthenticated calls to GitHub API are limited to 60 requests per hour per IP. Set `GITHUB_TOKEN` in `.env` for production workloads to achieve 5,000 req/hr.
+

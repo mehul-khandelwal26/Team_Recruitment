@@ -21,6 +21,7 @@ if BASE_DIR not in sys.path:
 
 from app.config import DATABASE_URL, normalize_database_url
 from app.db.base import Base
+import app.db.models
 
 # Alembic Config object
 config = context.config

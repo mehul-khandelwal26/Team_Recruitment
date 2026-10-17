@@ -384,7 +384,10 @@ class ScoringRunResponse(BaseModel):
 class ScoringEvaluationRequest(BaseModel):
     """Request payload for evaluating teams against a scoring configuration."""
 
-    teams: list[dict[str, Any]] = Field(..., description="List of TeamSchema objects or team dictionaries")
+    teams: Optional[list[dict[str, Any]]] = Field(
+        None,
+        description="List of TeamSchema objects or team dictionaries. Optional if dataset_id is provided.",
+    )
     signals: Optional[list[dict[str, Any]]] = Field(
         None,
         description="Pre-extracted signals per member (MemberSignals payload). The engine never calls analyzers.",
@@ -408,6 +411,12 @@ class ScoringEvaluationRequest(BaseModel):
         None,
         description="Optional extraction run identifier if linked.",
     )
+
+    @model_validator(mode="after")
+    def validate_teams_or_dataset(self) -> ScoringEvaluationRequest:
+        if not self.teams and not self.dataset_id and not self.eligibility_run_id:
+            raise ValueError("Must provide either 'teams' or 'dataset_id'.")
+        return self
 
 
 class ScoringCatalogResponse(BaseModel):

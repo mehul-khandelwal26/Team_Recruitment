@@ -1,0 +1,30 @@
+team_id,team_name,member_id,name,email,github_url,cgpa,academic_year,role
+T01,Alpha Algorithmic,M01,Alice Smith,alice@example.com,https://github.com/alicesmith,9.2,2025,lead
+T01,Alpha Algorithmic,M02,Bob Jones,bob@example.com,https://github.com/bobjones,8.8,2025,member
+T02,Beta Builders,M03,Charlie Brown,charlie@example.com,https://github.com/charlieb,8.4,2026,lead
+T02,Beta Builders,M04,Diana Prince,diana@example.com,https://github.com/dianap,8.2,2026,member
+T03,Gamma Guardians,M05,Evan Wright,evan@example.com,https://github.com/evanw,7.5,2025,lead
+T03,Gamma Guardians,M06,Fiona Gallagher,fiona@example.com,https://github.com/fionag,7.5,2025,member
+T04,Delta Dynamics,M07,George Clark,george@example.com,https://github.com/georgec,7.5,2025,lead
+T04,Delta Dynamics,M08,Hannah Abbott,hannah@example.com,https://github.com/hannaha,7.5,2025,member
+T05,Epsilon Engineers,M09,Ian Malcolm,ian@example.com,https://github.com/ianm,8.0,2026,lead
+T05,Epsilon Engineers,M10,Julia Roberts,julia@example.com,https://github.com/juliar,8.2,2026,member
+T06,Solo Flyers,M11,Kevin Bacon,kevin@example.com,https://github.com/kevinb,9.5,2024,lead
+T07,Strict Review Crew,M12,Laura Croft,laura@example.com,,8.5,2025,lead
+T07,Strict Review Crew,M13,Michael Scott,michael@example.com,,8.0,2025,member
+T08,Zero Data Zone,M14,Nancy Drew,nancy@example.com,https://github.com/nancyd,,2025,lead
+T08,Zero Data Zone,M15,Oscar Martinez,oscar@example.com,https://github.com/oscarm,,2025,member
+T09,Zero CGPA Heroes,M16,Peter Parker,peter@example.com,https://github.com/peterp,0.0,2026,lead
+T09,Zero CGPA Heroes,M17,Quinn Fabray,quinn@example.com,https://github.com/quinnf,0.0,2026,member
+T10,Cross Member Alpha,M_SHARED_01,Rachel Green,rachel@example.com,https://github.com/rachelg,8.0,2025,lead
+T10,Cross Member Alpha,M18,Ross Geller,ross@example.com,https://github.com/rossg,8.6,2025,member
+T11,Cross Member Beta,M_SHARED_01,Rachel Green,rachel@example.com,https://github.com/rachelg,8.0,2025,member
+T11,Cross Member Beta,M19,Chandler Bing,chandler@example.com,https://github.com/chandlerb,8.4,2025,lead
+T12,Zeta Zealots,M20,Sarah Connor,sarah@example.com,https://github.com/sarahc,8.9,2025,lead
+T12,Zeta Zealots,M21,Thomas Anderson,thomas@example.com,https://github.com/thomasa,8.7,2025,member
+,Shadow Clone Squad,M24,Walter White,walter@example.com,https://github.com/walterw,8.5,2025,lead
+,Shadow Clone Squad,M25,Jesse Pinkman,jesse@example.com,https://github.com/jessep,7.8,2025,member
+T13,Eta Explorers,M22,Uma Thurman,uma@example.com,https://github.com/umat,7.2,2026,lead
+T13,Eta Explorers,M23,Victor Stone,victor@example.com,https://github.com/victors,7.0,2026,member
+,Shadow Clone Squad,M26,Hank Schrader,hank@example.com,https://github.com/hanks,8.1,2025,lead
+,Shadow Clone Squad,M27,Gustavo Fring,gus@example.com,https://github.com/gusf,9.0,2025,member

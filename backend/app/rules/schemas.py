@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import Any, Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -308,9 +308,9 @@ class MemberSignals(BaseModel):
 class EligibilityEvaluateRequest(BaseModel):
     """Request to evaluate teams against a versioned eligibility configuration."""
 
-    teams: list[Any] = Field(
-        ...,
-        description="List of TeamSchema objects or team dicts (from ingestion).",
+    teams: Optional[list[Any]] = Field(
+        default=None,
+        description="List of TeamSchema objects or team dicts (from ingestion). Optional if dataset_id is provided.",
     )
     signals: list[MemberSignals] = Field(
         default_factory=list,
@@ -336,6 +336,12 @@ class EligibilityEvaluateRequest(BaseModel):
         default=None,
         description="Optional extraction run identifier if signals were loaded from a stored extraction run.",
     )
+
+    @model_validator(mode="after")
+    def validate_teams_or_dataset(self) -> EligibilityEvaluateRequest:
+        if not self.teams and not self.dataset_id:
+            raise ValueError("Must provide either 'teams' or 'dataset_id'.")
+        return self
 
 
 class EligibilityRunResponse(BaseModel):

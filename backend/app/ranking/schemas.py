@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import Any, Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.rules.schemas import EligibilityStatus
 from app.scoring.schemas import (
@@ -285,3 +285,16 @@ class RankingEvaluationRequest(BaseModel):
         if v <= 0:
             raise ValueError(f"top_x must be a positive integer (> 0), got {v}")
         return v
+
+    @model_validator(mode="after")
+    def validate_ranking_source(self) -> RankingEvaluationRequest:
+        if (
+            not self.scoring_run_id
+            and self.scoring_results is None
+            and not self.teams
+            and not self.dataset_id
+        ):
+            raise ValueError(
+                "Must provide either scoring_run_id, scoring_results, teams, or dataset_id."
+            )
+        return self
