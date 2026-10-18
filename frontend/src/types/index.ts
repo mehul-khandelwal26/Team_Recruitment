@@ -1,0 +1,50 @@
+/**
+ * Convenience re-exports and domain type aliases derived from generated OpenAPI schema.
+ */
+
+import type { components, paths } from './api';
+
+export type Schema<T extends keyof components['schemas']> = components['schemas'][T];
+
+// Ingestion & Dataset models
+export type DatasetRecord = Schema<'DatasetRecord'>;
+export type DatasetSummary = Schema<'DatasetSummary'>;
+export type UploadResponse = Schema<'UploadResponse'>;
+export type ValidationWarning = Schema<'ValidationWarning'>;
+export type ValidationError = Schema<'ValidationError'>;
+
+// Signals & Extraction models
+export type ExtractionRunResponse = Schema<'ExtractionRunResponse-Output'>;
+export type ExtractionRunSummary = Schema<'ExtractionRunSummary'>;
+export type SignalDefinition = Schema<'SignalDefinition'>;
+
+// Rules & Eligibility models
+export type RuleConfiguration = Schema<'RuleConfiguration'>;
+export type RuleDefinition = Schema<'RuleDefinition'>;
+export type RuleTypeCatalogItem = Schema<'RuleTypeCatalogItem'>;
+export type EligibilityRunResponse = Schema<'EligibilityRunResponse'>;
+export type TeamEligibilityResult = Schema<'TeamEligibilityResult'>;
+
+// Scoring models
+export type ScoringConfiguration = Schema<'ScoringConfiguration-Output'>;
+export type ScoringRunResponse = Schema<'ScoringRunResponse'>;
+export type TeamScoringResult = Schema<'TeamScoringResult'>;
+
+// Ranking models
+export type RankingRunResponse = Schema<'RankingRunResponse'>;
+export type RankingRunSummary = Schema<'RankingRunSummary'>;
+export type RankingRunSummaryItem = Schema<'RankingRunSummaryItem'>;
+export type RankedTeamResult = Schema<'RankedTeamResult'>;
+export type ExcludedTeamResult = Schema<'ExcludedTeamResult'>;
+
+// Navigation types
+export type NavItem = {
+  title: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  description?: string;
+  badge?: string;
+};
+
+// Re-export paths and components
+export type { paths, components };
