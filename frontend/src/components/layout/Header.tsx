@@ -73,8 +73,8 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         <div className="hidden lg:flex items-center gap-2 text-xs text-muted-foreground bg-secondary/50 px-2.5 py-1 rounded border border-border/80">
           <Database className="h-3.5 w-3.5 text-forest-700" />
-          <span className="font-mono text-[11px] truncate max-w-[200px]" title={API_BASE_URL}>
-            {API_BASE_URL}
+          <span className="font-mono text-[11px] truncate max-w-[200px]" title={API_BASE_URL || 'http://localhost:8000'}>
+            {API_BASE_URL || 'http://localhost:8000'}
           </span>
         </div>
 
