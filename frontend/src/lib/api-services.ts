@@ -12,13 +12,23 @@ import type {
   SignalCatalogResponse,
   SignalDefinition,
   RuleConfiguration,
+  RuleConfigurationUpdate,
+  RuleConfigurationCreate,
+  RuleTypeCatalogItem,
   EligibilityRunResponse,
+  ManualOverride,
+  ManualOverrideCreate,
   ScoringConfiguration,
+  ScoringConfigurationUpdate,
+  ScoringConfigurationCreate,
+  ScoringCatalogResponse,
   ScoringRunResponse,
   RankingRunSummaryItem,
   RankingRunResponse,
   HealthResponse,
 } from '@/types';
+
+
 
 export const apiService = {
   /**
@@ -81,10 +91,50 @@ export const apiService = {
   },
 
   /**
+   * Return catalog of available eligibility rule types, supported scopes, and parameters.
+   */
+  getRuleCatalog(): Promise<RuleTypeCatalogItem[]> {
+    return apiClient.get<RuleTypeCatalogItem[]>('/api/rules/catalog');
+  },
+
+  /**
    * List the latest active version of all registered rule configurations.
    */
   getRuleConfigs(): Promise<RuleConfiguration[]> {
     return apiClient.get<RuleConfiguration[]>('/api/rules/configs');
+  },
+
+  /**
+   * Retrieve a rule configuration by ID (latest version if omitted, or specific version).
+   */
+  getRuleConfig(configId: string, version?: number): Promise<RuleConfiguration> {
+    return apiClient.get<RuleConfiguration>(`/api/rules/configs/${configId}`, {
+      ...(version !== undefined ? { version } : {}),
+    });
+  },
+
+  /**
+   * List all available version numbers for a given rule configuration.
+   */
+  getRuleConfigVersions(configId: string): Promise<number[]> {
+    return apiClient.get<number[]>(`/api/rules/configs/${configId}/versions`);
+  },
+
+  /**
+   * Update a rule configuration by creating a new immutable version.
+   */
+  updateRuleConfig(
+    configId: string,
+    payload: RuleConfigurationUpdate
+  ): Promise<RuleConfiguration> {
+    return apiClient.put<RuleConfiguration>(`/api/rules/configs/${configId}`, payload);
+  },
+
+  /**
+   * Create a new custom eligibility rule configuration (version 1).
+   */
+  createRuleConfig(payload: RuleConfigurationCreate): Promise<RuleConfiguration> {
+    return apiClient.post<RuleConfiguration>('/api/rules/configs', payload);
   },
 
   /**
@@ -105,10 +155,50 @@ export const apiService = {
   },
 
   /**
+   * Return metadata catalog of criterion types, normalization methods, and aggregation strategies.
+   */
+  getScoringCatalog(): Promise<ScoringCatalogResponse> {
+    return apiClient.get<ScoringCatalogResponse>('/api/scoring/catalog');
+  },
+
+  /**
    * List latest versions of all stored scoring configurations.
    */
   getScoringConfigs(): Promise<ScoringConfiguration[]> {
     return apiClient.get<ScoringConfiguration[]>('/api/scoring/configs');
+  },
+
+  /**
+   * Retrieve a scoring configuration by ID (latest version if omitted, or specific version).
+   */
+  getScoringConfig(configId: string, version?: number): Promise<ScoringConfiguration> {
+    return apiClient.get<ScoringConfiguration>(`/api/scoring/configs/${configId}`, {
+      ...(version !== undefined ? { version } : {}),
+    });
+  },
+
+  /**
+   * List all available version numbers for a scoring configuration.
+   */
+  getScoringConfigVersions(configId: string): Promise<number[]> {
+    return apiClient.get<number[]>(`/api/scoring/configs/${configId}/versions`);
+  },
+
+  /**
+   * Update a scoring configuration by creating a new immutable version.
+   */
+  updateScoringConfig(
+    configId: string,
+    payload: ScoringConfigurationUpdate
+  ): Promise<ScoringConfiguration> {
+    return apiClient.put<ScoringConfiguration>(`/api/scoring/configs/${configId}`, payload);
+  },
+
+  /**
+   * Create a new validated scoring configuration (starts at version 1).
+   */
+  createScoringConfig(payload: ScoringConfigurationCreate): Promise<ScoringConfiguration> {
+    return apiClient.post<ScoringConfiguration>('/api/scoring/configs', payload);
   },
 
   /**
@@ -159,5 +249,34 @@ export const apiService = {
   getRankingRun(runId: string): Promise<RankingRunResponse> {
     return apiClient.get<RankingRunResponse>(`/api/ranking/runs/${runId}`);
   },
+
+  /**
+   * Retrieve an eligibility evaluation run's results (with any manual overrides merged).
+   */
+  getEligibilityRun(runId: string): Promise<EligibilityRunResponse> {
+    return apiClient.get<EligibilityRunResponse>(`/api/rules/runs/${runId}`);
+  },
+
+  /**
+   * Apply an organizer's manual eligibility override to a team in an evaluation run.
+   */
+  applyTeamEligibilityOverride(
+    eligibilityRunId: string,
+    teamId: string,
+    payload: ManualOverrideCreate
+  ): Promise<ManualOverride> {
+    return apiClient.post<ManualOverride>(
+      `/api/rules/runs/${eligibilityRunId}/teams/${teamId}/override`,
+      payload
+    );
+  },
+
+  /**
+   * Export a recorded ranking run as a CSV file.
+   */
+  exportRankingRunCsv(runId: string): Promise<{ blob: Blob; filename?: string }> {
+    return apiClient.downloadBlob(`/api/ranking/runs/${runId}/export`);
+  },
 };
+
 

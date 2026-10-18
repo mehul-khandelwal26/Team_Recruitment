@@ -1,0 +1,446 @@
+import React, { useState } from 'react';
+import {
+  ShieldCheck,
+  Plus,
+  Layers,
+  Edit3,
+  AlertCircle,
+  Clock,
+  UserCheck,
+  RefreshCw,
+} from 'lucide-react';
+import { Card, CardHeader, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  useRuleConfigs,
+  useRuleConfig,
+  useRuleConfigVersions,
+} from '@/hooks/useConfigurations';
+import { EditRuleConfigModal } from './EditRuleConfigModal';
+import { CreateRuleConfigModal } from './CreateRuleConfigModal';
+
+interface EligibilityTabProps {
+  initialConfigId?: string;
+  initialVersion?: number;
+}
+
+export const EligibilityTab: React.FC<EligibilityTabProps> = ({
+  initialConfigId,
+  initialVersion,
+}) => {
+  const configsQuery = useRuleConfigs();
+
+  const [selectedConfigId, setSelectedConfigId] = useState<string | null>(
+    initialConfigId || null
+  );
+  const [selectedVersion, setSelectedVersion] = useState<number | undefined>(
+    initialVersion
+  );
+
+  // If no config selected yet, select the first available once loaded
+  const configs = configsQuery.data || [];
+  const currentConfigId = selectedConfigId || configs[0]?.config_id || null;
+
+  // Versions for the current config
+  const versionsQuery = useRuleConfigVersions(currentConfigId);
+  const versions = versionsQuery.data || [];
+  const latestVersion = versions.length > 0 ? Math.max(...versions) : undefined;
+
+  // Current effective version: if selectedVersion is set use it, else latest
+  const effectiveVersion = selectedVersion !== undefined ? selectedVersion : latestVersion;
+  const isViewingHistorical =
+    latestVersion !== undefined && effectiveVersion !== undefined && effectiveVersion < latestVersion;
+
+  // Single config query (fetches specific version if effectiveVersion is specified)
+  const singleConfigQuery = useRuleConfig(currentConfigId, effectiveVersion);
+  const currentConfig = singleConfigQuery.data || configs.find((c) => c.config_id === currentConfigId);
+
+  // Modals state
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+
+  // When config selection changes, reset version to latest
+  const handleSelectConfig = (configId: string) => {
+    setSelectedConfigId(configId);
+    setSelectedVersion(undefined);
+  };
+
+  const handleVersionChange = (vStr: string) => {
+    if (vStr === 'latest') {
+      setSelectedVersion(undefined);
+    } else {
+      setSelectedVersion(parseInt(vStr, 10));
+    }
+  };
+
+  if (configsQuery.isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-28 rounded-lg" />
+          ))}
+        </div>
+        <Skeleton className="h-96 rounded-lg" />
+      </div>
+    );
+  }
+
+  if (configsQuery.isError) {
+    return (
+      <Card className="border-red-200 bg-red-50/50">
+        <CardContent className="p-6 flex flex-col items-center justify-center text-center space-y-3">
+          <AlertCircle className="h-8 w-8 text-red-600" />
+          <div>
+            <h4 className="text-sm font-semibold text-red-900">Failed to Load Eligibility Configurations</h4>
+            <p className="text-xs text-red-700 mt-1 max-w-md">
+              {configsQuery.error?.message || 'An unexpected error occurred while fetching configurations.'}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => configsQuery.refetch()}
+            className="gap-1.5 text-xs"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Top Bar / Presets Selector Grid */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-foreground tracking-tight flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-forest-700" />
+              Eligibility Configurations ({configs.length})
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Select a rule set to inspect evaluators, parameters, and historical version snapshots.
+            </p>
+          </div>
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => setIsCreateOpen(true)}
+            className="gap-1.5 text-xs"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New Configuration
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {configs.map((cfg) => {
+            const isSelected = cfg.config_id === currentConfigId;
+            return (
+              <Card
+                key={cfg.config_id}
+                onClick={() => handleSelectConfig(cfg.config_id)}
+                className={`cursor-pointer transition-all border text-left p-3.5 ${
+                  isSelected
+                    ? 'border-forest-700 bg-forest-50/40 ring-1 ring-forest-700/50 shadow-sm'
+                    : 'border-border/80 hover:border-forest-600/50 bg-card hover:bg-muted/20'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-1">
+                  <Badge
+                    variant={isSelected ? 'forest' : 'outline'}
+                    className="font-mono text-[10px]"
+                  >
+                    v{cfg.version}
+                  </Badge>
+                  <code className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border truncate max-w-[120px]">
+                    {cfg.config_id}
+                  </code>
+                </div>
+                <div className="mt-2">
+                  <h4 className="text-xs font-bold text-foreground truncate">{cfg.name}</h4>
+                  <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1 leading-snug">
+                    {cfg.description || 'No description provided.'}
+                  </p>
+                </div>
+                <div className="mt-3 pt-2 border-t border-border/60 flex items-center justify-between text-[10px] text-muted-foreground">
+                  <span className="flex items-center gap-1 font-mono">
+                    <Layers className="h-3 w-3 text-forest-700" />
+                    {cfg.rules?.length || 0} Rules
+                  </span>
+                  <span className="font-mono text-[10px] text-forest-700 font-medium">
+                    {isSelected ? '● Selected' : 'Select →'}
+                  </span>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Selected Configuration Detail View */}
+      {currentConfig ? (
+        <div className="space-y-4">
+          {/* Detail Header Card */}
+          <Card className="border-border">
+            <CardHeader className="pb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-base font-bold text-foreground tracking-tight">
+                      {currentConfig.name}
+                    </h3>
+                    <code className="text-xs font-mono text-muted-foreground bg-muted px-2 py-0.5 rounded border border-border">
+                      {currentConfig.config_id}
+                    </code>
+                    <Badge variant={currentConfig.is_active ? 'forest' : 'secondary'} className="text-[10px]">
+                      {currentConfig.is_active ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground max-w-3xl leading-relaxed">
+                    {currentConfig.description || 'No description provided for this configuration.'}
+                  </p>
+                </div>
+
+                {/* Actions & Version Switcher */}
+                <div className="flex items-center gap-2.5 shrink-0">
+                  {/* Version Selector */}
+                  <div className="flex items-center gap-1.5 bg-muted/60 p-1 rounded-md border border-border">
+                    <Clock className="h-3.5 w-3.5 text-muted-foreground ml-1.5" />
+                    <span className="text-[11px] font-semibold text-muted-foreground">Version:</span>
+                    <select
+                      value={effectiveVersion !== undefined ? String(effectiveVersion) : 'latest'}
+                      onChange={(e) => handleVersionChange(e.target.value)}
+                      className="h-6 text-xs font-mono font-medium rounded border-0 bg-card px-2 text-foreground focus:ring-1 focus:ring-forest-600 cursor-pointer shadow-xs"
+                    >
+                      {versions.length > 0 ? (
+                        versions
+                          .slice()
+                          .sort((a, b) => b - a)
+                          .map((v) => (
+                            <option key={v} value={String(v)}>
+                              v{v} {v === latestVersion ? '(Latest)' : '(Historical)'}
+                            </option>
+                          ))
+                      ) : (
+                        <option value="1">v1 (Latest)</option>
+                      )}
+                    </select>
+                  </div>
+
+                  <Button
+                    variant="default"
+                    size="sm"
+                    disabled={isViewingHistorical}
+                    onClick={() => setIsEditOpen(true)}
+                    className="gap-1.5 text-xs"
+                    title={
+                      isViewingHistorical
+                        ? 'Historical versions are immutable. Switch to latest version to edit.'
+                        : 'Edit this configuration'
+                    }
+                  >
+                    <Edit3 className="h-3.5 w-3.5" />
+                    Edit Rules
+                  </Button>
+                </div>
+              </div>
+
+              {/* Historical Warning Banner if viewing an older snapshot */}
+              {isViewingHistorical && (
+                <div className="mt-3 p-3 rounded-md bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-amber-700 shrink-0" />
+                    <span>
+                      Viewing <strong>Historical Snapshot v{effectiveVersion}</strong> (Immutable).
+                      Evaluation runs conducted with this version remain 100% reproducible.
+                    </span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedVersion(undefined)}
+                    className="text-xs bg-white text-amber-900 border-amber-300 hover:bg-amber-100"
+                  >
+                    Switch to Latest (v{latestVersion})
+                  </Button>
+                </div>
+              )}
+            </CardHeader>
+
+            <CardContent className="space-y-5 pt-0">
+              {/* Global Config Settings Bar */}
+              {currentConfig.global_config && (
+                <div className="p-3 bg-muted/40 rounded-lg border border-border/70 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <UserCheck className="h-3.5 w-3.5 text-forest-700" />
+                    <span className="text-muted-foreground">Team Lead Field:</span>
+                    <span className="font-mono font-semibold text-foreground">
+                      {currentConfig.global_config.lead_field || 'role'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted-foreground">Lead Values:</span>
+                    <span className="font-mono text-[11px] text-foreground bg-card px-1.5 py-0.5 rounded border border-border">
+                      {(currentConfig.global_config.lead_values || []).join(', ') || 'lead, team lead'}
+                    </span>
+                  </div>
+                  {currentConfig.global_config.default_academic_scale && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-muted-foreground">Default Academic Scale:</span>
+                      <span className="font-mono font-semibold text-foreground">
+                        {currentConfig.global_config.default_academic_scale}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Evaluator Rules Table */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs font-semibold text-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <Layers className="h-3.5 w-3.5 text-forest-700" />
+                    Evaluator Rules ({currentConfig.rules?.length || 0})
+                  </span>
+                  <span className="text-[11px] font-mono text-muted-foreground">
+                    Sorted by execution order
+                  </span>
+                </div>
+
+                <div className="border border-border rounded-lg overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-muted/60 border-b border-border text-[11px] text-muted-foreground">
+                      <tr>
+                        <th className="py-2.5 px-3 w-12 text-center">Order</th>
+                        <th className="py-2.5 px-3">Rule Definition</th>
+                        <th className="py-2.5 px-3">Scope & Selection</th>
+                        <th className="py-2.5 px-3">Severity</th>
+                        <th className="py-2.5 px-3">On Missing Data</th>
+                        <th className="py-2.5 px-3">Parameters</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {(currentConfig.rules || []).map((rule) => {
+                        const isHard = rule.severity === 'hard';
+                        const isEnabled = rule.is_enabled;
+
+                        return (
+                          <tr
+                            key={rule.rule_id}
+                            className={`hover:bg-muted/20 transition-colors ${
+                              !isEnabled ? 'opacity-40 bg-muted/10' : ''
+                            }`}
+                          >
+                            <td className="py-3 px-3 text-center font-mono text-muted-foreground">
+                              {rule.order}
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-semibold text-foreground">{rule.name}</span>
+                                {!isEnabled && (
+                                  <Badge variant="outline" className="text-[9px] text-muted-foreground">
+                                    Disabled
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="text-[10px] font-mono text-muted-foreground mt-0.5">
+                                id: <span className="text-foreground">{rule.rule_id}</span> · type:{' '}
+                                <span className="text-forest-700 font-medium">{rule.rule_type}</span>
+                              </div>
+                              {rule.description && (
+                                <p className="text-[11px] text-muted-foreground mt-1 leading-snug">
+                                  {rule.description}
+                                </p>
+                              )}
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="font-medium text-foreground capitalize">
+                                {rule.scope}
+                              </div>
+                              {rule.member_selection && (
+                                <div className="text-[10px] font-mono text-muted-foreground mt-0.5">
+                                  select: {rule.member_selection}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-3">
+                              <Badge
+                                variant={isHard ? 'forest' : 'secondary'}
+                                className="font-mono text-[10px] capitalize"
+                              >
+                                {rule.severity}
+                              </Badge>
+                            </td>
+                            <td className="py-3 px-3">
+                              <span className="font-mono text-[11px] bg-muted/80 px-1.5 py-0.5 rounded border border-border">
+                                {rule.on_missing}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3">
+                              {rule.parameters && Object.keys(rule.parameters).length > 0 ? (
+                                <div className="flex flex-wrap gap-1 max-w-xs">
+                                  {Object.entries(rule.parameters).map(([k, v]) => (
+                                    <span
+                                      key={k}
+                                      className="text-[10px] font-mono bg-card px-1.5 py-0.5 rounded border border-border/80 text-foreground"
+                                    >
+                                      {k}: {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground text-[11px]">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        <Card className="border-border">
+          <CardContent className="p-8 text-center text-xs text-muted-foreground">
+            No configuration selected. Please select a configuration from the list above.
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Edit Modal */}
+      {currentConfig && (
+        <EditRuleConfigModal
+          open={isEditOpen}
+          onOpenChange={setIsEditOpen}
+          config={currentConfig}
+          onSuccess={(newVersion) => {
+            setSelectedVersion(newVersion);
+            singleConfigQuery.refetch();
+            configsQuery.refetch();
+          }}
+        />
+      )}
+
+      {/* Create Modal */}
+      <CreateRuleConfigModal
+        open={isCreateOpen}
+        onOpenChange={setIsCreateOpen}
+        existingConfigs={configs}
+        onSuccess={(newId) => {
+          setSelectedConfigId(newId);
+          setSelectedVersion(undefined);
+          configsQuery.refetch();
+        }}
+      />
+    </div>
+  );
+};
