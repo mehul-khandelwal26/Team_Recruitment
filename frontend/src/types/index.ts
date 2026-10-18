@@ -17,6 +17,7 @@ export type ValidationError = Schema<'ValidationError'>;
 export type ExtractionRunResponse = Schema<'ExtractionRunResponse-Output'>;
 export type ExtractionRunSummary = Schema<'ExtractionRunSummary'>;
 export type SignalDefinition = Schema<'SignalDefinition'>;
+export type SignalCatalogResponse = Schema<'SignalCatalogResponse'>;
 
 // Rules & Eligibility models
 export type RuleConfiguration = Schema<'RuleConfiguration'>;
