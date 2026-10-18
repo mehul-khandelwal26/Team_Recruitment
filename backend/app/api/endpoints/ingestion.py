@@ -11,15 +11,15 @@ from __future__ import annotations
 
 import datetime
 import json
-from typing import Optional
+from typing import Optional, Union
 import uuid
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 
 from app.ingestion.discovery import CANONICAL_FIELD_CATALOG, discover_fields_from_bytes
 from app.ingestion.parser import parse_csv, parse_json
 from app.ingestion.store import default_dataset_store
-from app.schemas.ingestion import DatasetRecord, UploadResponse, ValidationError
+from app.schemas.ingestion import DatasetRecord, DatasetSummary, UploadResponse, ValidationError
 from app.schemas.mapping import CanonicalFieldInfo, FieldDiscoveryResponse
 
 router = APIRouter(prefix="/api/ingestion", tags=["Ingestion"])
@@ -129,10 +129,16 @@ async def get_dataset(dataset_id: str) -> DatasetRecord:
     return record
 
 
-@router.get("/datasets", response_model=list[DatasetRecord])
-async def list_datasets() -> list[DatasetRecord]:
+@router.get("/datasets", response_model=Union[list[DatasetRecord], list[DatasetSummary]])
+async def list_datasets(
+    summary: bool = Query(default=False, description="Return lightweight summary objects without teams or payload"),
+    limit: int = Query(default=50, ge=1, le=200, description="Maximum number of items to return (1-200)"),
+) -> Union[list[DatasetRecord], list[DatasetSummary]]:
     """List all uploaded datasets ordered by upload timestamp."""
+    if summary:
+        return default_dataset_store.list_summaries(limit=limit)
     return default_dataset_store.list_datasets()
+
 
 
 @router.post("/inspect", response_model=FieldDiscoveryResponse)

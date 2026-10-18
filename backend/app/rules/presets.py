@@ -276,4 +276,60 @@ def get_default_presets() -> list[RuleConfiguration]:
         updated_at=now_ts,
     )
 
-    return [basic_preset, strict_preset, open_solo_preset]
+    # 4. Demo: Lead Academic Review Preset
+    demo_mixed_review_preset = RuleConfiguration(
+        config_id="demo_mixed_review",
+        version=1,
+        name="Demo: Lead Academic Review",
+        description="Demo preset requiring team lead academic verification (CGPA >= 7.0) with manual review fallback.",
+        global_config=GlobalRuleConfig(lead_field="role"),
+        rules=[
+            RuleDefinition(
+                rule_id="min_size",
+                rule_type="team_size_min",
+                name="Minimum Team Size (>= 2 Members)",
+                description="Team must have at least 2 registered members.",
+                severity=RuleSeverity.HARD,
+                scope=RuleScope.TEAM,
+                is_enabled=True,
+                order=1,
+                parameters={"min_size": 2},
+            ),
+            RuleDefinition(
+                rule_id="github_req",
+                rule_type="required_link",
+                name="Technical Profile Link (Any Member)",
+                description="At least one team member must provide a GitHub profile link.",
+                severity=RuleSeverity.HARD,
+                scope=RuleScope.MEMBER,
+                member_selection=MemberSelection.ANY_MEMBER,
+                is_enabled=True,
+                order=2,
+                parameters={"link_field": "github_url", "member_selection": "any_member"},
+            ),
+            RuleDefinition(
+                rule_id="lead_cgpa",
+                rule_type="signal_threshold",
+                name="Team Lead Academic Standing (CGPA >= 7.0)",
+                description="Designated team lead must meet minimum academic CGPA of 7.0.",
+                severity=RuleSeverity.HARD,
+                scope=RuleScope.MEMBER,
+                member_selection=MemberSelection.TEAM_LEAD,
+                is_enabled=True,
+                order=3,
+                on_missing=OnMissingAction.MANUAL_REVIEW,
+                parameters={
+                    "signal_key": "academic_cgpa",
+                    "operator": ">=",
+                    "threshold": 7.0,
+                    "member_selection": "team_lead",
+                },
+            ),
+        ],
+        is_active=True,
+        created_at=now_ts,
+        updated_at=now_ts,
+    )
+
+    return [basic_preset, strict_preset, open_solo_preset, demo_mixed_review_preset]
+

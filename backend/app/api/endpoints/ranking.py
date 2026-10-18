@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import csv
 import io
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from app.ingestion.store import default_dataset_store
 from app.ranking.engine import evaluate_ranking
-from app.ranking.schemas import RankingEvaluationRequest, RankingRunResponse
+from app.ranking.schemas import (
+    RankingEvaluationRequest,
+    RankingRunResponse,
+    RankingRunSummaryItem,
+)
 from app.ranking.store import default_ranking_run_store
 from app.rules.store import get_effective_run
 from app.scoring.config_store import default_scoring_config_store
@@ -172,10 +176,16 @@ def get_ranking_run(run_id: str) -> RankingRunResponse:
     return record
 
 
-@router.get("/runs", response_model=list[RankingRunResponse])
-def list_ranking_runs() -> list[RankingRunResponse]:
+@router.get("/runs", response_model=Union[list[RankingRunResponse], list[RankingRunSummaryItem]])
+def list_ranking_runs(
+    summary: bool = Query(default=False, description="Return lightweight summary objects without team lists"),
+    limit: int = Query(default=50, ge=1, le=200, description="Maximum number of items to return (1-200)"),
+) -> Union[list[RankingRunResponse], list[RankingRunSummaryItem]]:
     """List all recorded ranking evaluation runs."""
+    if summary:
+        return default_ranking_run_store.list_summaries(limit=limit)
     return default_ranking_run_store.list_runs()
+
 
 
 @router.get("/runs/{run_id}/export")

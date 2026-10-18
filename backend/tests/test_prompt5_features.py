@@ -775,54 +775,14 @@ class TestMixedEligibilityDemoScenario:
         ext_run.dataset_id = "ds_mixed_demo"
         default_extraction_run_store.save(ext_run)
 
-        # 2. Register custom configuration 'demo_mixed_review' via POST /api/rules/configs
-        cfg_resp = client.post(
-            "/api/rules/configs",
-            json={
-                "config_id": "demo_mixed_review",
-                "name": "Demo Mixed Review",
-                "description": "Requires team lead academic verification (CGPA >= 7.0)",
-                "global_config": {"lead_field": "role"},
-                "rules": [
-                    {
-                        "rule_id": "min_size",
-                        "rule_type": "team_size_min",
-                        "name": "Minimum Team Size (>= 2 Members)",
-                        "severity": "hard",
-                        "scope": "team",
-                        "order": 1,
-                        "parameters": {"min_size": 2},
-                    },
-                    {
-                        "rule_id": "github_req",
-                        "rule_type": "required_link",
-                        "name": "Technical Profile Link (Any Member)",
-                        "severity": "hard",
-                        "scope": "member",
-                        "member_selection": "any_member",
-                        "order": 2,
-                        "parameters": {"link_field": "github_url", "member_selection": "any_member"},
-                    },
-                    {
-                        "rule_id": "lead_cgpa",
-                        "rule_type": "signal_threshold",
-                        "name": "Team Lead Academic Standing (CGPA >= 7.0)",
-                        "severity": "hard",
-                        "scope": "member",
-                        "member_selection": "team_lead",
-                        "order": 3,
-                        "on_missing": "manual_review",
-                        "parameters": {
-                            "signal_key": "academic_cgpa",
-                            "operator": ">=",
-                            "threshold": 7.0,
-                            "member_selection": "team_lead",
-                        },
-                    },
-                ],
-            },
-        )
-        assert cfg_resp.status_code in (200, 201)
+        # 2. Verify built-in preset 'demo_mixed_review' is available without manual POST
+        cfg_resp = client.get("/api/rules/configs/demo_mixed_review")
+        assert cfg_resp.status_code == 200
+        preset_cfg = cfg_resp.json()
+        assert preset_cfg["config_id"] == "demo_mixed_review"
+        assert preset_cfg["name"] == "Demo: Lead Academic Review"
+        assert len(preset_cfg["rules"]) == 3
+
 
         # 3. Evaluate eligibility
         elig_resp = client.post(

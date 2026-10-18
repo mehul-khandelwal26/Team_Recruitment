@@ -167,11 +167,11 @@ def validate_startup_configuration() -> None:
             )
 
 # ---------------------------------------------------------------------------
-# CORS – origins allowed to call the API
+# CORS – origins allowed to call the API (comma-separated list)
 # ---------------------------------------------------------------------------
 CORS_ORIGINS: list[str] = [
     origin.strip()
-    for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+    for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
     if origin.strip()
 ]
 

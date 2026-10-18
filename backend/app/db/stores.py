@@ -602,6 +602,95 @@ class PostgresRankingRunStore(BasePostgresStore):
             rows = s.execute(stmt).scalars().all()
             return [RankingRunResponse.model_validate(r.payload) for r in rows]
 
+    def list_summaries(self, limit: int = 50) -> list[RankingRunSummaryItem]:
+        from app.ranking.schemas import RankingRunSummaryItem
+
+        with self.session() as s:
+            stmt = (
+                select(
+                    RankingRunModel.run_id,
+                    RankingRunModel.evaluated_at,
+                    RankingRunModel.dataset_id,
+                    RankingRunModel.extraction_run_id,
+                    RankingRunModel.scoring_run_id,
+                    RankingRunModel.eligibility_run_id,
+                    RankingRunModel.top_x,
+                    RankingRunModel.include_needs_review,
+                    RankingRunModel.tiebreak_criterion_id,
+                    RankingRunModel.selected_count,
+                    RankingRunModel.shortage,
+                    RankingRunModel.payload["summary"].label("summary_json"),
+                    EligibilityRunModel.config_id.label("eligibility_config_id"),
+                    EligibilityRunModel.config_version.label("eligibility_config_version"),
+                    ScoringRunModel.config_id.label("scoring_config_id"),
+                    ScoringRunModel.config_version.label("scoring_config_version"),
+                    ScoringRunModel.config_source.label("scoring_config_source"),
+                    DatasetModel.filename.label("dataset_filename"),
+                )
+                .outerjoin(
+                    EligibilityRunModel,
+                    RankingRunModel.eligibility_run_id == EligibilityRunModel.run_id,
+                )
+                .outerjoin(
+                    ScoringRunModel,
+                    RankingRunModel.scoring_run_id == ScoringRunModel.run_id,
+                )
+                .outerjoin(
+                    DatasetModel,
+                    RankingRunModel.dataset_id == DatasetModel.dataset_id,
+                )
+                .order_by(
+                    RankingRunModel.evaluated_at.desc(), RankingRunModel.run_id.desc()
+                )
+                .limit(limit)
+            )
+            rows = s.execute(stmt).all()
+            summaries = []
+            for r in rows:
+                summary_data = r.summary_json or {}
+                selected_val = int(summary_data.get("selected_teams_count", r.selected_count or 0))
+                shortage_val = int(summary_data.get("shortage", r.shortage or 0))
+                needs_review_val = int(summary_data.get("needs_review_count", 0))
+                excluded_val = int(summary_data.get("excluded_count", 0))
+                unresolved_val = int(summary_data.get("unresolved_count", 0))
+                tie_val = bool(summary_data.get("tie_at_cutoff", False))
+
+                summaries.append(
+                    RankingRunSummaryItem(
+                        run_id=r.run_id,
+                        evaluated_at=(
+                            r.evaluated_at.isoformat()
+                            if hasattr(r.evaluated_at, "isoformat")
+                            else str(r.evaluated_at)
+                        ),
+                        dataset_id=r.dataset_id,
+                        extraction_run_id=r.extraction_run_id,
+                        scoring_run_id=r.scoring_run_id,
+                        eligibility_run_id=r.eligibility_run_id,
+                        top_x=r.top_x,
+                        include_needs_review=r.include_needs_review,
+                        tiebreak_criterion_id=r.tiebreak_criterion_id,
+                        selected_teams_count=selected_val,
+                        selected=selected_val,
+                        shortage=shortage_val,
+                        needs_review_count=needs_review_val,
+                        needs_review=needs_review_val,
+                        excluded_count=excluded_val,
+                        excluded=excluded_val,
+                        unresolved_count=unresolved_val,
+                        unresolved=unresolved_val,
+                        tie_at_cutoff=tie_val,
+                        eligibility_config_id=r.eligibility_config_id,
+                        eligibility_config_version=r.eligibility_config_version,
+                        scoring_config_id=r.scoring_config_id,
+                        scoring_config_version=r.scoring_config_version,
+                        scoring_config_source=r.scoring_config_source,
+                        dataset_filename=r.dataset_filename,
+                    )
+                )
+            return summaries
+
+
     def reset(self) -> None:
         """Test isolation helper: clears all ranking runs."""
         self._assert_safe_reset()
@@ -710,7 +799,51 @@ class PostgresDatasetStore(BasePostgresStore):
                 for row in rows
             ]
 
+    def list_summaries(self, limit: int = 50) -> list[DatasetSummary]:
+        from app.schemas.ingestion import DatasetSummary
+
+        warnings_count_expr = sa.case(
+            (
+                func.jsonb_typeof(DatasetModel.warnings) == "array",
+                func.jsonb_array_length(DatasetModel.warnings),
+            ),
+            else_=0,
+        ).label("warnings_count")
+
+        with self.session() as s:
+            stmt = (
+                select(
+                    DatasetModel.dataset_id,
+                    DatasetModel.filename,
+                    DatasetModel.file_type,
+                    DatasetModel.teams_count,
+                    DatasetModel.members_count,
+                    DatasetModel.uploaded_at,
+                    warnings_count_expr,
+                )
+                .order_by(DatasetModel.uploaded_at.desc(), DatasetModel.dataset_id.desc())
+                .limit(limit)
+            )
+            rows = s.execute(stmt).all()
+            return [
+                DatasetSummary(
+                    dataset_id=r.dataset_id,
+                    filename=r.filename,
+                    file_type=r.file_type,
+                    teams_count=r.teams_count,
+                    members_count=r.members_count,
+                    uploaded_at=(
+                        r.uploaded_at.isoformat()
+                        if hasattr(r.uploaded_at, "isoformat")
+                        else str(r.uploaded_at)
+                    ),
+                    warnings_count=r.warnings_count,
+                )
+                for r in rows
+            ]
+
     def delete(self, dataset_id: str) -> bool:
+
         with self.session() as s:
             stmt = select(DatasetModel).where(DatasetModel.dataset_id == dataset_id)
             row = s.execute(stmt).scalars().first()
@@ -772,7 +905,64 @@ class PostgresExtractionRunStore(BasePostgresStore):
             rows = s.execute(stmt).scalars().all()
             return [ExtractionRunResponse.model_validate(r.payload) for r in rows]
 
+    def list_summaries(
+        self, limit: int = 50, dataset_id: Optional[str] = None
+    ) -> list[ExtractionRunSummary]:
+        from app.signals.schemas import ExtractionRunSummary
+
+        warnings_count_expr = sa.case(
+            (
+                func.jsonb_typeof(ExtractionRunModel.payload["warnings"]) == "array",
+                func.jsonb_array_length(ExtractionRunModel.payload["warnings"]),
+            ),
+            else_=0,
+        ).label("warnings_count")
+
+        errors_count_expr = sa.case(
+            (
+                func.jsonb_typeof(ExtractionRunModel.payload["errors"]) == "array",
+                func.jsonb_array_length(ExtractionRunModel.payload["errors"]),
+            ),
+            else_=0,
+        ).label("errors_count")
+
+        with self.session() as s:
+            stmt = select(
+                ExtractionRunModel.run_id,
+                ExtractionRunModel.dataset_id,
+                ExtractionRunModel.created_at,
+                ExtractionRunModel.selected_signals,
+                ExtractionRunModel.total_teams,
+                ExtractionRunModel.total_members,
+                warnings_count_expr,
+                errors_count_expr,
+            )
+            if dataset_id:
+                stmt = stmt.where(ExtractionRunModel.dataset_id == dataset_id)
+            stmt = stmt.order_by(
+                ExtractionRunModel.created_at.desc(), ExtractionRunModel.run_id.desc()
+            ).limit(limit)
+            rows = s.execute(stmt).all()
+            return [
+                ExtractionRunSummary(
+                    run_id=r.run_id,
+                    dataset_id=r.dataset_id,
+                    created_at=(
+                        r.created_at.isoformat()
+                        if hasattr(r.created_at, "isoformat")
+                        else str(r.created_at)
+                    ),
+                    selected_signals=list(r.selected_signals or []),
+                    total_teams=r.total_teams,
+                    total_members=r.total_members,
+                    warnings_count=r.warnings_count,
+                    errors_count=r.errors_count,
+                )
+                for r in rows
+            ]
+
     def reset(self) -> None:
+
         """Test isolation helper: clears all extraction runs."""
         self._assert_safe_reset()
         with self.session() as s:

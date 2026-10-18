@@ -17,6 +17,7 @@ class DatasetStoreProtocol(Protocol):
     def save(self, record: DatasetRecord) -> DatasetRecord: ...
     def get(self, dataset_id: str) -> Optional[DatasetRecord]: ...
     def list_datasets(self) -> list[DatasetRecord]: ...
+    def list_summaries(self, limit: int = 50) -> list[DatasetSummary]: ...
     def delete(self, dataset_id: str) -> bool: ...
     def reset(self) -> None: ...
 
@@ -41,6 +42,32 @@ class InMemoryDatasetStore:
         records = list(self._datasets.values())
         records.sort(key=lambda d: str(d.uploaded_at), reverse=True)
         return [r.model_copy(deep=True) for r in records]
+
+    def list_summaries(self, limit: int = 50) -> list[DatasetSummary]:
+        from app.schemas.ingestion import DatasetSummary
+
+        records = list(self._datasets.values())
+        records.sort(
+            key=lambda d: (
+                str(d.uploaded_at or ""),
+                str(d.dataset_id or ""),
+            ),
+            reverse=True,
+        )
+        items = records[:limit]
+        return [
+            DatasetSummary(
+                dataset_id=r.dataset_id,
+                filename=r.filename,
+                file_type=r.file_type,
+                teams_count=r.teams_count,
+                members_count=r.members_count,
+                uploaded_at=str(r.uploaded_at),
+                warnings_count=len(r.warnings or []),
+            )
+            for r in items
+        ]
+
 
     def delete(self, dataset_id: str) -> bool:
         if dataset_id in self._datasets:

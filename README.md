@@ -500,7 +500,7 @@ The initial schema (`001_initial_schema`) creates:
 
 ### 3. Startup Preset Upsert & Current-Only Overrides
 
-- **Startup Preset Seeding**: When `STORAGE_BACKEND=postgres`, the application automatically and idempotently upserts standard built-in presets (`basic`, `strict`, `open_solo`, `balanced`, `technical_heavy`, `academic_heavy`) into PostgreSQL during server lifespan startup. User configurations are never overwritten.
+- **Startup Preset Seeding**: When `STORAGE_BACKEND=postgres`, the application automatically and idempotently upserts standard built-in presets (`basic`, `strict`, `open_solo`, `demo_mixed_review`, `balanced`, `technical_heavy`, `academic_heavy`) into PostgreSQL during server lifespan startup. User configurations are never overwritten.
 - **Current-Only Overrides**: Organizer manual overrides (`POST /api/rules/runs/{run_id}/teams/{team_id}/override`) are stored as independent audit records without mutating historical evaluation run snapshots. Effective runs dynamically merge manual overrides.
 
 ### 4. ID-Only Evaluation Pipeline & Provenance Inheritance
@@ -520,16 +520,24 @@ Export Top-X ranking runs as an RFC 4180-compliant CSV file with formula-injecti
 - **Columns**: `selection_status`, `rank`, `team_id`, `team_name`, `final_score`, `eligibility_status`, `score_status`, `is_tied`, `criteria_evaluated` (e.g. `"1 of 4"`), `reason_code`, `explanation`.
 - **Security**: Neutralizes CSV formula injection by prepending single quotes to text cells starting with `=`, `+`, `-`, or `@`.
 
-### 6. Corrected API Routes
+### 6. Lightweight Summary List Endpoints (Frontend Ready)
 
-- `GET /api/ingestion/datasets/{dataset_id}`: Retrieve stored dataset metadata and raw payloads.
-- `GET /api/signals/runs/{run_id}`: Retrieve stored signal extraction runs.
-- `GET /api/rules/runs/{run_id}`: Retrieve effective eligibility runs with manual overrides merged.
-- `GET /api/scoring/runs/{run_id}`: Retrieve historical scoring runs.
-- `GET /api/ranking/runs/{run_id}`: Retrieve ranking runs.
-- `GET /api/ranking/runs/{run_id}/export`: Export ranking run as CSV.
+List endpoints support lightweight pagination to power frontend dashboards without loading full payloads:
+- `GET /api/ingestion/datasets?summary=true&limit=50`: Returns compact dataset summaries (`dataset_id`, `filename`, `file_type`, `teams_count`, `members_count`, `uploaded_at`, `warnings_count`).
+- `GET /api/signals/runs?summary=true&limit=50`: Returns compact extraction run summaries (`run_id`, `dataset_id`, `created_at`, `selected_signals`, `total_teams`, `total_members`, `warnings_count`, `errors_count`).
+- `GET /api/ranking/runs?summary=true&limit=50`: Returns compact ranking run summaries (`run_id`, `evaluated_at`, `dataset_id`, `extraction_run_id`, `scoring_run_id`, `eligibility_run_id`, `top_x`, `include_needs_review`, `tiebreak_criterion_id`, counts, and resolved nullable upstream config IDs and dataset filename).
+- **Postgres Optimization**: Never selects full `payload` columns; queries typed columns and extracts payload subkeys (`payload['summary']`) directly in SQL with single batched outerjoins for upstream metadata.
+- **Default Preservation**: `summary=false` retains default full record behavior for full backward compatibility.
 
-### 7. Known Differences (Memory vs. PostgreSQL Backend)
+### 7. CORS Configuration for Frontends
+
+- **Allowed Origins**: `CORS_ORIGINS` accepts comma-separated origins (default: `http://localhost:5173,http://127.0.0.1:5173`).
+- **Allowed Methods**: `GET`, `POST`, `PUT`, `DELETE`, `OPTIONS`.
+- **Allowed Headers**: `Content-Type`.
+- **Credential Protection**: Wildcard `*` is never combined with `allow_credentials=True`.
+- **Exposed Headers**: Exposes `Content-Disposition` so frontend clients can read the suggested CSV export filename.
+
+### 8. Known Differences (Memory vs. PostgreSQL Backend)
 
 | Behavior | Memory Backend (`STORAGE_BACKEND=memory`) | PostgreSQL Backend (`STORAGE_BACKEND=postgres`) |
 | :--- | :--- | :--- |

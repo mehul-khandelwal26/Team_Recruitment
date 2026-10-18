@@ -49,14 +49,18 @@ app = FastAPI(
 register_database_error_handlers(app)
 
 # ---------------------------------------------------------------------------
-# CORS middleware – allow the Vite dev server during development
+# CORS middleware – allow frontend origins, expose Content-Disposition
 # ---------------------------------------------------------------------------
+_cors_origins = CORS_ORIGINS
+_allow_credentials = "*" not in _cors_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_cors_origins,
+    allow_credentials=_allow_credentials,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type"],
+    expose_headers=["Content-Disposition"],
 )
 
 # ---------------------------------------------------------------------------

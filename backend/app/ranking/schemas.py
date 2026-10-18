@@ -203,7 +203,49 @@ class RankingRunResponse(BaseModel):
     )
 
 
+class RankingRunSummaryItem(BaseModel):
+    """Lightweight summary of a Top-X ranking run for dashboard and history views."""
+
+    run_id: str = Field(..., description="Unique ranking run identifier.")
+    evaluated_at: str = Field(..., description="ISO 8601 evaluation timestamp.")
+    dataset_id: Optional[str] = Field(default=None, description="Source dataset ID if linked.")
+    extraction_run_id: Optional[str] = Field(default=None, description="Source extraction run ID if linked.")
+    scoring_run_id: Optional[str] = Field(default=None, description="Source scoring run ID if linked.")
+    eligibility_run_id: Optional[str] = Field(default=None, description="Source eligibility run ID if linked.")
+    top_x: int = Field(..., description="Requested number of shortlisted teams.")
+    include_needs_review: bool = Field(
+        default=False,
+        description="Whether scored NEEDS_REVIEW teams participated in main selection.",
+    )
+    tiebreak_criterion_id: Optional[str] = Field(
+        default=None,
+        description="Configured criterion ID used to resolve primary score ties.",
+    )
+    # Stored summary counts
+    selected_teams_count: int = Field(default=0, description="Count of shortlisted teams.")
+    selected: Optional[int] = Field(default=None, description="Alias for selected_teams_count.")
+    shortage: int = Field(default=0, description="Shortage count relative to requested top_x.")
+    needs_review_count: int = Field(default=0, description="Count of teams requiring manual review.")
+    needs_review: Optional[int] = Field(default=None, description="Alias for needs_review_count.")
+    excluded_count: int = Field(default=0, description="Count of excluded teams.")
+    excluded: Optional[int] = Field(default=None, description="Alias for excluded_count.")
+    unresolved_count: int = Field(default=0, description="Count of unresolved teams.")
+    unresolved: Optional[int] = Field(default=None, description="Alias for unresolved_count.")
+    tie_at_cutoff: bool = Field(default=False, description="Whether a score tie occurred at the cutoff boundary.")
+    # Resolved upstream context
+    eligibility_config_id: Optional[str] = Field(default=None, description="Upstream eligibility config ID.")
+    eligibility_config_version: Optional[int] = Field(default=None, description="Upstream eligibility config version.")
+    scoring_config_id: Optional[str] = Field(default=None, description="Upstream scoring config ID.")
+    scoring_config_version: Optional[int] = Field(default=None, description="Upstream scoring config version.")
+    scoring_config_source: Optional[str] = Field(default=None, description="Upstream scoring config source ('stored' or 'inline').")
+    dataset_filename: Optional[str] = Field(default=None, description="Upstream dataset filename.")
+
+
+RankingSummary = RankingRunSummaryItem
+
+
 class RankingEvaluationRequest(BaseModel):
+
     """Request payload to execute ranking and Top-X selection."""
 
     top_x: int = Field(

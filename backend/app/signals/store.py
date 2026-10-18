@@ -17,6 +17,9 @@ class ExtractionRunStoreProtocol(Protocol):
     def save(self, record: ExtractionRunResponse) -> None: ...
     def get(self, run_id: str) -> Optional[ExtractionRunResponse]: ...
     def list_runs(self, dataset_id: Optional[str] = None) -> list[ExtractionRunResponse]: ...
+    def list_summaries(
+        self, limit: int = 50, dataset_id: Optional[str] = None
+    ) -> list[ExtractionRunSummary]: ...
     def reset(self) -> None: ...
 
 
@@ -41,6 +44,37 @@ class InMemoryExtractionRunStore:
             runs = [r for r in runs if r.dataset_id == dataset_id]
         runs.sort(key=lambda r: str(r.created_at or ""), reverse=True)
         return [r.model_copy(deep=True) for r in runs]
+
+    def list_summaries(
+        self, limit: int = 50, dataset_id: Optional[str] = None
+    ) -> list[ExtractionRunSummary]:
+        from app.signals.schemas import ExtractionRunSummary
+
+        runs = list(self._runs.values())
+        if dataset_id:
+            runs = [r for r in runs if r.dataset_id == dataset_id]
+        runs.sort(
+            key=lambda r: (
+                str(r.created_at or ""),
+                str(r.run_id or ""),
+            ),
+            reverse=True,
+        )
+        items = runs[:limit]
+        return [
+            ExtractionRunSummary(
+                run_id=r.run_id,
+                dataset_id=r.dataset_id,
+                created_at=str(r.created_at or ""),
+                selected_signals=list(r.selected_signals or []),
+                total_teams=r.total_teams,
+                total_members=r.total_members,
+                warnings_count=len(r.warnings or []),
+                errors_count=len(r.errors or []),
+            )
+            for r in items
+        ]
+
 
     def reset(self) -> None:
         self._runs.clear()

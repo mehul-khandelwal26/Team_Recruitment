@@ -210,3 +210,17 @@ class SignalCatalogResponse(BaseModel):
     categories: list[CategoryDefinition] = Field(default_factory=list)
     analyzers: list[ExtractorDescriptor] = Field(default_factory=list)
     signals: list[SignalDefinition] = Field(default_factory=list)
+
+
+class ExtractionRunSummary(BaseModel):
+    """Lightweight summary of a signal extraction run for dashboard and history views."""
+
+    run_id: str = Field(..., description="Unique extraction run identifier.")
+    dataset_id: Optional[str] = Field(default=None, description="Source dataset ID if associated.")
+    created_at: str = Field(..., description="ISO 8601 execution and creation timestamp.")
+    selected_signals: list[str] = Field(default_factory=list, description="Signals selected for this run.")
+    total_teams: int = Field(default=0, description="Total teams evaluated in extraction.")
+    total_members: int = Field(default=0, description="Total members evaluated in extraction.")
+    warnings_count: int = Field(default=0, description="Count of warnings encountered.")
+    errors_count: int = Field(default=0, description="Count of errors encountered.")
+

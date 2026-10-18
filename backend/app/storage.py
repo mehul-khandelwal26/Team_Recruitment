@@ -31,11 +31,11 @@ from app.db.stores import (
 )
 
 if TYPE_CHECKING:
-    from app.ranking.schemas import RankingRunResponse
+    from app.ranking.schemas import RankingRunResponse, RankingRunSummaryItem
     from app.ranking.store import InMemoryRankingRunStore, RankingRunStoreProtocol
     from app.rules.config_store import RuleConfigStore
-    from app.schemas.ingestion import DatasetRecord
-    from app.signals.schemas import ExtractionRunResponse
+    from app.schemas.ingestion import DatasetRecord, DatasetSummary
+    from app.signals.schemas import ExtractionRunResponse, ExtractionRunSummary
     from app.rules.schemas import (
         EligibilityRunResponse,
         ManualOverride,
@@ -361,6 +361,9 @@ class DelegatingRankingRunStore:
     def list_runs(self) -> list[RankingRunResponse]:
         return self._store.list_runs()
 
+    def list_summaries(self, limit: int = 50) -> list[RankingRunSummaryItem]:
+        return self._store.list_summaries(limit=limit)
+
     def reset(self) -> None:
         return self._store.reset()
 
@@ -384,6 +387,9 @@ class DelegatingDatasetStore:
 
     def list_datasets(self) -> list[DatasetRecord]:
         return self._store.list_datasets()
+
+    def list_summaries(self, limit: int = 50) -> list[DatasetSummary]:
+        return self._store.list_summaries(limit=limit)
 
     def delete(self, dataset_id: str) -> bool:
         return self._store.delete(dataset_id)
@@ -412,8 +418,14 @@ class DelegatingExtractionRunStore:
     def list_runs(self, dataset_id: Optional[str] = None) -> list[ExtractionRunResponse]:
         return self._store.list_runs(dataset_id=dataset_id)
 
+    def list_summaries(
+        self, limit: int = 50, dataset_id: Optional[str] = None
+    ) -> list[ExtractionRunSummary]:
+        return self._store.list_summaries(limit=limit, dataset_id=dataset_id)
+
     def reset(self) -> None:
         return self._store.reset()
+
 
 
 # ---------------------------------------------------------------------------

@@ -302,3 +302,16 @@ class DatasetRecord(BaseModel):
             return val.isoformat()
         return val
 
+
+class DatasetSummary(BaseModel):
+    """Lightweight summary of an uploaded dataset for dashboard and history views."""
+
+    dataset_id: str = Field(..., description="Unique dataset identifier.")
+    filename: str = Field(..., description="Original name of the uploaded file.")
+    file_type: str = Field(..., description="File format ('csv' or 'json').")
+    teams_count: int = Field(default=0, description="Total number of parsed teams.")
+    members_count: int = Field(default=0, description="Total number of parsed candidate members.")
+    uploaded_at: str = Field(..., description="ISO 8601 upload timestamp.")
+    warnings_count: int = Field(default=0, description="Total number of ingestion validation warnings.")
+
+

@@ -13,10 +13,10 @@ from __future__ import annotations
 
 import datetime
 import json
-from typing import Any, Optional
+from typing import Any, Optional, Union
 import uuid
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from starlette.concurrency import run_in_threadpool
 
 from app.api.endpoints.ingestion import _resolve_parser
@@ -28,6 +28,7 @@ from app.signals.schemas import (
     CategoryDefinition,
     ExtractionRunRequest,
     ExtractionRunResponse,
+    ExtractionRunSummary,
     ExtractorDescriptor,
     SignalCatalogResponse,
     SignalDefinition,
@@ -328,9 +329,16 @@ async def get_extraction_run(run_id: str) -> ExtractionRunResponse:
     return record
 
 
-@router.get("/runs", response_model=list[ExtractionRunResponse])
-async def list_extraction_runs(dataset_id: Optional[str] = None) -> list[ExtractionRunResponse]:
+@router.get("/runs", response_model=Union[list[ExtractionRunResponse], list[ExtractionRunSummary]])
+async def list_extraction_runs(
+    dataset_id: Optional[str] = Query(default=None, description="Optional dataset ID filter"),
+    summary: bool = Query(default=False, description="Return lightweight summary objects without team results"),
+    limit: int = Query(default=50, ge=1, le=200, description="Maximum number of items to return (1-200)"),
+) -> Union[list[ExtractionRunResponse], list[ExtractionRunSummary]]:
     """List recorded extraction runs, optionally filtered by dataset_id."""
+    if summary:
+        return default_extraction_run_store.list_summaries(limit=limit, dataset_id=dataset_id)
     return default_extraction_run_store.list_runs(dataset_id=dataset_id)
+
 
 

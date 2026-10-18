@@ -17,6 +17,7 @@ This directory contains realistic sample registration data for testing the Team 
 - **Rule Presets**:
   - `basic`: Evaluates team sizing ($\ge 2$ and $\le 4$ members, hard), technical profile presence (at least one member with `github_url`, hard), and minimum CGPA $\ge 6.0$ (soft advisory).
   - `strict`: Evaluates team sizing (2–4 members, hard), all members provide `github_url` (hard), all members CGPA $\ge 7.0$ (hard), and active public repository presence (hard, triggers `manual_review` if unavailable).
+  - `demo_mixed_review`: ("Demo: Lead Academic Review") Evaluates team sizing ($\ge 2$, hard), technical profile presence (any member, hard), and team lead CGPA $\ge 7.0$ (hard, with `manual_review` on missing lead).
 - **Scoring Preset**:
   - `balanced`: Default balanced multi-criteria weighting across academic and technical signals.
 - **Ranking Policy**:
@@ -138,17 +139,17 @@ EXCLUDED,,T08,Zero Data Zone,,ELIGIBLE,NO_SCORE,,,NO_SCORE,Team has no calculabl
 
 ## Mixed Eligibility & Reviewer Override Workflow Demo
 
-To demonstrate a realistic review workflow where both `ELIGIBLE` and `NEEDS_REVIEW` candidates occur simultaneously, and where an organizer inspects and overrides a team's status, use the custom `demo_mixed_review` configuration.
+To demonstrate a realistic review workflow where both `ELIGIBLE` and `NEEDS_REVIEW` candidates occur simultaneously, and where an organizer inspects and overrides a team's status, use the built-in `demo_mixed_review` preset ("Demo: Lead Academic Review").
 
 ### 1. Configuration Setup
 
-Create a custom rule configuration `demo_mixed_review` via `POST /api/rules/configs`:
+The `demo_mixed_review` preset is pre-seeded automatically at startup (in both in-memory and PostgreSQL modes). No manual `POST /api/rules/configs` call is required. Its built-in configuration is:
 
 ```json
 {
   "config_id": "demo_mixed_review",
-  "name": "Demo Mixed Review",
-  "description": "Requires team lead academic verification (CGPA >= 7.0)",
+  "name": "Demo: Lead Academic Review",
+  "description": "Requires team lead academic verification (CGPA >= 7.0) with manual review on missing lead",
   "global_config": {
     "lead_field": "role"
   },

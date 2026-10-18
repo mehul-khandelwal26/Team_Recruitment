@@ -124,6 +124,8 @@ class TestCatalogAndPresets:
         assert "basic" in config_ids
         assert "strict" in config_ids
         assert "open_solo" in config_ids
+        assert "demo_mixed_review" in config_ids
+
 
     def test_presets_condition_3_no_hard_rules_depend_on_resume_signals(self):
         """Condition 3: No preset may contain a hard rule that depends on resume signals."""
