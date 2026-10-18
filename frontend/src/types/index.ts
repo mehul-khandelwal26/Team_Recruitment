@@ -37,6 +37,13 @@ export type RankingRunSummaryItem = Schema<'RankingRunSummaryItem'>;
 export type RankedTeamResult = Schema<'RankedTeamResult'>;
 export type ExcludedTeamResult = Schema<'ExcludedTeamResult'>;
 
+export type HealthResponse = {
+  status: string;
+  environment: string;
+  version: string;
+  storage_backend: string;
+};
+
 // Navigation types
 export type NavItem = {
   title: string;
