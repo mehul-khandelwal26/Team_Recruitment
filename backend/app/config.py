@@ -10,7 +10,7 @@ import os
 from dotenv import load_dotenv
 
 # Load .env file if it exists (no error if missing)
-load_dotenv()
+load_dotenv(override=True)
 
 
 # ---------------------------------------------------------------------------
