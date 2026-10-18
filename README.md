@@ -27,6 +27,7 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 - **Fault-isolated multi-team evaluation** – failure or missing data for one member or signal never halts execution of others.
 - **Variable team sizes** – handle teams of any size without hard-coded member limits.
 - **Deterministic Top-X ranking & explainable shortlisting (Phase 6)** – 3-level deterministic ranking, tiebreak criteria, boundary cutoff tie protection, shortage diagnostics, review candidate suggestions, and full scoring breakdown preservation.
+- **Interactive web dashboard & evaluation workflow (Phase 7)** – full React 18 + Vite frontend with Editorial Enterprise design system, live metrics dashboard, 5-stage evaluation wizard, interactive results leaderboard with manual reviewer overrides, scoring weight editors with dynamic share calculations, and immutable configuration version history.
 
 ## 🛠️ Technology Stack
 
@@ -39,7 +40,7 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 | Document Parsers | PyPDF (`pypdf`) · Python-Docx (`python-docx`) |
 | Testing        | Pytest · Starlette TestClient (387 tests)    |
 | Database       | PostgreSQL (Neon Cloud) · SQLAlchemy 2.0 · Alembic · Psycopg 3 |
-| Frontend       | React + Vite *(planned)*                     |
+| Frontend       | React 18 · TypeScript · Vite · Tailwind CSS · shadcn/ui · React Router v6 · TanStack Query v5 · Lucide React |
 
 ## 🗺️ Project Roadmap
 
@@ -55,8 +56,8 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 | **Phase 5** | Weighted scoring and team-level aggregation (Scoring Engine) | ✅ Completed |
 | **Phase 6** | Ranking, top-X selection, and human-readable explanations | ✅ Completed |
 | **Database Phase** | Persistent PostgreSQL storage on Neon (8 stores, Alembic migration, safety checks, ID-only pipeline, CSV export) | ✅ Completed |
-| **Phase 7** | Frontend integration and organizer dashboard | 🔲 *Next Up* |
-| **Phase 8** | End-to-end testing and final improvements | 🔲 Planned |
+| **Phase 7** | Frontend integration, live dashboard, evaluation wizard, results leaderboard & reviewer workflow, configuration manager | ✅ Completed |
+| **Phase 8** | End-to-end testing, production deployment, and authentication gateway | 🔲 Planned |
 
 ---
 
@@ -79,8 +80,12 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 | **Ranking & Top-X Selection (Phase 6)** | ✅ Implemented | Deterministic 3-level ordering, tiebreak criteria, cutoff tie handling, shortage diagnostics, review suggestions, and run persistence |
 | **PostgreSQL Persistence** | ✅ Implemented | **8 PostgreSQL stores**, Alembic migrations, Neon SSL connection pooling, centralized `StorageFactory` with delegating proxies |
 | **Safety Guards & ID-Only Flow** | ✅ Implemented | Reset guard (`assert_safe_test_database`), ID-only evaluation pipeline (`dataset_id`, `extraction_run_id`), provenance inheritance, and UTF-8 BOM CSV export |
+| **React Frontend Foundation & Design System** | ✅ Implemented | Editorial Enterprise styling, Tailwind CSS, Lucide icons, shadcn/ui components, generated OpenAPI types |
+| **Live Dashboard (`/`)** | ✅ Implemented | Real-time backend integration, dataset/signals/ranking summaries, system health, and fault-isolated cards |
+| **Evaluation Wizard (`/evaluate`)** | ✅ Implemented | 5-stage interactive pipeline (Dataset &rarr; Extraction &rarr; Rules &rarr; Scoring &rarr; Execution) using real backend APIs |
+| **Results Leaderboard & Reviewer Workflow (`/results`)** | ✅ Implemented | Top-X shortlist, cutoff tie warnings, shortage diagnostics, manual overrides with reason modal, and UTF-8 BOM CSV export |
+| **Configuration Manager (`/configurations`)** | ✅ Implemented | Versioned eligibility rules, scoring models & weights editor, immutable snapshot inspector, and preset cloning |
 | Portfolio Analyzer | 🔲 Staged Contract | `PortfolioAnalyzerContract` registered as planned capability |
-| React frontend (Phase 7) | 🔲 Not started | Planned next |
 
 ---
 
@@ -402,11 +407,104 @@ Stage 6 of the recruitment pipeline consumes evaluation outputs from the eligibi
 
 ---
 
+## 💻 Frontend Application (Phase 7)
+
+The frontend is a single-page application built with **React 18**, **TypeScript**, **Vite**, **Tailwind CSS**, and **shadcn/ui-inspired primitives**, typed against the FastAPI OpenAPI contract via generated TypeScript models (`openapi-typescript`).
+
+### 🎨 Editorial Enterprise Design System
+
+The application adheres to an **Editorial Enterprise** aesthetic:
+- **Palette**: Warm off-white backgrounds (`#FAFAF8`), deep forest green accents (`#1b4332`), and dark charcoal typography (`#1f2937`).
+- **Information Density**: Information-rich data tables, distinct monospace identifier chips, clear badge statuses, and responsive form cards without purple gradients, decorative charts, or heavy animations.
+- **Accessibility & Feedback**: Keyboard-navigable modal dialogs, loading skeletons, independent section error recovery, and explicit two-step confirmation prompts.
+
+### 🧭 Page Architecture & Routes
+
+The application exposes 4 primary routes wrapped in a unified layout with global navigation and live backend health monitoring:
+
+| Route | View | Description |
+| :--- | :--- | :--- |
+| `/` | **Dashboard** | Real-time overview of ingested datasets, extraction runs, and evaluation history. |
+| `/evaluate` | **Evaluation Wizard** | 5-stage interactive workflow guiding organizers from upload to shortlist. |
+| `/results` | **Results & Overrides** | Top-X shortlist leaderboard, score breakdowns, reviewer manual overrides, and CSV export. |
+| `/configurations` | **Configuration Manager** | Interactive rule and scoring model inspector, weight editor, and version audit timeline. |
+
+---
+
+### 1. Live Dashboard (`/`)
+
+Connects directly to the FastAPI backend with fault-isolated TanStack Query hooks:
+- **System Metrics**: Surfaces active storage engine (`PostgreSQL` or `Memory`), API health, total datasets count, extraction runs, and ranking evaluations.
+- **Recent Ranking Runs**: Displays top evaluation runs with shortlist size, cutoff criteria, evaluated timestamps, and one-click navigation to inspect results.
+- **Recent Ingested Datasets**: Summary cards showing dataset filename, file type, total teams and members count, upload dates, and validation warning badges.
+- **Section Fault Isolation**: If an individual endpoint fails or the database is waking up, that specific section displays an error state with an inline **Retry** button without degrading other dashboard cards.
+
+---
+
+### 2. Multi-Stage Evaluation Wizard (`/evaluate`)
+
+An end-to-end guided workflow that replaces manual API requests or cURL commands:
+
+```
+[ Stage 1: Dataset Selection ] ➔ [ Stage 2: Signal Extraction ] ➔ [ Stage 3: Eligibility Rules ] ➔ [ Stage 4: Scoring Model ] ➔ [ Stage 5: Execution & Results ]
+```
+
+1. **Stage 1 (Dataset Selection)**: Upload new CSV or JSON registration files (with immediate server-side validation and warning counters) or select from previously ingested datasets.
+2. **Stage 2 (Signal Extraction)**: Select an existing extraction run for the dataset, or trigger a new selective extraction run across Academics, Technical GitHub, and Resume analyzers.
+3. **Stage 3 (Eligibility Rules)**: Choose the active rule configuration (`demo_mixed_review`, `basic`, `strict`, `open_solo`, or custom rule sets) with an instant preview of evaluator counts and severity standards.
+4. **Stage 4 (Scoring Model & Parameters)**: Select the scoring rubric (`balanced`, `technical_heavy`, `academic_heavy`, or custom) and configure the desired `top_x` shortlist count and review inclusion flags.
+5. **Stage 5 (Pipeline Execution)**: Triggers the backend evaluation using ID-only references (`dataset_id`, `extraction_run_id`, `config_id`) and immediately redirects to the Results Leaderboard.
+
+---
+
+### 3. Results Leaderboard & Reviewer Workflow (`/results`)
+
+Comprehensive candidate team review and decision audit interface:
+
+- **Leaderboard Navigation**: Filterable tabs for `All Teams`, `Shortlisted (Selected)`, `Not Selected`, `Needs Review`, and `Excluded`.
+- **Rank & Cutoff Warnings**:
+  - Highlights Top-X selected candidates with ranked badge positions and tie indicators (`is_tied`).
+  - **Cutoff Tie Alert**: Emits an alert banner when multiple teams tie at the `top_x` cutoff boundary (`tie_at_cutoff: True`).
+  - **Shortage Diagnostics**: Displays actionable shortage alerts when fewer than `top_x` teams qualify, surfacing highest-ranked `NEEDS_REVIEW` candidates as recommendations.
+- **Detailed Score Breakdowns**: Per-team score inspection showing exact criterion weights, normalized scores, member-to-team aggregations, and individual criterion score contributions reconciling to the composite score.
+- **Reviewer Manual Overrides**:
+  - Organizers can manually override a team's status (`ELIGIBLE`, `INELIGIBLE`, `NEEDS_REVIEW`).
+  - Requires a mandatory justification note recorded in the audit trail.
+  - Dynamically updates the effective run and recalculates the leaderboard without mutating the historical evaluation run snapshot.
+- **One-Click RFC 4180 CSV Export**: Downloads the complete shortlist with UTF-8 BOM encoding and formula-injection security directly to the organizer's machine.
+
+---
+
+### 4. Configuration Manager & Immutable Version Audit (`/configurations`)
+
+Provides centralized management and auditability across both evaluation engines:
+
+- **Eligibility Rules Tab**:
+  - Browse registered presets (`demo_mixed_review`, `basic`, `strict`, `open_solo`) and custom rule configurations.
+  - Inspect global parameters (team lead field, lead values, academic scale) and evaluator definitions (rule type, scope, member selection, severity `hard`/`soft`, on-missing policies, and parameters).
+  - Version switcher allows loading any historical snapshot via `GET /api/rules/configs/{id}?version={v}` in read-only mode with an immutability banner.
+  - Edit rules modal creates an incremented immutable version (`v + 1`) with two-step confirmation.
+  - Create custom rule configs starting at `v1` with preset cloning.
+- **Scoring Weights & Models Tab**:
+  - Browse scoring models (`balanced`, `technical_heavy`, `academic_heavy`) and custom rubrics.
+  - Prominent weight display with real-time relative percentage shares (`(weight / total) * 100`) and visual proportion bars.
+  - Clarifies that weights represent relative importance and do not need to sum to 100 (dynamic normalization supported).
+  - Edit weights modal allows adjusting weights (`weight >= 0`), toggling criteria, and modifying `scale_max` with two-step confirmation creating Version `v + 1`.
+  - Create custom scoring models starting at `v1`.
+- **Version History & Audit Tab**:
+  - Timeline of all version iterations recorded for any selected configuration.
+  - Distinguishes current active version from preserved historical snapshots.
+  - One-click "Inspect Snapshot" button to view the exact criteria that scored past evaluation runs.
+- **Cache Synchronization**: Automatically invalidates both local configuration queries and wizard query caches (`['wizard', 'rules', 'configs']`, `['wizard', 'scoring', 'configs']`) so updates are instantly reflected throughout the application without page reloads.
+
+---
+
 ## 🚀 Getting Started
 
 ### Prerequisites
 
 - Python 3.10+ (tested with Python 3.12)
+- Node.js 18+ and npm (for the React frontend)
 
 ### Backend Setup
 
@@ -434,6 +532,29 @@ copy .env.example .env        # Windows
 
 # 6. Run development server
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### Frontend Setup
+
+```bash
+# 1. Navigate to frontend directory
+cd frontend
+
+# 2. Install dependencies
+npm install
+
+# 3. Environment configuration (optional)
+# Vite proxies /api to http://localhost:8000 by default.
+# To specify an external backend:
+# echo "VITE_API_BASE_URL=http://localhost:8000" > .env.local
+
+# 4. Run Vite development server
+npm run dev
+# The dashboard opens at http://localhost:5173
+
+# 5. Typecheck & production build
+npm run typecheck      # Type verification (zero errors)
+npm run build          # Builds production bundle to dist/
 ```
 
 ### Environment Variables
@@ -596,8 +717,8 @@ The test suite includes **387 automated tests** with a 100% pass rate across 15 
 
 ## ⚠️ Current Limitations & Next Steps
 
-1. **Next Milestone (Phase 7 - Frontend Integration & Organizer Dashboard)**: React + Vite web application with interactive CSV upload, signal selection, eligibility rule builder, scoring criteria weights slider, live ranking leaderboard, and CSV export.
-2. **Production Authentication**: The backend endpoints currently operate without authentication. Add an API key or JWT gateway before deploying the PostgreSQL backend publicly.
+1. **Production Reverse Proxy & Deployment**: In production, configure an Nginx or cloud gateway to serve the Vite frontend build artifacts (`frontend/dist`) and reverse-proxy `/api` requests to the FastAPI backend.
+2. **Production Authentication Gateway**: The backend endpoints currently operate without authentication. Add an API key, OAuth2, or JWT reverse proxy before exposing the application to public internet traffic.
 3. **Future AI Resume Analyzer**: An architectural audit confirmed that an advanced external AI/LLM resume provider can be plugged in via strategy pattern without altering existing signal contracts or downstream scoring.
 4. **GitHub Unauthenticated Rate Limits**: Unauthenticated calls to GitHub API are limited to 60 requests per hour per IP. Set `GITHUB_TOKEN` in `.env` for production workloads to achieve 5,000 req/hr.
 
