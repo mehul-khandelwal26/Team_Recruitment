@@ -197,7 +197,7 @@ def parse_csv(
     # Apply mapping if provided, or default canonical normalization
     normalized_mapping: dict[str, str] = {}
     if mapping:
-        # Validate that multiple columns don't map to the same structural target
+        # Validate that multiple columns don't map to the same target field
         target_counts: dict[str, list[str]] = {}
         for src, tgt in mapping.items():
             tgt_norm = tgt.strip().lower()
@@ -205,11 +205,11 @@ def parse_csv(
                 tgt_norm = "name"
             target_counts.setdefault(tgt_norm, []).append(src)
         for tgt, srcs in target_counts.items():
-            if len(srcs) > 1 and (tgt in _STRUCTURAL_FIELDS or tgt in _REQUIRED_CSV_COLUMNS):
+            if len(srcs) > 1:
                 errors.append(
                     ValidationError(
                         location="mapping",
-                        message=f"Multiple columns mapped to required field '{tgt}': {', '.join(srcs)}",
+                        message=f"Multiple columns mapped to field '{tgt}': {', '.join(srcs)}",
                     )
                 )
         if errors:
@@ -608,11 +608,24 @@ def parse_json(
     # Apply mapping if provided
     norm_mapping = {}
     if mapping:
+        target_counts: dict[str, list[str]] = {}
         for k, v in mapping.items():
             tgt = v.strip().lower()
             if tgt == "member_name":
                 tgt = "name"
+            target_counts.setdefault(tgt, []).append(k)
             norm_mapping[k.strip().lower()] = tgt
+        for tgt, srcs in target_counts.items():
+            if len(srcs) > 1:
+                return UploadResponse(
+                    success=False,
+                    errors=[
+                        ValidationError(
+                            location="mapping",
+                            message=f"Multiple fields mapped to field '{tgt}': {', '.join(srcs)}",
+                        )
+                    ],
+                )
 
     teams: list[TeamSchema] = []
     discovered_unmapped: set[str] = set()

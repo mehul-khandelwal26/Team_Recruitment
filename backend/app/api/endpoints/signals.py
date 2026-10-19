@@ -19,7 +19,7 @@ import uuid
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from starlette.concurrency import run_in_threadpool
 
-from app.api.endpoints.ingestion import _resolve_parser
+from app.api.endpoints.ingestion import _read_upload_file_bounded, _resolve_parser
 from app.ingestion.store import default_dataset_store
 from app.schemas.ingestion import DatasetRecord, MemberSchema, TeamSchema
 from app.signals.flatten import flatten_extraction_signals
@@ -180,7 +180,7 @@ async def extract_signals_from_file(
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Invalid config JSON: {exc}")
 
-    raw_bytes = await file.read()
+    raw_bytes = await _read_upload_file_bounded(file)
     upload_result = parser(raw_bytes, mapping=mapping_dict)
 
     if not upload_result.success:

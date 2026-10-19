@@ -96,9 +96,9 @@ export const LeaderboardTable: React.FC<LeaderboardTableProps> = ({
           team_id: t.team_id,
           team_name: t.team_name,
           rank: null,
-          final_score: t.final_score || null,
+          final_score: t.final_score !== undefined && t.final_score !== null ? t.final_score : null,
           score_status: t.score_status || 'DISQUALIFIED',
-          eligibility_status: t.eligibility_status || 'INELIGIBLE',
+          eligibility_status: t.eligibility_status || (t.reason_code === 'INELIGIBLE' ? 'INELIGIBLE' : null),
           selection_status: isUnresolved ? 'UNRESOLVED' : 'EXCLUDED',
           is_tied: false,
           explanation: t.explanation,
@@ -117,9 +117,9 @@ export const LeaderboardTable: React.FC<LeaderboardTableProps> = ({
           team_id: t.team_id,
           team_name: t.team_name,
           rank: null,
-          final_score: t.final_score || null,
+          final_score: t.final_score !== undefined && t.final_score !== null ? t.final_score : null,
           score_status: t.score_status || 'DISQUALIFIED',
-          eligibility_status: t.eligibility_status || 'NEEDS_REVIEW',
+          eligibility_status: t.eligibility_status || (t.reason_code === 'NEEDS_REVIEW' ? 'NEEDS_REVIEW' : null),
           selection_status: 'UNRESOLVED',
           is_tied: false,
           explanation: t.explanation,
@@ -379,7 +379,9 @@ export const LeaderboardTable: React.FC<LeaderboardTableProps> = ({
                             ? 'success'
                             : row.eligibility_status === 'NEEDS_REVIEW'
                               ? 'warning'
-                              : 'destructive'
+                              : row.eligibility_status === 'INELIGIBLE'
+                                ? 'destructive'
+                                : 'outline'
                         }
                         className="font-mono text-[10px]"
                       >

@@ -31,6 +31,7 @@ router = APIRouter(prefix="/api/ranking", tags=["Ranking"])
 def evaluate_ranking_endpoint(request: RankingEvaluationRequest) -> RankingRunResponse:
     """Execute deterministic Top-X ranking and selection from scoring results or end-to-end evaluation."""
     # 1. Provenance inheritance from Option A (scoring_run_id)
+    scoring_run = None
     if request.scoring_run_id:
         scoring_run = default_scoring_run_store.get(request.scoring_run_id)
         if scoring_run is None:
@@ -38,12 +39,15 @@ def evaluate_ranking_endpoint(request: RankingEvaluationRequest) -> RankingRunRe
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Scoring run '{request.scoring_run_id}' not found.",
             )
+        if request.dataset_id and getattr(scoring_run, "dataset_id", None) and scoring_run.dataset_id != request.dataset_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Scoring run dataset_id '{scoring_run.dataset_id}' does not match supplied dataset_id '{request.dataset_id}'.",
+            )
         if request.dataset_id is None and getattr(scoring_run, "dataset_id", None):
             request.dataset_id = scoring_run.dataset_id
         if request.extraction_run_id is None and getattr(scoring_run, "extraction_run_id", None):
             request.extraction_run_id = scoring_run.extraction_run_id
-        if request.eligibility_run_id is None and getattr(scoring_run, "eligibility_run_id", None):
-            request.eligibility_run_id = scoring_run.eligibility_run_id
 
     # 2. Provenance inheritance from eligibility_run_id (supplied or inherited)
     effective_elig_run = None
@@ -54,10 +58,24 @@ def evaluate_ranking_endpoint(request: RankingEvaluationRequest) -> RankingRunRe
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Eligibility run '{request.eligibility_run_id}' not found.",
             )
+        if request.dataset_id and getattr(effective_elig_run, "dataset_id", None) and effective_elig_run.dataset_id != request.dataset_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Eligibility run dataset_id '{effective_elig_run.dataset_id}' does not match supplied dataset_id '{request.dataset_id}'.",
+            )
         if request.dataset_id is None and getattr(effective_elig_run, "dataset_id", None):
             request.dataset_id = effective_elig_run.dataset_id
         if request.extraction_run_id is None and getattr(effective_elig_run, "extraction_run_id", None):
             request.extraction_run_id = effective_elig_run.extraction_run_id
+
+    if scoring_run is not None:
+        if request.eligibility_run_id and getattr(scoring_run, "eligibility_run_id", None) and scoring_run.eligibility_run_id != request.eligibility_run_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Scoring run eligibility_run_id '{scoring_run.eligibility_run_id}' does not match supplied eligibility_run_id '{request.eligibility_run_id}'.",
+            )
+        if request.eligibility_run_id is None and getattr(scoring_run, "eligibility_run_id", None):
+            request.eligibility_run_id = scoring_run.eligibility_run_id
 
     # Validate extraction_run_id consistency if present
     if request.extraction_run_id:
@@ -121,6 +139,11 @@ def evaluate_ranking_endpoint(request: RankingEvaluationRequest) -> RankingRunRe
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Scoring configuration '{cfg_id}' not found.",
+                )
+            if not scoring_config.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Scoring configuration '{cfg_id}' is inactive.",
                 )
 
         scoring_run = evaluate_scoring(

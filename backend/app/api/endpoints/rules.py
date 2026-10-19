@@ -173,6 +173,12 @@ async def evaluate_eligibility(payload: EligibilityEvaluateRequest) -> Eligibili
             ),
         )
 
+    if not config.is_active:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Configuration '{target_config_id}' is inactive.",
+        )
+
     # 1. Resolve teams
     teams_to_evaluate = payload.teams
     if teams_to_evaluate is None:

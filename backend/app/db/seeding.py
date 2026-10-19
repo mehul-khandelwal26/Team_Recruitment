@@ -67,7 +67,6 @@ def seed_database_presets(engine: Optional[Engine] = None) -> None:
                 set_={
                     "name": stmt.excluded.name,
                     "description": stmt.excluded.description,
-                    "is_active": stmt.excluded.is_active,
                     "updated_at": stmt.excluded.updated_at,
                     "payload": stmt.excluded.payload,
                 },
@@ -86,7 +85,6 @@ def seed_database_presets(engine: Optional[Engine] = None) -> None:
                     "description": stmt.excluded.description,
                     "scale_max": stmt.excluded.scale_max,
                     "score_ineligible_teams": stmt.excluded.score_ineligible_teams,
-                    "is_active": stmt.excluded.is_active,
                     "updated_at": stmt.excluded.updated_at,
                     "payload": stmt.excluded.payload,
                 },

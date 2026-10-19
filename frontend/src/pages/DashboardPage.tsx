@@ -513,6 +513,7 @@ export const DashboardPage: React.FC = () => {
                   <TableHead className="w-[110px] text-right">Selected</TableHead>
                   <TableHead className="w-[120px] text-right">Needs Review</TableHead>
                   <TableHead className="w-[120px]">Cutoff Status</TableHead>
+                  <TableHead className="w-[80px] text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -575,6 +576,13 @@ export const DashboardPage: React.FC = () => {
                             Resolved
                           </Badge>
                         )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1 text-forest-700 hover:text-forest-900 hover:bg-forest-50">
+                          <Link to={`/results?run_id=${r.run_id}`}>
+                            View <ArrowRight className="h-3 w-3" />
+                          </Link>
+                        </Button>
                       </TableCell>
                     </TableRow>
                   );

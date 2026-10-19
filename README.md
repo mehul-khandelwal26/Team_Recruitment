@@ -38,7 +38,7 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 | Data           | Pandas                                       |
 | HTTP / API     | HTTPX                                        |
 | Document Parsers | PyPDF (`pypdf`) · Python-Docx (`python-docx`) |
-| Testing        | Pytest · Starlette TestClient (387 tests)    |
+| Testing        | Pytest · Starlette TestClient (412 tests)    |
 | Database       | PostgreSQL (Neon Cloud) · SQLAlchemy 2.0 · Alembic · Psycopg 3 |
 | Frontend       | React 18 · TypeScript · Vite · Tailwind CSS · shadcn/ui · React Router v6 · TanStack Query v5 · Lucide React |
 
@@ -682,8 +682,9 @@ Run the complete automated test suite locally:
 pytest -v
 ```
 
-The test suite includes **387 automated tests** with a 100% pass rate across 15 test suites:
+The test suite includes **412 automated tests** with a 100% pass rate across 17 test suites:
 - **`backend/tests/test_audit_fixes_regression.py`** (22 tests): Regression tests for dynamic forms, team lead resolution, and scoring edge cases.
+- **`backend/tests/test_audit_phase2_fixes.py`** (11 tests): Provenance cross-dataset validation, inactive configuration rejection, explicit dataset_id conflict checks, upload file size limits, and duplicate mapping validation across all fields.
 - **`backend/tests/test_database_phase.py`** (28 tests): URL normalization, safety checks, startup configuration validation, typed column derivations, and schema integrity.
 - **`backend/tests/test_dataset_extraction_persistence.py`** (22 tests): Persistent storage for datasets and signal extraction runs in PostgreSQL and memory modes.
 - **`backend/tests/test_duplicate_teams_regression.py`** (13 tests): Duplicate team name detection, automatic ID generation, temporary non-merging IDs (`temp_team_...`), and warning generation.
@@ -694,6 +695,7 @@ The test suite includes **387 automated tests** with a 100% pass rate across 15 
 - **`backend/tests/test_phase5_integration_fixes.py`** (4 tests): Integration fixes for scoring with eligibility run IDs, manual overrides applied to scoring, cross-team member ID disambiguation in CSV/JSON ingestion, and signals extraction output flattening.
 - **`backend/tests/test_postgres_stores.py`** (19 tests): PostgreSQL-backed store CRUD, versioning, manual overrides, error handlers, and transactional resets against `TEST_DATABASE_URL`.
 - **`backend/tests/test_prompt5_features.py`** (25 tests): Reset security guard on all 8 stores (portable execution boundary testing), ID-only evaluation pipeline, explicit empty list edge-case handling (`teams: []`), ranking CSV export with 5 row categories and 4-prefix formula injection mitigation, and mixed eligibility demo scenario with reviewer manual override workflow.
+- **`backend/tests/test_prompt7_features.py`** (14 tests): Lightweight summary listing contracts, limit/ordering validation, CORS wildcard credential invariant, and OpenAPI schema models.
 - **`backend/tests/test_ranking.py`** (33 tests): Deterministic 3-level ranking, Top-X selection with strict boundary checks, shortage detection and recommendations, status and missing data handling, tie-breaking criteria, explainability audit trails, end-to-end pipeline evaluation, effective eligibility sync, manual override bidirectional ranking, balanced preset NO_SCORE handling, deduplication, and boolean top_x rejection.
 - **`backend/tests/test_resume_analyzer.py`** (45 tests): PDF & DOCX text parsing, all 12 resume signals, SSRF security defenses, size limits, direct file upload endpoint, and multi-analyzer compatibility.
 - **`backend/tests/test_scoring.py`** (36 tests): Configurable scoring criteria, relative weight normalization, min-max/boolean/categorical normalization, 6 member-to-team aggregations, missing data policies (exclude and renormalize, zero score), confidence adjustment, eligibility integration, and API endpoints.
@@ -702,7 +704,7 @@ The test suite includes **387 automated tests** with a 100% pass rate across 15 
 #### Test Execution & Isolation Architecture
 
 1. **Unit Tests (Memory Mode)**:
-   - All 15 test suites execute completely in-memory by default (`STORAGE_BACKEND=memory`).
+   - All 17 test suites execute completely in-memory by default (`STORAGE_BACKEND=memory`).
    - Requiring zero database credentials or live network connections; all external API calls (e.g. GitHub) are mocked.
    - The portable reset guard test (`TestResetGuard::test_reset_with_default_app_engine_raises_value_error`) uses execution-boundary instrumentation to verify that unsafe resets are rejected with `ValueError` before any SQL statement or connection attempt is made.
 2. **PostgreSQL Integration Tests**:

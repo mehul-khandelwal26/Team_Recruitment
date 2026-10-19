@@ -110,7 +110,7 @@ export const ResultsPage: React.FC = () => {
           <p className="text-xs text-muted-foreground max-w-md mx-auto mt-1 mb-5">
             To view detailed team rankings, score breakdowns, and manual overrides, specify a valid ranking run or choose one from recent runs below.
           </p>
-          <Button onClick={() => navigate('/evaluation')} className="gap-2 shadow-sm">
+          <Button onClick={() => navigate('/evaluate')} className="gap-2 shadow-sm">
             <PlusCircle className="h-4 w-4" />
             Start New Evaluation Wizard
           </Button>

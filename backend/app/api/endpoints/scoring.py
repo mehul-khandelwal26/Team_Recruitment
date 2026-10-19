@@ -259,17 +259,32 @@ def evaluate_teams_endpoint(request: ScoringEvaluationRequest) -> ScoringRunResp
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Scoring configuration '{cfg_id}' (version: {request.config_version or 'latest'}) not found.",
             )
+        if not config.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Scoring configuration '{cfg_id}' is inactive.",
+            )
 
     is_inline = request.inline_config is not None
 
     # 1. Provenance inheritance
     if request.eligibility_run_id:
         elig_run = get_effective_run(request.eligibility_run_id)
-        if elig_run is not None:
-            if request.dataset_id is None and getattr(elig_run, "dataset_id", None):
-                request.dataset_id = elig_run.dataset_id
-            if request.extraction_run_id is None and getattr(elig_run, "extraction_run_id", None):
-                request.extraction_run_id = elig_run.extraction_run_id
+        if elig_run is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Eligibility run '{request.eligibility_run_id}' not found.",
+            )
+        elig_dataset_id = getattr(elig_run, "dataset_id", None)
+        if request.dataset_id and elig_dataset_id and elig_dataset_id != request.dataset_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Eligibility run dataset_id '{elig_dataset_id}' does not match supplied dataset_id '{request.dataset_id}'.",
+            )
+        if request.dataset_id is None and elig_dataset_id:
+            request.dataset_id = elig_dataset_id
+        if request.extraction_run_id is None and getattr(elig_run, "extraction_run_id", None):
+            request.extraction_run_id = elig_run.extraction_run_id
 
     # 2. Resolve teams
     teams_to_evaluate = request.teams

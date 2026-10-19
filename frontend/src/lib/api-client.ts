@@ -137,7 +137,7 @@ export const apiClient = {
     });
   },
 
-  downloadBlob(endpoint: string, params?: RequestOptions['params']): Promise<{ blob: Blob; filename?: string }> {
+  async downloadBlob(endpoint: string, params?: RequestOptions['params']): Promise<{ blob: Blob; filename?: string }> {
     let url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
     if (params) {
       const searchParams = new URLSearchParams();
@@ -148,18 +148,26 @@ export const apiClient = {
       if (qs) url += (url.includes('?') ? '&' : '?') + qs;
     }
 
-    return fetch(url).then(async (res) => {
-      if (!res.ok) throw new ApiError(res.status, `Download failed: ${res.statusText}`);
-      const disposition = res.headers.get('content-disposition');
-      let filename: string | undefined;
-      if (disposition && disposition.includes('filename=')) {
-        const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-        if (match?.[1]) {
-          filename = match[1].replace(/['"]/g, '');
-        }
+    let res: Response;
+    try {
+      res = await fetch(url);
+    } catch {
+      throw new ApiError(
+        0,
+        `Unable to connect to the backend server at ${API_BASE_URL || 'http://localhost:8000'}. Ensure the FastAPI server is running.`
+      );
+    }
+
+    if (!res.ok) throw new ApiError(res.status, `Download failed: ${res.statusText}`);
+    const disposition = res.headers.get('content-disposition');
+    let filename: string | undefined;
+    if (disposition && disposition.includes('filename=')) {
+      const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+      if (match?.[1]) {
+        filename = match[1].replace(/['"]/g, '');
       }
-      const blob = await res.blob();
-      return { blob, filename };
-    });
+    }
+    const blob = await res.blob();
+    return { blob, filename };
   },
 };

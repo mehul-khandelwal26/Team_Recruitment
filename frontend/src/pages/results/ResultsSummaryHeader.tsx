@@ -136,7 +136,7 @@ export const ResultsSummaryHeader: React.FC<ResultsSummaryHeaderProps> = ({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => navigate('/evaluation')}
+            onClick={() => navigate('/evaluate')}
             className="text-xs gap-1.5 shadow-sm"
           >
             <PlusCircle className="h-3.5 w-3.5 text-forest-700" />

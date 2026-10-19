@@ -126,7 +126,14 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
         refetchDatasets();
         onSelectDataset(newDatasetSummary);
       } else if (response.errors && response.errors.length > 0) {
-        setUploadError(response.errors.map((e) => e.msg).join('; '));
+        setUploadError(
+          response.errors
+            .map((e: any) => {
+              const msg = e.message || e.msg || 'Validation error';
+              return e.location ? `${e.location}: ${msg}` : msg;
+            })
+            .join('; ')
+        );
       }
     } catch (err: any) {
       setUploadError(err.message || 'Failed to upload and validate registration file.');

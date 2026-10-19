@@ -14,7 +14,7 @@ import json
 from typing import Optional, Union
 import uuid
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
 
 from app.ingestion.discovery import CANONICAL_FIELD_CATALOG, discover_fields_from_bytes
 from app.ingestion.parser import parse_csv, parse_json
@@ -23,6 +23,21 @@ from app.schemas.ingestion import DatasetRecord, DatasetSummary, UploadResponse,
 from app.schemas.mapping import CanonicalFieldInfo, FieldDiscoveryResponse
 
 router = APIRouter(prefix="/api/ingestion", tags=["Ingestion"])
+
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+async def _read_upload_file_bounded(file: UploadFile, max_bytes: int = MAX_UPLOAD_SIZE) -> bytes:
+    """Read an uploaded file in chunks and enforce the maximum byte limit."""
+    content = bytearray()
+    while chunk := await file.read(1024 * 1024):
+        content.extend(chunk)
+        if len(content) > max_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"Uploaded file exceeds maximum size limit of {max_bytes // (1024 * 1024)} MB.",
+            )
+    return bytes(content)
 
 # Supported MIME types -> parser mapping
 _PARSERS = {
@@ -55,6 +70,14 @@ async def upload_registration_file(
     preserved in ``custom_fields`` and ``raw_data`` without causing errors.
     If valid, persistently stores the dataset snapshot and returns dataset_id.
     """
+    if dataset_id and dataset_id.strip():
+        existing = default_dataset_store.get(dataset_id.strip())
+        if existing is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Dataset with ID '{dataset_id.strip()}' already exists.",
+            )
+
     parser = _resolve_parser(file)
     if parser is None:
         raise HTTPException(
@@ -87,7 +110,7 @@ async def upload_registration_file(
                     ],
                 )
 
-    raw_bytes = await file.read()
+    raw_bytes = await _read_upload_file_bounded(file)
     result = parser(raw_bytes, mapping=mapping_dict)
 
     if result.success:
@@ -155,7 +178,7 @@ async def inspect_registration_file(
     if content_type == "application/json" or (file.filename and file.filename.lower().endswith(".json")):
         file_type = "json"
 
-    raw_bytes = await file.read()
+    raw_bytes = await _read_upload_file_bounded(file)
     filename = file.filename or f"uploaded.{file_type}"
 
     return discover_fields_from_bytes(raw_bytes, file_name=filename, file_type=file_type)
