@@ -138,6 +138,13 @@ export const apiService = {
   },
 
   /**
+   * Soft-delete a rule configuration by marking it inactive.
+   */
+  deleteRuleConfig(configId: string): Promise<{ message: string }> {
+    return apiClient.delete<{ message: string }>(`/api/rules/configs/${configId}`);
+  },
+
+  /**
    * Execute deterministic eligibility evaluation against teams and signals.
    */
   evaluateEligibility(
@@ -199,6 +206,13 @@ export const apiService = {
    */
   createScoringConfig(payload: ScoringConfigurationCreate): Promise<ScoringConfiguration> {
     return apiClient.post<ScoringConfiguration>('/api/scoring/configs', payload);
+  },
+
+  /**
+   * Soft-delete a scoring configuration by marking it inactive.
+   */
+  deleteScoringConfig(configId: string): Promise<{ message: string }> {
+    return apiClient.delete<{ message: string }>(`/api/scoring/configs/${configId}`);
   },
 
   /**

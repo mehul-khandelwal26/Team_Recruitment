@@ -23,7 +23,9 @@ export type SignalCatalogResponse = Schema<'SignalCatalogResponse'>;
 export type RuleConfiguration = Schema<'RuleConfiguration'>;
 export type RuleConfigurationUpdate = Schema<'RuleConfigurationUpdate'>;
 export type RuleConfigurationCreate = Schema<'RuleConfigurationCreate'>;
-export type RuleDefinition = Schema<'RuleDefinition'>;
+export type RuleDefinition = Omit<Schema<'RuleDefinition'>, 'parameters'> & {
+  parameters?: Record<string, any>;
+};
 export type RuleTypeCatalogItem = Schema<'RuleTypeCatalogItem'>;
 export type EligibilityRunResponse = Schema<'EligibilityRunResponse'>;
 export type TeamEligibilityResult = Schema<'TeamEligibilityResult'>;

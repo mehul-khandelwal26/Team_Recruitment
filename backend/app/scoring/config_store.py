@@ -99,6 +99,14 @@ class ScoringConfigStore:
         self._configs[config_id][new_version] = new_config
         return new_config
 
+    def delete(self, config_id: str) -> bool:
+        """Mark all versions of a configuration as inactive (soft delete)."""
+        if config_id not in self._configs or not self._configs[config_id]:
+            return False
+        for cfg in self._configs[config_id].values():
+            cfg.is_active = False
+        return True
+
 
 from app.storage import DelegatingScoringConfigStore
 

@@ -103,6 +103,18 @@ export function useCreateRuleConfigMutation() {
   });
 }
 
+export function useDeleteRuleConfigMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation<{ message: string }, Error, string>({
+    mutationFn: (configId: string) => apiService.deleteRuleConfig(configId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: CONFIG_QUERY_KEYS.ruleConfigs() });
+      queryClient.invalidateQueries({ queryKey: ['wizard', 'rules', 'configs'] });
+    },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Scoring Configurations Hooks
 // ---------------------------------------------------------------------------
@@ -174,6 +186,18 @@ export function useCreateScoringConfigMutation() {
 
   return useMutation<ScoringConfiguration, Error, ScoringConfigurationCreate>({
     mutationFn: (payload) => apiService.createScoringConfig(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: CONFIG_QUERY_KEYS.scoringConfigs() });
+      queryClient.invalidateQueries({ queryKey: ['wizard', 'scoring', 'configs'] });
+    },
+  });
+}
+
+export function useDeleteScoringConfigMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation<{ message: string }, Error, string>({
+    mutationFn: (configId: string) => apiService.deleteScoringConfig(configId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: CONFIG_QUERY_KEYS.scoringConfigs() });
       queryClient.invalidateQueries({ queryKey: ['wizard', 'scoring', 'configs'] });

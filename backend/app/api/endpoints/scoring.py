@@ -233,6 +233,18 @@ def get_scoring_config_versions(config_id: str) -> list[int]:
     return versions
 
 
+@router.delete("/configs/{config_id}", response_model=dict[str, str])
+def delete_scoring_configuration(config_id: str) -> dict[str, str]:
+    """Soft-delete a scoring configuration by marking it inactive."""
+    success = default_scoring_config_store.delete(config_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Scoring configuration '{config_id}' not found.",
+        )
+    return {"message": f"Scoring configuration '{config_id}' marked inactive."}
+
+
 # ---------------------------------------------------------------------------
 # 3. Evaluation & Run Audit Endpoints
 # ---------------------------------------------------------------------------

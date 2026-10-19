@@ -214,3 +214,51 @@ def test_ranking_inactive_scoring_configuration_rejected_400():
     )
     assert resp.status_code == 400
     assert "inactive" in resp.json()["detail"].lower()
+
+
+def test_delete_scoring_configuration_success_and_soft_delete():
+    """DELETE /api/scoring/configs/{config_id} marks config as inactive."""
+    cfg = default_scoring_config_store.get("balanced")
+    assert cfg is not None
+    cfg_copy = cfg.model_copy(deep=True)
+    cfg_copy.config_id = "to_delete_scoring_cfg"
+    cfg_copy.is_active = True
+    default_scoring_config_store.save(cfg_copy)
+
+    resp = client.delete("/api/scoring/configs/to_delete_scoring_cfg")
+    assert resp.status_code == 200
+    assert "inactive" in resp.json()["message"].lower()
+
+    latest_ids = [c.config_id for c in default_scoring_config_store.list_latest()]
+    assert "to_delete_scoring_cfg" not in latest_ids
+
+    deleted_cfg = default_scoring_config_store.get("to_delete_scoring_cfg")
+    assert deleted_cfg is not None
+    assert deleted_cfg.is_active is False
+
+    resp_404 = client.delete("/api/scoring/configs/nonexistent_cfg_xyz")
+    assert resp_404.status_code == 404
+
+
+def test_delete_rule_configuration_success_and_soft_delete():
+    """DELETE /api/rules/configs/{config_id} marks rule config as inactive."""
+    cfg = default_config_store.get("basic")
+    assert cfg is not None
+    cfg_copy = cfg.model_copy(deep=True)
+    cfg_copy.config_id = "to_delete_rule_cfg"
+    cfg_copy.is_active = True
+    default_config_store.save(cfg_copy)
+
+    resp = client.delete("/api/rules/configs/to_delete_rule_cfg")
+    assert resp.status_code == 200
+    assert "inactive" in resp.json()["message"].lower()
+
+    latest_ids = [c.config_id for c in default_config_store.list_latest()]
+    assert "to_delete_rule_cfg" not in latest_ids
+
+    deleted_cfg = default_config_store.get("to_delete_rule_cfg")
+    assert deleted_cfg is not None
+    assert deleted_cfg.is_active is False
+
+    resp_404 = client.delete("/api/rules/configs/nonexistent_rule_xyz")
+    assert resp_404.status_code == 404
