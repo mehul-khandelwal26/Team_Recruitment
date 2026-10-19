@@ -20,6 +20,7 @@ export type SignalDefinition = Schema<'SignalDefinition'>;
 export type SignalCatalogResponse = Schema<'SignalCatalogResponse'>;
 
 // Rules & Eligibility models
+export type GlobalRuleConfig = Schema<'GlobalRuleConfig'>;
 export type RuleConfiguration = Schema<'RuleConfiguration'>;
 export type RuleConfigurationUpdate = Schema<'RuleConfigurationUpdate'>;
 export type RuleConfigurationCreate = Schema<'RuleConfigurationCreate'>;

@@ -39,21 +39,28 @@ class InMemoryDatasetStore:
         return rec.model_copy(deep=True)
 
     def list_datasets(self) -> list[DatasetRecord]:
-        records = list(self._datasets.values())
-        records.sort(key=lambda d: str(d.uploaded_at), reverse=True)
-        return [r.model_copy(deep=True) for r in records]
+        indexed_records = list(enumerate(self._datasets.values()))
+        indexed_records.sort(
+            key=lambda item: (
+                str(item[1].uploaded_at or ""),
+                item[0],
+            ),
+            reverse=True,
+        )
+        return [r.model_copy(deep=True) for _, r in indexed_records]
 
     def list_summaries(self, limit: int = 50) -> list[DatasetSummary]:
         from app.schemas.ingestion import DatasetSummary
 
-        records = list(self._datasets.values())
-        records.sort(
-            key=lambda d: (
-                str(d.uploaded_at or ""),
-                str(d.dataset_id or ""),
+        indexed_records = list(enumerate(self._datasets.values()))
+        indexed_records.sort(
+            key=lambda item: (
+                str(item[1].uploaded_at or ""),
+                item[0],
             ),
             reverse=True,
         )
+        records = [r for _, r in indexed_records]
         items = records[:limit]
         return [
             DatasetSummary(

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ShieldCheck,
   Scale,
@@ -12,7 +13,22 @@ import { VersionHistoryTab } from './configurations/VersionHistoryTab';
 type ActiveTab = 'rules' | 'scoring' | 'history';
 
 export const ConfigurationsPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('rules');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab') as ActiveTab | null;
+  const [activeTab, setActiveTab] = useState<ActiveTab>(
+    tabParam === 'scoring' || tabParam === 'history' || tabParam === 'rules' ? tabParam : 'rules'
+  );
+
+  useEffect(() => {
+    if (tabParam && (tabParam === 'scoring' || tabParam === 'history' || tabParam === 'rules')) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
+
+  const handleTabChange = (tab: ActiveTab) => {
+    setActiveTab(tab);
+    setSearchParams({ tab });
+  };
 
   // Inspection state when jumping from history tab
   const [inspectedRule, setInspectedRule] = useState<{ id: string; version: number } | null>(null);
@@ -20,12 +36,12 @@ export const ConfigurationsPage: React.FC = () => {
 
   const handleInspectRuleConfig = (configId: string, version: number) => {
     setInspectedRule({ id: configId, version });
-    setActiveTab('rules');
+    handleTabChange('rules');
   };
 
   const handleInspectScoringConfig = (configId: string, version: number) => {
     setInspectedScoring({ id: configId, version });
-    setActiveTab('scoring');
+    handleTabChange('scoring');
   };
 
   return (
@@ -52,7 +68,7 @@ export const ConfigurationsPage: React.FC = () => {
         <nav className="flex space-x-6" aria-label="Configuration Sections">
           <button
             type="button"
-            onClick={() => setActiveTab('rules')}
+            onClick={() => handleTabChange('rules')}
             className={`flex items-center gap-2 pb-3 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
               activeTab === 'rules'
                 ? 'border-forest-700 text-forest-700'
@@ -65,7 +81,7 @@ export const ConfigurationsPage: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => setActiveTab('scoring')}
+            onClick={() => handleTabChange('scoring')}
             className={`flex items-center gap-2 pb-3 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
               activeTab === 'scoring'
                 ? 'border-forest-700 text-forest-700'
@@ -78,7 +94,7 @@ export const ConfigurationsPage: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => setActiveTab('history')}
+            onClick={() => handleTabChange('history')}
             className={`flex items-center gap-2 pb-3 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
               activeTab === 'history'
                 ? 'border-forest-700 text-forest-700'

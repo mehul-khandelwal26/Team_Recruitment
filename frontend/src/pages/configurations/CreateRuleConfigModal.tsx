@@ -60,7 +60,25 @@ export const CreateRuleConfigModal: React.FC<CreateRuleConfigModalProps> = ({
 
     const isScratch = basePresetId === '__scratch__';
     const template = isScratch ? null : existingConfigs.find((c) => c.config_id === basePresetId);
-    const templateRules = template?.rules || [];
+
+    const starterRules = [
+      {
+        rule_id: 'rule_team_min_size',
+        name: 'Minimum Team Size',
+        rule_type: 'team_size_min',
+        description: 'Requires teams to have at least 2 registered members.',
+        severity: 'hard' as const,
+        scope: 'team' as const,
+        order: 0,
+        on_missing: 'manual_review' as const,
+        is_enabled: true,
+        parameters: { min_size: 2 },
+      },
+    ];
+
+    const rulesToCreate = isScratch
+      ? starterRules
+      : (template?.rules || []).map((r) => ({ ...r }));
 
     setErrorMessage(null);
     try {
@@ -68,7 +86,7 @@ export const CreateRuleConfigModal: React.FC<CreateRuleConfigModalProps> = ({
         config_id: cleanId,
         name: name.trim(),
         description: description.trim(),
-        rules: templateRules.map((r) => ({ ...r })),
+        rules: rulesToCreate as any,
         global_config: template?.global_config || {
           lead_field: 'role',
           lead_values: ['lead', 'team lead', 'captain', 'leader'],

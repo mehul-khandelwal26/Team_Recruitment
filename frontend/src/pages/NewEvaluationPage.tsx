@@ -1,12 +1,20 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Info, X } from 'lucide-react';
 import { WizardStepper } from './evaluation-wizard/WizardStepper';
 import { Step1Dataset } from './evaluation-wizard/Step1Dataset';
 import { Step2Signals } from './evaluation-wizard/Step2Signals';
 import { Step3Eligibility } from './evaluation-wizard/Step3Eligibility';
 import { Step4Scoring } from './evaluation-wizard/Step4Scoring';
 import { Step5ReviewAndRun } from './evaluation-wizard/Step5ReviewAndRun';
-import { useRuleConfigs, useScoringConfigs } from '@/hooks/useEvaluationWizard';
+import {
+  useRuleConfigs,
+  useScoringConfigs,
+  useWizardDatasets,
+  useWizardExtractions,
+} from '@/hooks/useEvaluationWizard';
 import type {
   DatasetSummary,
   ExtractionRunSummary,
@@ -15,12 +23,23 @@ import type {
 } from '@/types';
 
 export const NewEvaluationPage: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlDatasetId = searchParams.get('dataset_id');
+  const urlExtractionRunId = searchParams.get('extraction_run_id');
+  const urlTab = searchParams.get('tab') as 'existing' | 'upload' | null;
+
   // Wizard Navigation
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
 
   // Step 1: Dataset
   const [selectedDataset, setSelectedDataset] = useState<DatasetSummary | null>(null);
+
+  // Queries for auto-selection
+  const { data: datasets } = useWizardDatasets(50);
+  const { data: extractions } = useWizardExtractions(
+    selectedDataset?.dataset_id || urlDatasetId || undefined
+  );
 
   // Step 2: Signals
   const [signalMode, setSignalMode] = useState<'configure' | 'reuse'>('configure');
@@ -46,6 +65,32 @@ export const NewEvaluationPage: React.FC = () => {
   // Step 5: Parameters
   const [topX, setTopX] = useState<number>(5);
   const [includeNeedsReview, setIncludeNeedsReview] = useState<boolean>(false);
+
+  // Auto-select dataset if specified in URL query params
+  useEffect(() => {
+    if (urlDatasetId && datasets && !selectedDataset) {
+      const match = datasets.find((d) => d.dataset_id === urlDatasetId);
+      if (match) {
+        setSelectedDataset(match);
+        setCompletedSteps((prev) => new Set([...prev, 1]));
+      }
+    }
+  }, [urlDatasetId, datasets, selectedDataset]);
+
+  // Auto-select extraction run if specified in URL query params
+  useEffect(() => {
+    if (urlExtractionRunId && extractions && !selectedExtractionRun) {
+      const match = extractions.find((e) => e.run_id === urlExtractionRunId);
+      if (match) {
+        setSignalMode('reuse');
+        setSelectedExtractionRun(match);
+        setCompletedSteps((prev) => new Set([...prev, 1, 2]));
+        if (selectedDataset || urlDatasetId) {
+          setCurrentStep(3);
+        }
+      }
+    }
+  }, [urlExtractionRunId, extractions, selectedExtractionRun, selectedDataset, urlDatasetId]);
 
   // Auto-default configs when loaded
   useEffect(() => {
@@ -133,6 +178,40 @@ export const NewEvaluationPage: React.FC = () => {
         </p>
       </div>
 
+      {/* Deep-link Notice Banner if initialized from dashboard */}
+      {(urlDatasetId || urlExtractionRunId) && (
+        <div className="flex items-center justify-between p-3 px-4 rounded-lg border border-forest-200 bg-forest-50/70 text-xs text-forest-900 shadow-xs">
+          <div className="flex items-center gap-2">
+            <Info className="h-4 w-4 text-forest-700 shrink-0" />
+            <span>
+              Pipeline pre-loaded from Dashboard:
+              {selectedDataset && (
+                <span className="font-semibold ml-1">
+                  Dataset &ldquo;{selectedDataset.filename}&rdquo;
+                </span>
+              )}
+              {selectedExtractionRun && (
+                <span className="ml-1">
+                  with Extraction Run <code className="font-mono">{selectedExtractionRun.run_id.slice(0, 8)}...</code>
+                </span>
+              )}
+            </span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setSearchParams({});
+              handleReset();
+            }}
+            className="h-6 px-2 text-[11px] text-forest-800 hover:text-forest-950 hover:bg-forest-100/60 gap-1"
+          >
+            <X className="h-3 w-3" />
+            Clear
+          </Button>
+        </div>
+      )}
+
       {/* Stepper Header */}
       <WizardStepper
         currentStep={currentStep}
@@ -147,6 +226,7 @@ export const NewEvaluationPage: React.FC = () => {
             selectedDataset={selectedDataset}
             onSelectDataset={handleSelectDataset}
             onNext={handleNextFromStep1}
+            initialTab={urlTab === 'upload' ? 'upload' : 'existing'}
           />
         )}
 

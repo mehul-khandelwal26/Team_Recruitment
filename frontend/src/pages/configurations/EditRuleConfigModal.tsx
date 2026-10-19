@@ -22,8 +22,9 @@ import {
   Sliders,
   ChevronDown,
   ChevronUp,
+  UserCheck,
 } from 'lucide-react';
-import type { RuleConfiguration, RuleDefinition, RuleTypeCatalogItem } from '@/types';
+import type { RuleConfiguration, RuleDefinition, RuleTypeCatalogItem, GlobalRuleConfig } from '@/types';
 import { useUpdateRuleConfigMutation, useRuleCatalog } from '@/hooks/useConfigurations';
 
 // Sensible default parameters per rule type
@@ -70,7 +71,17 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
   const updateMutation = useUpdateRuleConfigMutation();
   const catalogQuery = useRuleCatalog();
 
+  const [name, setName] = useState(config.name || '');
   const [description, setDescription] = useState(config.description || '');
+  const [leadField, setLeadField] = useState(config.global_config?.lead_field || 'role');
+  const [leadValues, setLeadValues] = useState(
+    (config.global_config?.lead_values || ['lead', 'team lead', 'captain', 'leader', 'team_lead']).join(', ')
+  );
+  const [defaultAcademicScale, setDefaultAcademicScale] = useState<number>(
+    config.global_config?.default_academic_scale ?? 10.0
+  );
+  const [isGlobalConfigOpen, setIsGlobalConfigOpen] = useState(false);
+
   const [rules, setRules] = useState<RuleDefinition[]>([]);
   const [expandedRuleIndex, setExpandedRuleIndex] = useState<number | null>(null);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
@@ -79,7 +90,15 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
 
   useEffect(() => {
     if (open) {
+      setName(config.name || '');
       setDescription(config.description || '');
+      setLeadField(config.global_config?.lead_field || 'role');
+      setLeadValues(
+        (config.global_config?.lead_values || ['lead', 'team lead', 'captain', 'leader', 'team_lead']).join(', ')
+      );
+      setDefaultAcademicScale(config.global_config?.default_academic_scale ?? 10.0);
+      setIsGlobalConfigOpen(false);
+
       setRules(
         (config.rules || []).map((r) => ({
           ...r,
@@ -138,14 +157,13 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
     setRules((prev) => prev.filter((_, i) => i !== index));
     if (expandedRuleIndex === index) {
       setExpandedRuleIndex(null);
-    } else if (expandedRuleIndex !== null && expandedRuleIndex > index) {
-      setExpandedRuleIndex(expandedRuleIndex - 1);
     }
   };
 
   const handleAddRuleFromCatalog = (catalogItem: RuleTypeCatalogItem) => {
+    const newRuleId = `rule_${catalogItem.rule_type}_${Date.now().toString(36).slice(-4)}`;
     const defaultParams = DEFAULT_PARAMETERS_BY_TYPE[catalogItem.rule_type] || {};
-    const newRuleId = `${catalogItem.rule_type}_${Date.now().toString(36).slice(-5)}`;
+
     const newRule: RuleDefinition = {
       rule_id: newRuleId,
       name: catalogItem.name,
@@ -161,10 +179,15 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
 
     setRules((prev) => [...prev, newRule]);
     setIsAddMenuOpen(false);
-    setExpandedRuleIndex(rules.length); // Expand new rule so user can edit parameters right away
+    setExpandedRuleIndex(rules.length);
   };
 
   const handleReviewClick = () => {
+    if (!name.trim()) {
+      setErrorMessage('Configuration Name cannot be left empty.');
+      return;
+    }
+
     const activeRules = rules.filter((r) => r.is_enabled);
     if (activeRules.length === 0) {
       setErrorMessage('At least one rule must be enabled in the configuration.');
@@ -199,8 +222,9 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
         }
       } else if (r.rule_type === 'allowed_values') {
         const fKey = typeof p.field_key === 'string' ? p.field_key.trim() : '';
-        if (!fKey) {
-          setErrorMessage(`Rule "${r.name}" requires a Field Key.`);
+        const sKey = typeof p.signal_key === 'string' ? p.signal_key.trim() : '';
+        if (!fKey && !sKey) {
+          setErrorMessage(`Rule "${r.name}" requires either a Field Key or a Signal Key.`);
           return;
         }
         if (!Array.isArray(p.allowed_values) || p.allowed_values.length === 0) {
@@ -211,6 +235,10 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
         const fKey = typeof p.field_key === 'string' ? p.field_key.trim() : '';
         if (!fKey) {
           setErrorMessage(`Rule "${r.name}" requires a Track Field Key.`);
+          return;
+        }
+        if (!p.limit || p.limit < 1) {
+          setErrorMessage(`Rule "${r.name}" requires a maximum capacity limit >= 1.`);
           return;
         }
       } else if (r.rule_type === 'duplicate_member_email') {
@@ -240,10 +268,24 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
   const handleConfirmSave = async () => {
     setErrorMessage(null);
     try {
+      const parsedLeadValues = leadValues
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+
+      const globalConfigPayload: GlobalRuleConfig = {
+        lead_field: leadField.trim() || 'role',
+        lead_values: parsedLeadValues.length > 0 ? parsedLeadValues : ['lead', 'team lead'],
+        default_academic_scale: defaultAcademicScale > 0 ? defaultAcademicScale : 10.0,
+        extra_mappings: config.global_config?.extra_mappings || {},
+      };
+
       const updated = await updateMutation.mutateAsync({
         configId: config.config_id,
         payload: {
-          description,
+          name: name.trim() || config.name,
+          description: description.trim(),
+          global_config: globalConfigPayload,
           rules: rules as any,
         },
       });
@@ -259,8 +301,8 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent onClose={() => onOpenChange(false)} className="max-w-3xl">
-        <DialogHeader>
+      <DialogContent onClose={() => onOpenChange(false)} className="max-w-3xl max-h-[92vh] flex flex-col">
+        <DialogHeader className="shrink-0">
           <div className="flex items-center gap-2">
             <Badge variant="forest" className="font-mono text-[10px]">
               Eligibility Rule Editor
@@ -274,12 +316,11 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
             Edit Eligibility Configuration: {config.name}
           </DialogTitle>
           <DialogDescription>
-            Enable or disable individual evaluator rules, adjust rule severity, and modify missing-data
-            handling. Saving produces an immutable version preserving past runs.
+            Enable or disable individual evaluator rules, adjust rule severity, and modify missing-data handling. Saving produces an immutable version preserving past runs.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-3 overflow-y-auto max-h-[60vh] pr-1">
+        <div className="space-y-4 py-2 overflow-y-auto flex-1 pr-1">
           {errorMessage && (
             <div className="p-3 rounded-lg border border-red-300 bg-red-50 text-red-800 text-xs flex items-start gap-2">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -287,15 +328,98 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
             </div>
           )}
 
-          {/* Description */}
-          <div className="space-y-1 p-3 bg-muted/40 rounded-lg border border-border/70">
-            <label className="text-xs font-semibold text-foreground">Configuration Description</label>
-            <Input
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe eligibility requirements..."
-              className="text-xs h-8"
-            />
+          {/* Name & Description */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-muted/40 rounded-lg border border-border/70">
+            <div className="sm:col-span-1 space-y-1">
+              <label className="text-xs font-semibold text-foreground">Configuration Name</label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Hackathon Core Eligibility..."
+                className="text-xs h-8 font-medium"
+              />
+            </div>
+            <div className="sm:col-span-2 space-y-1">
+              <label className="text-xs font-semibold text-foreground">Description & Scope</label>
+              <Input
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Describe eligibility requirements..."
+                className="text-xs h-8"
+              />
+            </div>
+          </div>
+
+          {/* Collapsible Global Configuration & Team Lead Settings */}
+          <div className="border border-border/80 rounded-lg overflow-hidden bg-card">
+            <button
+              type="button"
+              onClick={() => setIsGlobalConfigOpen((prev) => !prev)}
+              className="w-full flex items-center justify-between p-3 bg-muted/30 hover:bg-muted/50 text-xs font-semibold text-foreground transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <Sliders className="h-3.5 w-3.5 text-forest-700" />
+                <span>Global Configuration & Team Lead Resolution</span>
+                <span className="text-[10px] font-normal text-muted-foreground">
+                  (Controls team lead detection and default academic scaling)
+                </span>
+              </div>
+              {isGlobalConfigOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </button>
+
+            {isGlobalConfigOpen && (
+              <div className="p-3 border-t border-border/70 space-y-3 bg-card text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium text-foreground flex items-center gap-1">
+                      <UserCheck className="h-3.5 w-3.5 text-forest-700" />
+                      Team Lead Field Key
+                    </label>
+                    <Input
+                      value={leadField}
+                      onChange={(e) => setLeadField(e.target.value)}
+                      placeholder="e.g. role, captain, designation"
+                      className="h-7 text-xs font-mono"
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      Registration column identifying member role.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium text-foreground">
+                      Lead Identifier Values (comma-separated)
+                    </label>
+                    <Input
+                      value={leadValues}
+                      onChange={(e) => setLeadValues(e.target.value)}
+                      placeholder="lead, team lead, captain, leader"
+                      className="h-7 text-xs font-mono"
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      Values indicating team lead status.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium text-foreground">
+                      Default Academic Scale
+                    </label>
+                    <Input
+                      type="number"
+                      step="0.5"
+                      min="1"
+                      value={defaultAcademicScale}
+                      onChange={(e) => setDefaultAcademicScale(parseFloat(e.target.value) || 10.0)}
+                      className="h-7 text-xs font-mono"
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      Fallback scale (e.g. 10.0, 4.0) if unstated.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Rules Builder Section */}
@@ -362,10 +486,10 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
 
             {rules.length === 0 ? (
               <div className="p-8 text-center border border-dashed border-border rounded-lg bg-muted/20">
-                <Layers className="h-8 w-8 text-muted-foreground mx-auto mb-2 opacity-50" />
-                <p className="text-xs font-semibold text-foreground">No rules configured in this set</p>
+                <ShieldCheck className="h-8 w-8 text-muted-foreground mx-auto mb-2 opacity-50" />
+                <p className="text-xs font-semibold text-foreground">No rules configured</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5 max-w-sm mx-auto">
-                  Start building your custom eligibility criteria by selecting rules from the catalog above.
+                  Add evaluator rules from the catalog to filter teams based on member counts, required signals, or academic thresholds.
                 </p>
                 <Button
                   type="button"
@@ -375,7 +499,7 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                   className="mt-3 text-xs gap-1.5 text-forest-700 border-forest-300 hover:bg-forest-50"
                 >
                   <Plus className="h-3.5 w-3.5" />
-                  Add First Rule from Catalog
+                  Add First Rule
                 </Button>
               </div>
             ) : (
@@ -384,9 +508,9 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                   <thead className="bg-muted/60 border-b border-border text-[11px] text-muted-foreground">
                     <tr>
                       <th className="py-2 px-3 w-10 text-center">Active</th>
-                      <th className="py-2 px-3">Rule Definition & Parameters</th>
+                      <th className="py-2 px-3">Rule Definition</th>
                       <th className="py-2 px-3 w-28">Severity</th>
-                      <th className="py-2 px-3 w-32">On Missing</th>
+                      <th className="py-2 px-3 w-36">On Missing Data</th>
                       <th className="py-2 px-2 w-10 text-center">Action</th>
                     </tr>
                   </thead>
@@ -630,6 +754,19 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                                 : ''
                                             }`}
                                           />
+                                          <div className="flex flex-wrap items-center gap-1 mt-1 pt-0.5">
+                                            <span className="text-[10px] text-muted-foreground">Quick pick:</span>
+                                            {['academic_cgpa', 'github_public_repo_count', 'resume_experience_years', 'normalized_cgpa_10_scale'].map((k) => (
+                                              <button
+                                                key={k}
+                                                type="button"
+                                                onClick={() => handleParameterChange(idx, 'signal_key', k)}
+                                                className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted hover:bg-forest-100 hover:text-forest-800 text-muted-foreground transition-colors cursor-pointer"
+                                              >
+                                                +{k}
+                                              </button>
+                                            ))}
+                                          </div>
                                         </div>
                                         <div className="space-y-1">
                                           <label className="text-[11px] font-medium text-foreground">
@@ -775,32 +912,73 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                         <div className="space-y-1">
                                           <div className="flex items-center justify-between">
                                             <label className="text-[11px] font-medium text-foreground">
-                                              Field Key <span className="text-red-500">*</span>
+                                              Field Key OR Signal Key <span className="text-red-500">*</span>
                                             </label>
-                                            {params.field_key !== undefined && !params.field_key.trim() && (
-                                              <span className="text-[10px] text-red-500 font-medium">Field key required</span>
+                                            {!params.field_key?.trim() && !params.signal_key?.trim() && (
+                                              <span className="text-[10px] text-red-500 font-medium">Key required</span>
                                             )}
                                           </div>
                                           <Input
-                                            value={params.field_key ?? ''}
-                                            onChange={(e) =>
-                                              handleParameterChange(idx, 'field_key', e.target.value)
-                                            }
-                                            placeholder="e.g. track, department..."
-                                            className={`h-7 text-xs font-mono ${
-                                              params.field_key !== undefined && !params.field_key.trim()
-                                                ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
-                                                : ''
-                                            }`}
+                                            value={params.field_key || params.signal_key || ''}
+                                            onChange={(e) => {
+                                              const v = e.target.value;
+                                              // If it's a known signal key, store as signal_key, else field_key
+                                              if (['academic_year', 'resume_degree_level'].includes(v)) {
+                                                handleParameterChange(idx, 'signal_key', v);
+                                                handleParameterChange(idx, 'field_key', undefined);
+                                              } else {
+                                                handleParameterChange(idx, 'field_key', v);
+                                                handleParameterChange(idx, 'signal_key', undefined);
+                                              }
+                                            }}
+                                            placeholder="e.g. track, academic_year..."
+                                            className="h-7 text-xs font-mono"
                                           />
+                                          <div className="flex flex-wrap items-center gap-1 mt-1 pt-0.5">
+                                            <span className="text-[10px] text-muted-foreground">Quick pick:</span>
+                                            {['track', 'academic_year', 'resume_degree_level'].map((k) => (
+                                              <button
+                                                key={k}
+                                                type="button"
+                                                onClick={() => {
+                                                  if (['academic_year', 'resume_degree_level'].includes(k)) {
+                                                    handleParameterChange(idx, 'signal_key', k);
+                                                    handleParameterChange(idx, 'field_key', undefined);
+                                                  } else {
+                                                    handleParameterChange(idx, 'field_key', k);
+                                                    handleParameterChange(idx, 'signal_key', undefined);
+                                                  }
+                                                }}
+                                                className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted hover:bg-forest-100 hover:text-forest-800 text-muted-foreground transition-colors cursor-pointer"
+                                              >
+                                                +{k}
+                                              </button>
+                                            ))}
+                                          </div>
                                         </div>
-                                        <div className="space-y-1 sm:col-span-2">
+                                        <div className="space-y-1">
+                                          <label className="text-[11px] font-medium text-foreground">
+                                            Member Selection
+                                          </label>
+                                          <select
+                                            value={params.member_selection || 'all_members'}
+                                            onChange={(e) =>
+                                              handleParameterChange(idx, 'member_selection', e.target.value)
+                                            }
+                                            className="h-7 w-full text-xs rounded border border-border bg-card px-2 text-foreground font-mono text-[11px]"
+                                          >
+                                            <option value="all_members">all_members</option>
+                                            <option value="any_member">any_member</option>
+                                            <option value="team_lead">team_lead</option>
+                                          </select>
+                                        </div>
+                                        <div className="space-y-1 sm:col-span-1">
                                           <div className="flex items-center justify-between">
                                             <label className="text-[11px] font-medium text-foreground">
-                                              Allowed Values (comma-separated) <span className="text-red-500">*</span>
+                                              Allowed Values <span className="text-red-500">*</span>
                                             </label>
                                             {Array.isArray(params.allowed_values) && params.allowed_values.length === 0 && (
-                                              <span className="text-[10px] text-red-500 font-medium">At least one value required</span>
+                                              <span className="text-[10px] text-red-500 font-medium">Value required</span>
                                             )}
                                           </div>
                                           <Input
@@ -815,7 +993,7 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                                   .filter(Boolean)
                                               )
                                             }
-                                            placeholder="AI, Web3, Open Track..."
+                                            placeholder="AI, Web3, Open..."
                                             className="h-7 text-xs font-mono"
                                           />
                                         </div>
@@ -848,7 +1026,7 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                         </div>
                                         <div className="space-y-1">
                                           <label className="text-[11px] font-medium text-foreground">
-                                            Max Teams Limit
+                                            Max Teams Limit per Track
                                           </label>
                                           <Input
                                             type="number"
@@ -942,6 +1120,19 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                               : ''
                                           }`}
                                         />
+                                        <div className="flex flex-wrap items-center gap-1 mt-1 pt-0.5">
+                                          <span className="text-[10px] text-muted-foreground">Quick pick:</span>
+                                          {['github_public_repo_count', 'academic_cgpa', 'resume_experience_years', 'github_profile_verified', 'portfolio_site_reachable'].map((k) => (
+                                            <button
+                                              key={k}
+                                              type="button"
+                                              onClick={() => handleParameterChange(idx, 'signal_key', k)}
+                                              className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted hover:bg-forest-100 hover:text-forest-800 text-muted-foreground transition-colors cursor-pointer"
+                                            >
+                                              +{k}
+                                            </button>
+                                          ))}
+                                        </div>
                                       </div>
                                     )}
                                   </div>
@@ -978,7 +1169,7 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 pt-2 border-t border-border">
           {showConfirm ? (
             <>
               <Button

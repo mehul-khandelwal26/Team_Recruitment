@@ -20,6 +20,9 @@ import {
   Plus,
   Trash2,
   ChevronDown,
+  ChevronUp,
+  Sliders,
+  UserCheck,
 } from 'lucide-react';
 import type { ScoringConfiguration, EvaluationCriterionInput } from '@/types';
 import { useUpdateScoringConfigMutation } from '@/hooks/useConfigurations';
@@ -28,91 +31,108 @@ interface AvailableSignal {
   signal_key: string;
   name: string;
   description: string;
-  criterion_type: 'numeric_range' | 'boolean';
+  criterion_type: 'numeric_range' | 'boolean' | 'categorical';
   normalization: any;
-  aggregation: string;
+  aggregation: 'mean' | 'max' | 'min' | 'sum' | 'lead_only' | 'top_k';
+  top_k_value?: number;
 }
 
+// Aligned 100% with backend default_signal_registry
 const AVAILABLE_SIGNALS: AvailableSignal[] = [
   {
     signal_key: 'github_public_repo_count',
     name: 'Public GitHub Repositories',
-    description: 'Candidate public repositories on GitHub.',
+    description: 'Total count of public repositories on candidate profile.',
     criterion_type: 'numeric_range',
-    normalization: { method: 'linear_range', linear_range: { min_value: 0, max_value: 20 } },
+    normalization: { linear_range: { min_value: 0, max_value: 20 } },
     aggregation: 'mean',
   },
   {
     signal_key: 'academic_cgpa',
-    name: 'Academic CGPA',
-    description: 'Academic performance score normalized to scale 10.0.',
+    name: 'Academic Score (CGPA / CPI)',
+    description: 'Validated academic score normalized to 10-point scale.',
     criterion_type: 'numeric_range',
-    normalization: { method: 'linear_range', linear_range: { min_value: 5.0, max_value: 10.0 } },
+    normalization: { linear_range: { min_value: 6.0, max_value: 10.0 } },
+    aggregation: 'mean',
+  },
+  {
+    signal_key: 'normalized_cgpa_10_scale',
+    name: 'Normalized CGPA (10-Point)',
+    description: 'Scale-checked normalized CGPA across diverse grading scales.',
+    criterion_type: 'numeric_range',
+    normalization: { linear_range: { min_value: 6.0, max_value: 10.0 } },
     aggregation: 'mean',
   },
   {
     signal_key: 'resume_experience_years',
     name: 'Years of Experience',
-    description: 'Total professional or internship experience duration.',
+    description: 'Duration of professional and internship experience from resume.',
     criterion_type: 'numeric_range',
-    normalization: { method: 'linear_range', linear_range: { min_value: 0, max_value: 5.0 } },
+    normalization: { linear_range: { min_value: 0.0, max_value: 5.0 } },
     aggregation: 'mean',
   },
   {
     signal_key: 'github_profile_verified',
     name: 'Verified GitHub Profile',
-    description: 'Candidate verified identity and authentic GitHub URL.',
+    description: 'Verifies candidate GitHub profile exists and is reachable.',
     criterion_type: 'boolean',
-    normalization: { method: 'boolean_mapping', boolean_mapping: { true_score: 1.0, false_score: 0.0 } },
+    normalization: { boolean_mapping: { true_score: 1.0, false_score: 0.0 } },
+    aggregation: 'max',
+  },
+  {
+    signal_key: 'portfolio_site_reachable',
+    name: 'Portfolio Site Reachable',
+    description: 'Verifies candidate personal portfolio website is online.',
+    criterion_type: 'boolean',
+    normalization: { boolean_mapping: { true_score: 1.0, false_score: 0.0 } },
+    aggregation: 'max',
+  },
+  {
+    signal_key: 'portfolio_has_live_projects',
+    name: 'Live Demonstrable Projects',
+    description: 'Identifies demonstrable live projects on candidate portfolio.',
+    criterion_type: 'boolean',
+    normalization: { boolean_mapping: { true_score: 1.0, false_score: 0.0 } },
+    aggregation: 'max',
+  },
+  {
+    signal_key: 'academic_year',
+    name: 'Academic Seniority / Year',
+    description: 'Academic standing progression (1st Year to 4th Year/Postgraduate).',
+    criterion_type: 'categorical',
+    normalization: {
+      categorical_mapping: {
+        category_scores: {
+          '1st Year': 0.25,
+          '2nd Year': 0.5,
+          '3rd Year': 0.75,
+          '4th Year': 1.0,
+          'Postgraduate': 1.0,
+        },
+        default_score: 0.5,
+        case_sensitive: false,
+      },
+    },
     aggregation: 'mean',
   },
   {
-    signal_key: 'linkedin_profile_present',
-    name: 'LinkedIn Profile Present',
-    description: 'Checks whether LinkedIn link was provided.',
-    criterion_type: 'boolean',
-    normalization: { method: 'boolean_mapping', boolean_mapping: { true_score: 1.0, false_score: 0.0 } },
-    aggregation: 'mean',
-  },
-  {
-    signal_key: 'portfolio_link_present',
-    name: 'Portfolio Link Present',
-    description: 'Checks presence of personal portfolio/website URL.',
-    criterion_type: 'boolean',
-    normalization: { method: 'boolean_mapping', boolean_mapping: { true_score: 1.0, false_score: 0.0 } },
-    aggregation: 'mean',
-  },
-  {
-    signal_key: 'ai_ml_skills_present',
-    name: 'AI / ML Skills Demonstrated',
-    description: 'Experience in machine learning or AI tooling.',
-    criterion_type: 'boolean',
-    normalization: { method: 'boolean_mapping', boolean_mapping: { true_score: 1.0, false_score: 0.0 } },
-    aggregation: 'any',
-  },
-  {
-    signal_key: 'web3_skills_present',
-    name: 'Web3 / Smart Contract Skills',
-    description: 'Experience in blockchain or smart contracts.',
-    criterion_type: 'boolean',
-    normalization: { method: 'boolean_mapping', boolean_mapping: { true_score: 1.0, false_score: 0.0 } },
-    aggregation: 'any',
-  },
-  {
-    signal_key: 'hackathon_experience',
-    name: 'Prior Hackathon Experience',
-    description: 'Candidate has previously participated in hackathons.',
-    criterion_type: 'boolean',
-    normalization: { method: 'boolean_mapping', boolean_mapping: { true_score: 1.0, false_score: 0.0 } },
-    aggregation: 'any',
-  },
-  {
-    signal_key: 'leadership_role',
-    name: 'Prior Leadership Experience',
-    description: 'Has acted as team captain, lead, or organizer.',
-    criterion_type: 'boolean',
-    normalization: { method: 'boolean_mapping', boolean_mapping: { true_score: 1.0, false_score: 0.0 } },
-    aggregation: 'lead_only',
+    signal_key: 'resume_degree_level',
+    name: 'Highest Degree Level',
+    description: 'Highest academic degree level identified from resume text.',
+    criterion_type: 'categorical',
+    normalization: {
+      categorical_mapping: {
+        category_scores: {
+          BCA: 0.7,
+          'B.Tech': 0.85,
+          'M.Tech': 0.95,
+          'Ph.D.': 1.0,
+        },
+        default_score: 0.75,
+        case_sensitive: false,
+      },
+    },
+    aggregation: 'max',
   },
 ];
 
@@ -131,9 +151,20 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
 }) => {
   const updateMutation = useUpdateScoringConfigMutation();
 
+  const [name, setName] = useState(config.name || '');
   const [description, setDescription] = useState(config.description || '');
   const [scaleMax, setScaleMax] = useState<number>(config.scale_max || 100);
+  const [scoreIneligibleTeams, setScoreIneligibleTeams] = useState<boolean>(
+    config.score_ineligible_teams ?? true
+  );
+  const [leadField, setLeadField] = useState(config.lead_field || 'role');
+  const [leadValues, setLeadValues] = useState(
+    (config.lead_values || ['lead', 'team lead', 'captain', 'leader']).join(', ')
+  );
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
   const [criteria, setCriteria] = useState<EvaluationCriterionInput[]>([]);
+  const [expandedCritIndex, setExpandedCritIndex] = useState<number | null>(null);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -141,8 +172,14 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
   // Initialize or reset form when config or open changes
   useEffect(() => {
     if (open) {
+      setName(config.name || '');
       setDescription(config.description || '');
       setScaleMax(config.scale_max || 100);
+      setScoreIneligibleTeams(config.score_ineligible_teams ?? true);
+      setLeadField(config.lead_field || 'role');
+      setLeadValues((config.lead_values || ['lead', 'team lead', 'captain', 'leader']).join(', '));
+      setIsSettingsOpen(false);
+
       setCriteria(
         (config.criteria || []).map((c) => ({
           criterion_id: c.criterion_id,
@@ -152,14 +189,15 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
           criterion_type: c.criterion_type as any,
           weight: c.weight,
           is_enabled: c.is_enabled,
-          normalization: c.normalization,
+          normalization: c.normalization ? JSON.parse(JSON.stringify(c.normalization)) : {},
           aggregation: c.aggregation as any,
           top_k_value: c.top_k_value,
-          missing_data_policy: c.missing_data_policy as any,
+          missing_data_policy: (c.missing_data_policy as any) || 'exclude_and_renormalize',
           confidence_adjustment: c.confidence_adjustment,
           config: c.config || {},
         }))
       );
+      setExpandedCritIndex(null);
       setIsAddMenuOpen(false);
       setShowConfirm(false);
       setErrorMessage(null);
@@ -195,9 +233,56 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
   const handleAggregationChange = (index: number, agg: string) => {
     setCriteria((prev) => {
       const copy = [...prev];
+      const prevCrit = copy[index];
+      copy[index] = {
+        ...prevCrit,
+        aggregation: agg as any,
+        top_k_value: agg === 'top_k' ? prevCrit.top_k_value || 2 : prevCrit.top_k_value,
+      };
+      return copy;
+    });
+  };
+
+  // Change top_k_value
+  const handleTopKChange = (index: number, kVal: number) => {
+    setCriteria((prev) => {
+      const copy = [...prev];
       copy[index] = {
         ...copy[index],
-        aggregation: agg as any,
+        top_k_value: Math.max(1, kVal),
+      };
+      return copy;
+    });
+  };
+
+  // Change missing data policy
+  const handleMissingDataPolicyChange = (index: number, policy: string) => {
+    setCriteria((prev) => {
+      const copy = [...prev];
+      copy[index] = {
+        ...copy[index],
+        missing_data_policy: policy as any,
+      };
+      return copy;
+    });
+  };
+
+  // Change linear range bounds
+  const handleLinearRangeChange = (index: number, bound: 'min' | 'max', val: number) => {
+    setCriteria((prev) => {
+      const copy = [...prev];
+      const crit = copy[index];
+      const norm = crit.normalization || {};
+      const lr = norm.linear_range || { min_value: 0, max_value: 10 };
+      copy[index] = {
+        ...crit,
+        normalization: {
+          ...norm,
+          linear_range: {
+            ...lr,
+            [bound === 'min' ? 'min_value' : 'max_value']: val,
+          },
+        },
       };
       return copy;
     });
@@ -206,11 +291,11 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
   // Remove a criterion
   const handleRemoveCriterion = (index: number) => {
     setCriteria((prev) => prev.filter((_, i) => i !== index));
+    if (expandedCritIndex === index) setExpandedCritIndex(null);
   };
 
   // Add a new criterion from catalog
   const handleAddCriterion = (sig: AvailableSignal) => {
-    // Generate clean unique ID
     const newId = `crit_${sig.signal_key.replace(/[^a-z0-9_]/g, '')}_${Date.now().toString(36).slice(-4)}`;
     const newCrit: EvaluationCriterionInput = {
       criterion_id: newId,
@@ -220,8 +305,9 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
       criterion_type: sig.criterion_type as any,
       weight: 1.0,
       is_enabled: true,
-      normalization: sig.normalization,
+      normalization: JSON.parse(JSON.stringify(sig.normalization)),
       aggregation: sig.aggregation as any,
+      top_k_value: sig.aggregation === 'top_k' ? 2 : undefined,
       missing_data_policy: 'exclude_and_renormalize' as any,
       config: {},
     };
@@ -235,19 +321,36 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
 
   // Validation
   const validateForm = (): string | null => {
+    if (!name.trim()) {
+      return 'Model Name cannot be left empty.';
+    }
     if (scaleMax <= 0) {
       return 'Scale Max must be strictly greater than 0.';
     }
-    for (const c of criteria) {
-      if (c.weight < 0) {
-        return `Criterion "${c.name}" cannot have a negative weight.`;
-      }
-    }
     if (activeCriteria.length === 0) {
-      return 'At least one criterion must be enabled.';
+      return 'At least one criterion must be enabled in the scoring model.';
     }
     if (totalWeight <= 0) {
       return 'Total active weight must be greater than 0.';
+    }
+
+    for (const c of activeCriteria) {
+      if (c.weight < 0) {
+        return `Criterion "${c.name}" cannot have a negative weight.`;
+      }
+      if (c.aggregation === 'top_k') {
+        if (!c.top_k_value || c.top_k_value < 1) {
+          return `Criterion "${c.name}" uses top_k aggregation and requires top_k_value >= 1.`;
+        }
+      }
+      if (c.criterion_type === 'numeric_range' && c.normalization?.linear_range) {
+        const { min_value, max_value } = c.normalization.linear_range;
+        if (typeof min_value === 'number' && typeof max_value === 'number') {
+          if (max_value <= min_value) {
+            return `Criterion "${c.name}": max_value (${max_value}) must be strictly greater than min_value (${min_value}).`;
+          }
+        }
+      }
     }
     return null;
   };
@@ -265,12 +368,26 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
   const handleConfirmSave = async () => {
     setErrorMessage(null);
     try {
+      const parsedLeadValues = leadValues
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+
+      const cleanedCriteria = criteria.map((c) => ({
+        ...c,
+        top_k_value: c.aggregation === 'top_k' ? c.top_k_value || 2 : undefined,
+      }));
+
       const updated = await updateMutation.mutateAsync({
         configId: config.config_id,
         payload: {
-          description,
+          name: name.trim() || config.name,
+          description: description.trim(),
           scale_max: scaleMax,
-          criteria,
+          score_ineligible_teams: scoreIneligibleTeams,
+          lead_field: leadField.trim() || 'role',
+          lead_values: parsedLeadValues.length > 0 ? parsedLeadValues : ['lead', 'team lead'],
+          criteria: cleanedCriteria,
         },
       });
       onSuccess(updated.version);
@@ -285,8 +402,8 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent onClose={() => onOpenChange(false)} className="max-w-3xl">
-        <DialogHeader>
+      <DialogContent onClose={() => onOpenChange(false)} className="max-w-4xl max-h-[92vh] flex flex-col">
+        <DialogHeader className="shrink-0">
           <div className="flex items-center gap-2">
             <Badge variant="forest" className="font-mono text-[10px]">
               Scoring Model Editor
@@ -297,15 +414,14 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
             </span>
           </div>
           <DialogTitle className="text-base font-semibold">
-            Edit Weights & Criteria: {config.name}
+            Edit Weights & Rubric: {config.name}
           </DialogTitle>
           <DialogDescription>
-            Adjust relative weights and criteria parameters. Saving produces an immutable new version
-            leaving previous evaluation results completely reproducible.
+            Adjust relative weights, normalization bounds, and member aggregations. Saving creates an immutable new version preserving historical auditability.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-3 overflow-y-auto max-h-[60vh] pr-1">
+        <div className="space-y-4 py-2 overflow-y-auto flex-1 pr-1">
           {errorMessage && (
             <div className="p-3 rounded-lg border border-red-300 bg-red-50 text-red-800 text-xs flex items-start gap-2">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -313,19 +429,18 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
             </div>
           )}
 
-          {/* Model Summary & Scale Max */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-muted/40 rounded-lg border border-border/70">
+          {/* Model Identification & Scale */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3 bg-muted/40 rounded-lg border border-border/70">
             <div className="sm:col-span-2 space-y-1">
-              <label className="text-xs font-semibold text-foreground">Model Description</label>
+              <label className="text-xs font-semibold text-foreground">Scoring Model Name</label>
               <Input
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe scoring rubric rationale..."
-                className="text-xs h-8"
-                title={description}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Balanced Technical Evaluation..."
+                className="text-xs h-8 font-medium"
               />
             </div>
-            <div className="space-y-1">
+            <div className="sm:col-span-2 space-y-1">
               <label className="text-xs font-semibold text-foreground">Scale Maximum</label>
               <div className="flex items-center gap-1.5">
                 <Input
@@ -336,19 +451,96 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                   onChange={(e) => setScaleMax(parseFloat(e.target.value) || 0)}
                   className="text-xs h-8 font-mono"
                 />
-                <span className="text-xs text-muted-foreground font-mono">pts</span>
+                <span className="text-xs text-muted-foreground font-mono">points</span>
               </div>
+            </div>
+            <div className="sm:col-span-4 space-y-1">
+              <label className="text-xs font-semibold text-foreground">Model Description & Rubric Rationale</label>
+              <Input
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Describe scoring rubric rationale..."
+                className="text-xs h-8"
+              />
             </div>
           </div>
 
-          {/* Notice about dynamic normalization */}
+          {/* Collapsible Model & Team Lead Resolution Settings */}
+          <div className="border border-border/80 rounded-lg overflow-hidden bg-card">
+            <button
+              type="button"
+              onClick={() => setIsSettingsOpen((prev) => !prev)}
+              className="w-full flex items-center justify-between p-3 bg-muted/30 hover:bg-muted/50 text-xs font-semibold text-foreground transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <Sliders className="h-3.5 w-3.5 text-forest-700" />
+                <span>Eligibility Policy & Team Lead Settings</span>
+                <span className="text-[10px] font-normal text-muted-foreground">
+                  (Ineligible team scoring, lead resolution)
+                </span>
+              </div>
+              {isSettingsOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </button>
+
+            {isSettingsOpen && (
+              <div className="p-3 border-t border-border/70 space-y-3 bg-card text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium text-foreground flex items-center gap-1">
+                      <UserCheck className="h-3.5 w-3.5 text-forest-700" />
+                      Team Lead Field Key
+                    </label>
+                    <Input
+                      value={leadField}
+                      onChange={(e) => setLeadField(e.target.value)}
+                      placeholder="e.g. role, captain, designation"
+                      className="h-7 text-xs font-mono"
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      Registration attribute identifying member role for lead_only criteria.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium text-foreground">
+                      Lead Identifier Values (comma-separated)
+                    </label>
+                    <Input
+                      value={leadValues}
+                      onChange={(e) => setLeadValues(e.target.value)}
+                      placeholder="lead, team lead, captain, leader"
+                      className="h-7 text-xs font-mono"
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      Case-insensitive values designating the team lead.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1 border-t border-border/40">
+                  <input
+                    type="checkbox"
+                    id="score-ineligible"
+                    checked={scoreIneligibleTeams}
+                    onChange={(e) => setScoreIneligibleTeams(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-border text-forest-700 focus:ring-forest-600 cursor-pointer"
+                  />
+                  <label htmlFor="score-ineligible" className="text-xs text-foreground cursor-pointer select-none">
+                    <span className="font-medium">Score Ineligible Teams: </span>
+                    <span className="text-muted-foreground">
+                      Calculate informational scores for ineligible teams (if unchecked, ineligible teams receive 0.0 / DISQUALIFIED).
+                    </span>
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Dynamic Normalization Notice */}
           <div className="p-2.5 rounded-md bg-forest-50/70 border border-forest-200/80 text-forest-800 text-xs flex items-start gap-2">
             <Info className="h-4 w-4 shrink-0 text-forest-700 mt-0.5" />
             <div className="space-y-0.5 leading-relaxed text-[11px]">
-              <span className="font-semibold">Dynamic Relative Normalization:</span> The scoring
-              engine does not require weights to sum to 100. Weights define relative importance; if
-              optional signals are missing or excluded, remaining weights are automatically
-              renormalized by the server.
+              <span className="font-semibold">Dynamic Relative Normalization:</span> Criteria weights define relative importance (e.g. 35 vs 20) and are automatically renormalized to {scaleMax} points. If a member lacks optional signals, remaining weights rebalance transparently.
             </div>
           </div>
 
@@ -360,7 +552,7 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                 <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
                   <span>Active: {activeCriteria.length}/{criteria.length}</span>
                   <span>·</span>
-                  <span className="text-forest-700 font-semibold">Total Weight: {totalWeight.toFixed(1)}</span>
+                  <span className="text-forest-700 font-semibold">Total Relative Weight: {totalWeight.toFixed(1)}</span>
                 </div>
 
                 <div className="relative">
@@ -378,9 +570,9 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
 
                   {/* Add Criterion Catalog Dropdown */}
                   {isAddMenuOpen && (
-                    <div className="absolute right-0 top-8 z-50 w-80 max-h-80 overflow-y-auto bg-card border border-border rounded-lg shadow-lg p-1.5 space-y-1 animate-in fade-in zoom-in-95">
+                    <div className="absolute right-0 top-8 z-50 w-84 max-h-80 overflow-y-auto bg-card border border-border rounded-lg shadow-lg p-1.5 space-y-1 animate-in fade-in zoom-in-95">
                       <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border/60">
-                        Available Signals to Score ({AVAILABLE_SIGNALS.length})
+                        Registered Signals ({AVAILABLE_SIGNALS.length})
                       </div>
                       {AVAILABLE_SIGNALS.map((sig) => (
                         <button
@@ -436,9 +628,10 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                     <tr>
                       <th className="py-2 px-3 w-10 text-center">Active</th>
                       <th className="py-2 px-3">Criterion & Signal</th>
-                      <th className="py-2 px-3 w-36">Type / Aggregation</th>
+                      <th className="py-2 px-3 w-40">Aggregation</th>
+                      <th className="py-2 px-3 w-36">Missing Policy</th>
                       <th className="py-2 px-3 w-28 text-right">Weight</th>
-                      <th className="py-2 px-3 w-20 text-right">Share</th>
+                      <th className="py-2 px-3 w-16 text-right">Share</th>
                       <th className="py-2 px-2 w-10 text-center">Action</th>
                     </tr>
                   </thead>
@@ -448,50 +641,65 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                         c.is_enabled && totalWeight > 0
                           ? ((c.weight / totalWeight) * 100).toFixed(1)
                           : '0.0';
+                      const isExpanded = expandedCritIndex === idx;
+                      const hasLinearRange = c.criterion_type === 'numeric_range' && c.normalization?.linear_range;
 
                       return (
-                        <tr
-                          key={c.criterion_id}
-                          className={`hover:bg-muted/30 transition-colors ${
-                            !c.is_enabled ? 'opacity-50 bg-muted/10' : ''
-                          }`}
-                        >
-                          <td className="py-2.5 px-3 text-center align-top pt-3">
-                            <input
-                              type="checkbox"
-                              checked={c.is_enabled}
-                              onChange={() => handleToggleEnabled(idx)}
-                              className="h-3.5 w-3.5 rounded border-border text-forest-700 focus:ring-forest-600 cursor-pointer"
-                            />
-                          </td>
-                          <td className="py-2.5 px-3">
-                            <div className="font-semibold text-foreground">{c.name}</div>
-                            <div className="text-[10px] font-mono text-muted-foreground flex items-center gap-1 mt-0.5">
-                              <span>signal:</span>
-                              <span className="text-forest-700 bg-forest-50 px-1 rounded">
-                                {c.target_signal_key}
-                              </span>
-                            </div>
-                            {c.description && (
-                              <div
-                                className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5 cursor-help hover:text-foreground transition-colors"
-                                title={c.description}
-                              >
-                                {c.description}
+                        <React.Fragment key={c.criterion_id}>
+                          <tr
+                            className={`hover:bg-muted/30 transition-colors ${
+                              !c.is_enabled ? 'opacity-50 bg-muted/10' : ''
+                            }`}
+                          >
+                            <td className="py-2.5 px-3 text-center align-top pt-3">
+                              <input
+                                type="checkbox"
+                                checked={c.is_enabled}
+                                onChange={() => handleToggleEnabled(idx)}
+                                className="h-3.5 w-3.5 rounded border-border text-forest-700 focus:ring-forest-600 cursor-pointer"
+                              />
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-semibold text-foreground">{c.name}</span>
+                                <Badge variant="forest" className="font-mono text-[9px] py-0 px-1">
+                                  {c.criterion_type}
+                                </Badge>
                               </div>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-3 align-top pt-2">
-                            <div className="text-[10px] text-muted-foreground font-mono">
-                              {c.criterion_type}
-                            </div>
-                            <div className="mt-1 flex items-center gap-1">
-                              <span className="text-[10px] text-muted-foreground">agg:</span>
+                              <div className="text-[10px] font-mono text-muted-foreground flex items-center gap-1 mt-0.5">
+                                <span>signal:</span>
+                                <span className="text-forest-700 bg-forest-50 px-1 rounded">
+                                  {c.target_signal_key}
+                                </span>
+                              </div>
+                              {c.description && (
+                                <div
+                                  className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5 cursor-help hover:text-foreground transition-colors"
+                                  title={c.description}
+                                >
+                                  {c.description}
+                                </div>
+                              )}
+
+                              {hasLinearRange && (
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedCritIndex(isExpanded ? null : idx)}
+                                  className="text-[10px] text-forest-700 hover:text-forest-800 font-medium flex items-center gap-0.5 mt-1 cursor-pointer"
+                                >
+                                  <Sliders className="h-2.5 w-2.5" />
+                                  <span>
+                                    {isExpanded ? 'Hide Range Bounds' : `Range: [${c.normalization?.linear_range?.min_value ?? 0} → ${c.normalization?.linear_range?.max_value ?? 10}]`}
+                                  </span>
+                                </button>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 align-top pt-2">
                               <select
                                 disabled={!c.is_enabled}
                                 value={c.aggregation}
                                 onChange={(e) => handleAggregationChange(idx, e.target.value)}
-                                className="h-6 text-[11px] font-mono rounded border border-border bg-card px-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-forest-600 disabled:opacity-50"
+                                className="h-6 w-full text-[11px] font-mono rounded border border-border bg-card px-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-forest-600 disabled:opacity-50"
                               >
                                 <option value="mean">mean</option>
                                 <option value="max">max</option>
@@ -500,35 +708,99 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                 <option value="lead_only">lead_only</option>
                                 <option value="top_k">top_k</option>
                               </select>
-                            </div>
-                          </td>
-                          <td className="py-2.5 px-3 text-right align-top pt-2.5">
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.5"
-                              disabled={!c.is_enabled}
-                              value={c.weight}
-                              onChange={(e) => handleWeightChange(idx, e.target.value)}
-                              className="h-7 w-24 text-right font-mono text-xs ml-auto"
-                            />
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono text-[11px] text-muted-foreground align-top pt-3">
-                            {c.is_enabled ? `${share}%` : '—'}
-                          </td>
-                          <td className="py-2.5 px-2 text-center align-top pt-2.5">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleRemoveCriterion(idx)}
-                              className="h-7 w-7 text-muted-foreground hover:text-red-600 hover:bg-red-50"
-                              title="Remove criterion"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </td>
-                        </tr>
+
+                              {c.aggregation === 'top_k' && (
+                                <div className="flex items-center gap-1 mt-1 bg-amber-50/70 p-1 rounded border border-amber-200">
+                                  <span className="text-[10px] font-semibold text-amber-900 font-mono">k =</span>
+                                  <Input
+                                    type="number"
+                                    min="1"
+                                    disabled={!c.is_enabled}
+                                    value={c.top_k_value ?? 2}
+                                    onChange={(e) => handleTopKChange(idx, parseInt(e.target.value, 10) || 1)}
+                                    className="h-5 w-14 text-[10px] font-mono px-1 py-0 bg-white"
+                                    title="Top K highest members"
+                                  />
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 align-top pt-2">
+                              <select
+                                disabled={!c.is_enabled}
+                                value={c.missing_data_policy || 'exclude_and_renormalize'}
+                                onChange={(e) => handleMissingDataPolicyChange(idx, e.target.value)}
+                                className="h-6 w-full text-[10px] font-mono rounded border border-border bg-card px-1 text-foreground focus:outline-none focus:ring-1 focus:ring-forest-600 disabled:opacity-50"
+                                title="Missing Data Policy"
+                              >
+                                <option value="exclude_and_renormalize">exclude & renormalize</option>
+                                <option value="zero_score">zero score (0.0)</option>
+                              </select>
+                            </td>
+                            <td className="py-2.5 px-3 text-right align-top pt-2">
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.5"
+                                disabled={!c.is_enabled}
+                                value={c.weight}
+                                onChange={(e) => handleWeightChange(idx, e.target.value)}
+                                className="h-6 w-20 text-right font-mono text-xs ml-auto"
+                              />
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono text-[11px] text-muted-foreground align-top pt-2.5">
+                              {c.is_enabled ? `${share}%` : '—'}
+                            </td>
+                            <td className="py-2.5 px-2 text-center align-top pt-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleRemoveCriterion(idx)}
+                                className="h-6 w-6 text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                                title="Remove criterion"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </td>
+                          </tr>
+
+                          {/* Expanded Normalization Bounds Editor Row */}
+                          {isExpanded && hasLinearRange && (
+                            <tr className="bg-muted/30">
+                              <td colSpan={7} className="p-2.5 border-t border-border/60">
+                                <div className="flex items-center gap-4 text-xs bg-card p-2 rounded border border-border max-w-md">
+                                  <span className="font-semibold text-foreground text-[11px]">
+                                    Linear Range Mapping:
+                                  </span>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] text-muted-foreground">Min (0.0):</span>
+                                    <Input
+                                      type="number"
+                                      step="0.5"
+                                      value={c.normalization?.linear_range?.min_value ?? 0}
+                                      onChange={(e) =>
+                                        handleLinearRangeChange(idx, 'min', parseFloat(e.target.value) || 0)
+                                      }
+                                      className="h-6 w-16 text-xs font-mono"
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] text-muted-foreground">Max (1.0):</span>
+                                    <Input
+                                      type="number"
+                                      step="0.5"
+                                      value={c.normalization?.linear_range?.max_value ?? 10}
+                                      onChange={(e) =>
+                                        handleLinearRangeChange(idx, 'max', parseFloat(e.target.value) || 1)
+                                      }
+                                      className="h-6 w-16 text-xs font-mono"
+                                    />
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       );
                     })}
                   </tbody>
@@ -557,7 +829,7 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 pt-2 border-t border-border">
           {showConfirm ? (
             <>
               <Button

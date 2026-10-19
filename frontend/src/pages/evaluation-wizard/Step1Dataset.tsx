@@ -34,14 +34,23 @@ interface Step1DatasetProps {
   selectedDataset: DatasetSummary | null;
   onSelectDataset: (dataset: DatasetSummary) => void;
   onNext: () => void;
+  initialTab?: 'existing' | 'upload';
 }
 
 export const Step1Dataset: React.FC<Step1DatasetProps> = ({
   selectedDataset,
   onSelectDataset,
   onNext,
+  initialTab,
 }) => {
-  const [activeTab, setActiveTab] = useState<'existing' | 'upload'>('existing');
+  const [activeTab, setActiveTab] = useState<'existing' | 'upload'>(initialTab || 'existing');
+
+  React.useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
+
   const [searchQuery, setSearchQuery] = useState('');
 
   // Upload States

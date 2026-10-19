@@ -348,7 +348,7 @@ export const DashboardPage: React.FC = () => {
               Upload candidate CSV or JSON registration rosters to begin signal extraction and shortlist evaluations.
             </p>
             <Button asChild variant="default" size="sm" className="gap-2">
-              <Link to="/evaluate">
+              <Link to="/evaluate?tab=upload">
                 <FolderPlus className="h-3.5 w-3.5" />
                 Upload First Dataset
               </Link>
@@ -369,6 +369,7 @@ export const DashboardPage: React.FC = () => {
                   <TableHead className="w-[100px] text-right">Members</TableHead>
                   <TableHead className="w-[140px]">Warnings</TableHead>
                   <TableHead className="w-[190px]">Uploaded At</TableHead>
+                  <TableHead className="w-[90px] text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -402,6 +403,13 @@ export const DashboardPage: React.FC = () => {
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                       {formatDateTime(ds.uploaded_at)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1 text-forest-700 hover:text-forest-900 hover:bg-forest-50">
+                        <Link to={`/evaluate?dataset_id=${ds.dataset_id}`}>
+                          Evaluate <ArrowRight className="h-3 w-3" />
+                        </Link>
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -694,6 +702,7 @@ export const DashboardPage: React.FC = () => {
                   <TableHead className="w-[90px] text-right">Teams</TableHead>
                   <TableHead className="w-[110px]">Warnings</TableHead>
                   <TableHead className="w-[100px]">Errors</TableHead>
+                  <TableHead className="w-[90px] text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -744,6 +753,13 @@ export const DashboardPage: React.FC = () => {
                       ) : (
                         <span className="text-xs text-muted-foreground font-mono">0</span>
                       )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1 text-forest-700 hover:text-forest-900 hover:bg-forest-50">
+                        <Link to={`/evaluate?${ex.dataset_id ? `dataset_id=${ex.dataset_id}&` : ''}extraction_run_id=${ex.run_id}`}>
+                          Evaluate <ArrowRight className="h-3 w-3" />
+                        </Link>
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
