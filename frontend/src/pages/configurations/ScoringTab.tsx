@@ -200,8 +200,13 @@ export const ScoringTab: React.FC<ScoringTabProps> = ({
                   </code>
                 </div>
                 <div className="mt-2">
-                  <h4 className="text-xs font-bold text-foreground truncate">{cfg.name}</h4>
-                  <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1 leading-snug">
+                  <h4 className="text-xs font-bold text-foreground truncate cursor-help" title={cfg.name}>
+                    {cfg.name}
+                  </h4>
+                  <p
+                    className="text-[11px] text-muted-foreground line-clamp-2 mt-1 leading-snug cursor-help"
+                    title={cfg.description || 'No description provided.'}
+                  >
                     {cfg.description || 'No description provided.'}
                   </p>
                 </div>

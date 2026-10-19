@@ -322,6 +322,7 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Describe scoring rubric rationale..."
                 className="text-xs h-8"
+                title={description}
               />
             </div>
             <div className="space-y-1">
@@ -396,7 +397,10 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                               {sig.criterion_type}
                             </Badge>
                           </div>
-                          <span className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">
+                          <span
+                            className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5 cursor-help"
+                            title={sig.description}
+                          >
                             {sig.description}
                           </span>
                         </button>
@@ -469,7 +473,10 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                               </span>
                             </div>
                             {c.description && (
-                              <div className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">
+                              <div
+                                className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5 cursor-help hover:text-foreground transition-colors"
+                                title={c.description}
+                              >
                                 {c.description}
                               </div>
                             )}

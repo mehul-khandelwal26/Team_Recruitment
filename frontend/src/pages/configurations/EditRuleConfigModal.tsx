@@ -170,6 +170,69 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
       setErrorMessage('At least one rule must be enabled in the configuration.');
       return;
     }
+
+    // Validate parameters of each active rule to ensure required fields are not empty
+    for (const r of activeRules) {
+      const p = r.parameters || {};
+      if (r.rule_type === 'required_link') {
+        const linkField = typeof p.link_field === 'string' ? p.link_field.trim() : '';
+        if (!linkField) {
+          setErrorMessage(`Rule "${r.name}" requires a Link Field Name. It cannot be left empty.`);
+          return;
+        }
+      } else if (r.rule_type === 'signal_threshold') {
+        const sigKey = typeof p.signal_key === 'string' ? p.signal_key.trim() : '';
+        if (!sigKey) {
+          setErrorMessage(`Rule "${r.name}" requires a Target Signal Key. It cannot be left empty.`);
+          return;
+        }
+      } else if (r.rule_type === 'signal_contains') {
+        const sigKey = typeof p.signal_key === 'string' ? p.signal_key.trim() : '';
+        const expVal = typeof p.expected_value === 'string' ? p.expected_value.trim() : '';
+        if (!sigKey) {
+          setErrorMessage(`Rule "${r.name}" requires a Signal Identifier.`);
+          return;
+        }
+        if (!expVal) {
+          setErrorMessage(`Rule "${r.name}" requires an Expected Token / Value.`);
+          return;
+        }
+      } else if (r.rule_type === 'allowed_values') {
+        const fKey = typeof p.field_key === 'string' ? p.field_key.trim() : '';
+        if (!fKey) {
+          setErrorMessage(`Rule "${r.name}" requires a Field Key.`);
+          return;
+        }
+        if (!Array.isArray(p.allowed_values) || p.allowed_values.length === 0) {
+          setErrorMessage(`Rule "${r.name}" requires at least one allowed value.`);
+          return;
+        }
+      } else if (r.rule_type === 'track_limit') {
+        const fKey = typeof p.field_key === 'string' ? p.field_key.trim() : '';
+        if (!fKey) {
+          setErrorMessage(`Rule "${r.name}" requires a Track Field Key.`);
+          return;
+        }
+      } else if (r.rule_type === 'duplicate_member_email') {
+        const emailField = typeof p.email_field === 'string' ? p.email_field.trim() : '';
+        if (!emailField) {
+          setErrorMessage(`Rule "${r.name}" requires an Email Field Name.`);
+          return;
+        }
+      } else if (r.rule_type === 'required_signal_present') {
+        const sigKey = typeof p.signal_key === 'string' ? p.signal_key.trim() : '';
+        if (!sigKey) {
+          setErrorMessage(`Rule "${r.name}" requires a Signal Key.`);
+          return;
+        }
+      } else if (r.rule_type === 'required_fields_present') {
+        if (!Array.isArray(p.field_keys) || p.field_keys.length === 0) {
+          setErrorMessage(`Rule "${r.name}" requires at least one field key.`);
+          return;
+        }
+      }
+    }
+
     setErrorMessage(null);
     setShowConfirm(true);
   };
@@ -283,7 +346,10 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                               {cat.scope}
                             </Badge>
                           </div>
-                          <span className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">
+                          <span
+                            className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5 cursor-help"
+                            title={cat.description}
+                          >
                             {cat.description}
                           </span>
                         </button>
@@ -355,7 +421,10 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                 id: {rule.rule_id}
                               </div>
                               {rule.description && (
-                                <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
+                                <div
+                                  className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1 cursor-help hover:text-foreground transition-colors"
+                                  title={rule.description}
+                                >
                                   {rule.description}
                                 </div>
                               )}
@@ -428,6 +497,16 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                     </span>
                                   </div>
 
+                                  {rule.description && (
+                                    <p
+                                      className="text-[11px] text-muted-foreground bg-muted/40 p-2.5 rounded-md border border-border/50 leading-relaxed"
+                                      title={rule.description}
+                                    >
+                                      <span className="font-semibold text-foreground">Rule Purpose: </span>
+                                      {rule.description}
+                                    </p>
+                                  )}
+
                                   {/* Dynamic fields based on rule_type */}
                                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
                                     {rule.rule_type === 'team_size_min' && (
@@ -475,17 +554,39 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                     {rule.rule_type === 'required_link' && (
                                       <>
                                         <div className="space-y-1">
-                                          <label className="text-[11px] font-medium text-foreground">
-                                            Link Field Name
-                                          </label>
+                                          <div className="flex items-center justify-between">
+                                            <label className="text-[11px] font-medium text-foreground">
+                                              Link Field Name <span className="text-red-500">*</span>
+                                            </label>
+                                            {params.link_field !== undefined && !params.link_field.trim() && (
+                                              <span className="text-[10px] text-red-500 font-medium">Field name required</span>
+                                            )}
+                                          </div>
                                           <Input
-                                            value={params.link_field || 'github_url'}
+                                            value={params.link_field ?? ''}
                                             onChange={(e) =>
                                               handleParameterChange(idx, 'link_field', e.target.value)
                                             }
-                                            placeholder="github_url, resume_url..."
-                                            className="h-7 text-xs font-mono"
+                                            placeholder="e.g. github_url, leetcode, portfolio_url..."
+                                            className={`h-7 text-xs font-mono ${
+                                              params.link_field !== undefined && !params.link_field.trim()
+                                                ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                                : ''
+                                            }`}
                                           />
+                                          <div className="flex flex-wrap items-center gap-1 mt-1 pt-0.5">
+                                            <span className="text-[10px] text-muted-foreground">Quick pick:</span>
+                                            {['github_url', 'leetcode', 'portfolio_url', 'linkedin_url', 'resume_url'].map((k) => (
+                                              <button
+                                                key={k}
+                                                type="button"
+                                                onClick={() => handleParameterChange(idx, 'link_field', k)}
+                                                className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted hover:bg-forest-100 hover:text-forest-800 text-muted-foreground transition-colors cursor-pointer"
+                                              >
+                                                +{k}
+                                              </button>
+                                            ))}
+                                          </div>
                                         </div>
                                         <div className="space-y-1">
                                           <label className="text-[11px] font-medium text-foreground">
@@ -509,16 +610,25 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                     {rule.rule_type === 'signal_threshold' && (
                                       <>
                                         <div className="space-y-1">
-                                          <label className="text-[11px] font-medium text-foreground">
-                                            Target Signal Key
-                                          </label>
+                                          <div className="flex items-center justify-between">
+                                            <label className="text-[11px] font-medium text-foreground">
+                                              Target Signal Key <span className="text-red-500">*</span>
+                                            </label>
+                                            {params.signal_key !== undefined && !params.signal_key.trim() && (
+                                              <span className="text-[10px] text-red-500 font-medium">Signal key required</span>
+                                            )}
+                                          </div>
                                           <Input
-                                            value={params.signal_key || 'academic_cgpa'}
+                                            value={params.signal_key ?? ''}
                                             onChange={(e) =>
                                               handleParameterChange(idx, 'signal_key', e.target.value)
                                             }
-                                            placeholder="academic_cgpa..."
-                                            className="h-7 text-xs font-mono"
+                                            placeholder="e.g. academic_cgpa, github_public_repo_count..."
+                                            className={`h-7 text-xs font-mono ${
+                                              params.signal_key !== undefined && !params.signal_key.trim()
+                                                ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                                : ''
+                                            }`}
                                           />
                                         </div>
                                         <div className="space-y-1">
@@ -598,28 +708,47 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                     {rule.rule_type === 'signal_contains' && (
                                       <>
                                         <div className="space-y-1">
-                                          <label className="text-[11px] font-medium text-foreground">
-                                            Signal Identifier
-                                          </label>
+                                          <div className="flex items-center justify-between">
+                                            <label className="text-[11px] font-medium text-foreground">
+                                              Signal Identifier <span className="text-red-500">*</span>
+                                            </label>
+                                            {params.signal_key !== undefined && !params.signal_key.trim() && (
+                                              <span className="text-[10px] text-red-500 font-medium">Identifier required</span>
+                                            )}
+                                          </div>
                                           <Input
-                                            value={params.signal_key || 'skills'}
+                                            value={params.signal_key ?? ''}
                                             onChange={(e) =>
                                               handleParameterChange(idx, 'signal_key', e.target.value)
                                             }
-                                            className="h-7 text-xs font-mono"
+                                            placeholder="e.g. resume_extracted_skills"
+                                            className={`h-7 text-xs font-mono ${
+                                              params.signal_key !== undefined && !params.signal_key.trim()
+                                                ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                                : ''
+                                            }`}
                                           />
                                         </div>
                                         <div className="space-y-1">
-                                          <label className="text-[11px] font-medium text-foreground">
-                                            Expected Token / Value
-                                          </label>
+                                          <div className="flex items-center justify-between">
+                                            <label className="text-[11px] font-medium text-foreground">
+                                              Expected Token / Value <span className="text-red-500">*</span>
+                                            </label>
+                                            {params.expected_value !== undefined && !params.expected_value.trim() && (
+                                              <span className="text-[10px] text-red-500 font-medium">Token required</span>
+                                            )}
+                                          </div>
                                           <Input
-                                            value={params.expected_value || ''}
+                                            value={params.expected_value ?? ''}
                                             onChange={(e) =>
                                               handleParameterChange(idx, 'expected_value', e.target.value)
                                             }
                                             placeholder="e.g. Python, React..."
-                                            className="h-7 text-xs font-mono"
+                                            className={`h-7 text-xs font-mono ${
+                                              params.expected_value !== undefined && !params.expected_value.trim()
+                                                ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                                : ''
+                                            }`}
                                           />
                                         </div>
                                         <div className="space-y-1">
@@ -644,21 +773,36 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                     {rule.rule_type === 'allowed_values' && (
                                       <>
                                         <div className="space-y-1">
-                                          <label className="text-[11px] font-medium text-foreground">
-                                            Field Key
-                                          </label>
+                                          <div className="flex items-center justify-between">
+                                            <label className="text-[11px] font-medium text-foreground">
+                                              Field Key <span className="text-red-500">*</span>
+                                            </label>
+                                            {params.field_key !== undefined && !params.field_key.trim() && (
+                                              <span className="text-[10px] text-red-500 font-medium">Field key required</span>
+                                            )}
+                                          </div>
                                           <Input
-                                            value={params.field_key || 'track'}
+                                            value={params.field_key ?? ''}
                                             onChange={(e) =>
                                               handleParameterChange(idx, 'field_key', e.target.value)
                                             }
-                                            className="h-7 text-xs font-mono"
+                                            placeholder="e.g. track, department..."
+                                            className={`h-7 text-xs font-mono ${
+                                              params.field_key !== undefined && !params.field_key.trim()
+                                                ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                                : ''
+                                            }`}
                                           />
                                         </div>
                                         <div className="space-y-1 sm:col-span-2">
-                                          <label className="text-[11px] font-medium text-foreground">
-                                            Allowed Values (comma-separated)
-                                          </label>
+                                          <div className="flex items-center justify-between">
+                                            <label className="text-[11px] font-medium text-foreground">
+                                              Allowed Values (comma-separated) <span className="text-red-500">*</span>
+                                            </label>
+                                            {Array.isArray(params.allowed_values) && params.allowed_values.length === 0 && (
+                                              <span className="text-[10px] text-red-500 font-medium">At least one value required</span>
+                                            )}
+                                          </div>
                                           <Input
                                             value={Array.isArray(params.allowed_values) ? params.allowed_values.join(', ') : ''}
                                             onChange={(e) =>
@@ -681,15 +825,25 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                     {rule.rule_type === 'track_limit' && (
                                       <>
                                         <div className="space-y-1">
-                                          <label className="text-[11px] font-medium text-foreground">
-                                            Track Field Key
-                                          </label>
+                                          <div className="flex items-center justify-between">
+                                            <label className="text-[11px] font-medium text-foreground">
+                                              Track Field Key <span className="text-red-500">*</span>
+                                            </label>
+                                            {params.field_key !== undefined && !params.field_key.trim() && (
+                                              <span className="text-[10px] text-red-500 font-medium">Field key required</span>
+                                            )}
+                                          </div>
                                           <Input
-                                            value={params.field_key || 'track'}
+                                            value={params.field_key ?? ''}
                                             onChange={(e) =>
                                               handleParameterChange(idx, 'field_key', e.target.value)
                                             }
-                                            className="h-7 text-xs font-mono"
+                                            placeholder="e.g. track"
+                                            className={`h-7 text-xs font-mono ${
+                                              params.field_key !== undefined && !params.field_key.trim()
+                                                ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                                : ''
+                                            }`}
                                           />
                                         </div>
                                         <div className="space-y-1">
@@ -715,9 +869,14 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
 
                                     {rule.rule_type === 'required_fields_present' && (
                                       <div className="space-y-1 sm:col-span-2">
-                                        <label className="text-[11px] font-medium text-foreground">
-                                          Required Field Keys (comma-separated)
-                                        </label>
+                                        <div className="flex items-center justify-between">
+                                          <label className="text-[11px] font-medium text-foreground">
+                                            Required Field Keys (comma-separated) <span className="text-red-500">*</span>
+                                          </label>
+                                          {Array.isArray(params.field_keys) && params.field_keys.length === 0 && (
+                                            <span className="text-[10px] text-red-500 font-medium">At least one field key required</span>
+                                          )}
+                                        </div>
                                         <Input
                                           value={Array.isArray(params.field_keys) ? params.field_keys.join(', ') : ''}
                                           onChange={(e) =>
@@ -738,30 +897,50 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
 
                                     {rule.rule_type === 'duplicate_member_email' && (
                                       <div className="space-y-1">
-                                        <label className="text-[11px] font-medium text-foreground">
-                                          Email Field Name
-                                        </label>
+                                        <div className="flex items-center justify-between">
+                                          <label className="text-[11px] font-medium text-foreground">
+                                            Email Field Name <span className="text-red-500">*</span>
+                                          </label>
+                                          {params.email_field !== undefined && !params.email_field.trim() && (
+                                            <span className="text-[10px] text-red-500 font-medium">Field name required</span>
+                                          )}
+                                        </div>
                                         <Input
-                                          value={params.email_field || 'email'}
+                                          value={params.email_field ?? ''}
                                           onChange={(e) =>
                                             handleParameterChange(idx, 'email_field', e.target.value)
                                           }
-                                          className="h-7 text-xs font-mono"
+                                          placeholder="e.g. email"
+                                          className={`h-7 text-xs font-mono ${
+                                            params.email_field !== undefined && !params.email_field.trim()
+                                              ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                              : ''
+                                          }`}
                                         />
                                       </div>
                                     )}
 
                                     {rule.rule_type === 'required_signal_present' && (
                                       <div className="space-y-1">
-                                        <label className="text-[11px] font-medium text-foreground">
-                                          Signal Key
-                                        </label>
+                                        <div className="flex items-center justify-between">
+                                          <label className="text-[11px] font-medium text-foreground">
+                                            Signal Key <span className="text-red-500">*</span>
+                                          </label>
+                                          {params.signal_key !== undefined && !params.signal_key.trim() && (
+                                            <span className="text-[10px] text-red-500 font-medium">Signal key required</span>
+                                          )}
+                                        </div>
                                         <Input
-                                          value={params.signal_key || 'academic_cgpa'}
+                                          value={params.signal_key ?? ''}
                                           onChange={(e) =>
                                             handleParameterChange(idx, 'signal_key', e.target.value)
                                           }
-                                          className="h-7 text-xs font-mono"
+                                          placeholder="e.g. academic_cgpa"
+                                          className={`h-7 text-xs font-mono ${
+                                            params.signal_key !== undefined && !params.signal_key.trim()
+                                              ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                              : ''
+                                          }`}
                                         />
                                       </div>
                                     )}
