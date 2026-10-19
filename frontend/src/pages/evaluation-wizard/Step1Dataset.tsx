@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   UploadCloud,
   FileSpreadsheet,
@@ -10,6 +10,10 @@ import {
   ArrowRight,
   Database,
   FileCheck,
+  TableProperties,
+  Sparkles,
+  X,
+  Info,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
@@ -25,10 +29,29 @@ import {
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TruncatedId } from '@/components/common/TruncatedId';
-import { useWizardDatasets } from '@/hooks/useEvaluationWizard';
+import { useWizardDatasets, useDatasetRecord } from '@/hooks/useEvaluationWizard';
 import { apiService } from '@/lib/api-services';
-import type { DatasetSummary, UploadResponse } from '@/types';
+import type {
+  DatasetSummary,
+  UploadResponse,
+  FieldDiscoveryResponse,
+  CanonicalFieldInfo,
+} from '@/types';
 import { cn } from '@/lib/utils';
+
+const DEFAULT_CANONICAL_FIELDS: CanonicalFieldInfo[] = [
+  { field_key: 'name', display_name: 'Candidate Name', is_structural_required: true, category: 'Core Identity & Structure', description: 'Participant full name (Required)' },
+  { field_key: 'team_name', display_name: 'Team Name', is_structural_required: true, category: 'Core Identity & Structure', description: 'Name of the student team (Required for CSV)' },
+  { field_key: 'member_id', display_name: 'Candidate ID', is_structural_required: false, category: 'Core Identity & Structure', description: 'Student roll number or registration ID' },
+  { field_key: 'team_id', display_name: 'Team ID', is_structural_required: false, category: 'Core Identity & Structure', description: 'Explicit unique team identifier' },
+  { field_key: 'github_url', display_name: 'GitHub Profile URL', is_structural_required: false, category: 'Candidate Signals & Links', description: 'Candidate GitHub profile URL or username' },
+  { field_key: 'email', display_name: 'Email Address', is_structural_required: false, category: 'Candidate Signals & Links', description: 'Contact email' },
+  { field_key: 'linkedin_url', display_name: 'LinkedIn Profile URL', is_structural_required: false, category: 'Candidate Signals & Links', description: 'Candidate LinkedIn profile link' },
+  { field_key: 'portfolio_url', display_name: 'Portfolio / Website URL', is_structural_required: false, category: 'Candidate Signals & Links', description: 'Personal website or portfolio link' },
+  { field_key: 'resume_url', display_name: 'Resume / CV URL', is_structural_required: false, category: 'Candidate Signals & Links', description: 'Link to uploaded resume or document' },
+  { field_key: 'cgpa', display_name: 'Academic CGPA / Grade', is_structural_required: false, category: 'Academic Performance', description: 'Declared GPA, CPI, or percentage' },
+  { field_key: 'academic_year', display_name: 'Academic Year of Study', is_structural_required: false, category: 'Academic Performance', description: 'Current year of study or batch' },
+];
 
 interface Step1DatasetProps {
   selectedDataset: DatasetSummary | null;
@@ -61,6 +84,14 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
   const [uploadResult, setUploadResult] = useState<UploadResponse | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Column Mapping & Discovery States
+  const [isInspecting, setIsInspecting] = useState(false);
+  const [inspectError, setInspectError] = useState<string | null>(null);
+  const [discoveryResult, setDiscoveryResult] = useState<FieldDiscoveryResponse | null>(null);
+  const [columnMappings, setColumnMappings] = useState<Record<string, string>>({});
+  const [canonicalFields, setCanonicalFields] = useState<CanonicalFieldInfo[]>(DEFAULT_CANONICAL_FIELDS);
+  const [mappingSearch, setMappingSearch] = useState('');
+
   // Queries
   const {
     data: datasets,
@@ -69,6 +100,15 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
     error: datasetsError,
     refetch: refetchDatasets,
   } = useWizardDatasets(50);
+
+  const { data: activeDatasetRecord } = useDatasetRecord(selectedDataset?.dataset_id);
+  const effectiveActiveMapping: Record<string, string> = useMemo(() => {
+    return (
+      (selectedDataset?.mapping as Record<string, string>) ||
+      (activeDatasetRecord?.mapping as Record<string, string>) ||
+      {}
+    );
+  }, [selectedDataset, activeDatasetRecord]);
 
   // Filter datasets by filename or ID
   const filteredDatasets = (datasets || []).filter((d) => {
@@ -97,26 +137,145 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
     }
   };
 
-  const validateAndSetFile = (file: File) => {
+  const validateAndSetFile = async (file: File) => {
     const ext = file.name.split('.').pop()?.toLowerCase();
     if (ext !== 'csv' && ext !== 'json') {
       setUploadError('Only .csv and .json registration files are supported.');
       setFileToUpload(null);
+      setDiscoveryResult(null);
       return;
     }
     setUploadError(null);
     setUploadResult(null);
+    setInspectError(null);
     setFileToUpload(file);
+    setIsInspecting(true);
+
+    try {
+      const [discRes, canonList] = await Promise.all([
+        apiService.inspectDataset(file),
+        apiService.getCanonicalFields().catch(() => [] as CanonicalFieldInfo[]),
+      ]);
+      setDiscoveryResult(discRes);
+      if (canonList && canonList.length > 0) {
+        setCanonicalFields(canonList);
+      } else if (discRes.canonical_fields && discRes.canonical_fields.length > 0) {
+        setCanonicalFields(discRes.canonical_fields);
+      }
+
+      // Initialize mapping dictionary with suggestions
+      const initialMap: Record<string, string> = {};
+      if (discRes.suggested_mappings) {
+        Object.assign(initialMap, discRes.suggested_mappings);
+      }
+      discRes.discovered_fields?.forEach((df) => {
+        const target = df.suggested_mapping || df.recognized_field;
+        if (target && !initialMap[df.original_name]) {
+          initialMap[df.original_name] = target;
+        }
+      });
+      setColumnMappings(initialMap);
+    } catch (err: any) {
+      console.warn('Field discovery failed:', err);
+      setInspectError(err.message || 'Auto-inspection failed. You can still upload directly.');
+    } finally {
+      setIsInspecting(false);
+    }
+  };
+
+  // Check for duplicate target field mappings
+  const duplicateTargets = useMemo(() => {
+    const counts: Record<string, string[]> = {};
+    Object.entries(columnMappings).forEach(([col, target]) => {
+      if (target) {
+        const norm = target.trim().toLowerCase();
+        counts[norm] = counts[norm] || [];
+        counts[norm].push(col);
+      }
+    });
+    const duplicates: Record<string, string[]> = {};
+    Object.entries(counts).forEach(([target, cols]) => {
+      if (cols.length > 1) {
+        duplicates[target] = cols;
+      }
+    });
+    return duplicates;
+  }, [columnMappings]);
+
+  const hasDuplicateMappings = Object.keys(duplicateTargets).length > 0;
+
+  // Group canonical fields by category for clean dropdown rendering
+  const groupedCanonicalFields = useMemo(() => {
+    const groups: Record<string, CanonicalFieldInfo[]> = {};
+    canonicalFields.forEach((cf) => {
+      const cat = cf.category || 'Standard Fields';
+      groups[cat] = groups[cat] || [];
+      groups[cat].push(cf);
+    });
+    return groups;
+  }, [canonicalFields]);
+
+  // Filter discovered fields by search query
+  const filteredDiscoveredFields = useMemo(() => {
+    if (!discoveryResult?.discovered_fields) return [];
+    if (!mappingSearch.trim()) return discoveryResult.discovered_fields;
+    const q = mappingSearch.toLowerCase();
+    return discoveryResult.discovered_fields.filter(
+      (df) =>
+        df.original_name.toLowerCase().includes(q) ||
+        (columnMappings[df.original_name] || '').toLowerCase().includes(q) ||
+        df.inferred_type.toLowerCase().includes(q)
+    );
+  }, [discoveryResult, mappingSearch, columnMappings]);
+
+  const mappedCount = Object.values(columnMappings).filter(Boolean).length;
+  const totalDiscoveredCount = discoveryResult?.discovered_fields?.length || 0;
+
+  const handleMappingChange = (originalCol: string, targetKey: string) => {
+    setColumnMappings((prev) => {
+      const next = { ...prev };
+      if (!targetKey) {
+        delete next[originalCol];
+      } else {
+        next[originalCol] = targetKey;
+      }
+      return next;
+    });
+  };
+
+  const handleResetToAutoSuggestions = () => {
+    if (!discoveryResult) return;
+    const autoMap: Record<string, string> = {};
+    if (discoveryResult.suggested_mappings) {
+      Object.assign(autoMap, discoveryResult.suggested_mappings);
+    }
+    discoveryResult.discovered_fields?.forEach((df) => {
+      const tgt = df.suggested_mapping || df.recognized_field;
+      if (tgt && !autoMap[df.original_name]) {
+        autoMap[df.original_name] = tgt;
+      }
+    });
+    setColumnMappings(autoMap);
+  };
+
+  const handleClearAllMappings = () => {
+    setColumnMappings({});
   };
 
   const handleUploadSubmit = async () => {
     if (!fileToUpload) return;
+    if (hasDuplicateMappings) {
+      setUploadError(
+        `Cannot ingest dataset: duplicate mapping for ${Object.keys(duplicateTargets).join(', ')}. Each target can only be mapped to one column.`
+      );
+      return;
+    }
     setIsUploading(true);
     setUploadError(null);
     setUploadResult(null);
 
     try {
-      const response = await apiService.uploadDataset(fileToUpload);
+      const response = await apiService.uploadDataset(fileToUpload, columnMappings);
       setUploadResult(response);
 
       if (response.success && response.dataset_id) {
@@ -129,6 +288,7 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
           members_count: response.members_count,
           uploaded_at: new Date().toISOString(),
           warnings_count: response.warnings?.length || 0,
+          mapping: response.mapping || columnMappings,
         };
 
         // Refresh existing list so it appears there too
@@ -252,6 +412,23 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
                   <strong className="text-foreground">{selectedDataset.members_count}</strong> candidates
                 </span>
               </div>
+              {effectiveActiveMapping && Object.keys(effectiveActiveMapping).length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 mt-2 pt-2 border-t border-forest-200/60">
+                  <span className="text-[10px] font-semibold text-forest-900 uppercase tracking-wider">
+                    Signal Mappings:
+                  </span>
+                  {Object.entries(effectiveActiveMapping).map(([orig, tgt]) => (
+                    <span
+                      key={orig}
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/90 border border-forest-300 font-mono text-[10px] text-forest-950 shadow-2xs"
+                    >
+                      <span className="font-semibold">{orig}</span>
+                      <span className="text-forest-600">→</span>
+                      <span className="text-forest-800 font-bold">{tgt}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           <Button size="sm" onClick={onNext} className="gap-1.5 shadow-sm">
@@ -457,37 +634,337 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
                 </p>
               </div>
 
-              {/* Selected File Details */}
+              {/* Selected File Details & Interactive Column Mapping */}
               {fileToUpload && (
-                <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
-                  <div className="flex items-center gap-3">
-                    <FileCheck className="h-5 w-5 text-forest-700" />
-                    <div>
-                      <p className="text-xs font-semibold text-foreground">{fileToUpload.name}</p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {formatFileSize(fileToUpload.size)} · Type:{' '}
-                        {fileToUpload.name.endsWith('.json') ? 'JSON' : 'CSV'}
-                      </p>
+                <div className="space-y-4">
+                  {/* File Metadata Bar */}
+                  <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
+                    <div className="flex items-center gap-3">
+                      <FileCheck className="h-5 w-5 text-forest-700" />
+                      <div>
+                        <p className="text-xs font-semibold text-foreground">{fileToUpload.name}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {formatFileSize(fileToUpload.size)} · Type:{' '}
+                          {fileToUpload.name.endsWith('.json') ? 'JSON' : 'CSV'}
+                        </p>
+                      </div>
                     </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setFileToUpload(null);
+                        setDiscoveryResult(null);
+                        setColumnMappings({});
+                        setUploadError(null);
+                        setUploadResult(null);
+                      }}
+                      className="text-xs h-7 gap-1 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Change File
+                    </Button>
                   </div>
-                  <Button
-                    size="sm"
-                    onClick={handleUploadSubmit}
-                    disabled={isUploading}
-                    className="gap-1.5"
-                  >
-                    {isUploading ? (
-                      <>
-                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                        Validating & Ingesting...
-                      </>
-                    ) : (
-                      <>
-                        <UploadCloud className="h-3.5 w-3.5" />
-                        Upload & Ingest
-                      </>
-                    )}
-                  </Button>
+
+                  {/* Schema Inspection Loading Skeleton */}
+                  {isInspecting && (
+                    <div className="p-4 rounded-lg border border-forest-200 bg-forest-50/40 space-y-3 animate-pulse">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-forest-900">
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin text-forest-700" />
+                        Analyzing file schema & detecting candidate signals...
+                      </div>
+                      <div className="space-y-2">
+                        <Skeleton className="h-6 w-3/4" />
+                        <Skeleton className="h-10 w-full" />
+                        <Skeleton className="h-10 w-full" />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Schema Inspection Error / Notice */}
+                  {inspectError && (
+                    <div className="p-3 rounded-lg border border-amber-300 bg-amber-50/60 text-amber-900 text-xs flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                        <span>{inspectError}</span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => validateAndSetFile(fileToUpload)}
+                        className="h-7 text-xs"
+                      >
+                        Retry Inspection
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Column-to-Signal Mapping Table */}
+                  {discoveryResult && !isInspecting && (
+                    <div className="rounded-lg border border-border bg-card overflow-hidden space-y-3 p-4">
+                      {/* Mapping Header & Stats */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-3">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <TableProperties className="h-4 w-4 text-forest-700" />
+                            <h4 className="text-sm font-bold text-foreground">
+                              Candidate Signal & Column Mapping
+                            </h4>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground">
+                            Map custom columns to candidate signals (GitHub URLs, CGPA, Batch) and required team structure. Unmapped columns remain preserved as custom data.
+                          </p>
+                        </div>
+
+                        {/* Counts Badges */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <Badge variant="outline" className="text-[10px] font-mono">
+                            {totalDiscoveredCount} Columns Found
+                          </Badge>
+                          <Badge variant="forest" className="text-[10px] font-mono">
+                            {mappedCount} Mapped
+                          </Badge>
+                          <Badge variant="secondary" className="text-[10px] font-mono">
+                            {totalDiscoveredCount - mappedCount} Custom
+                          </Badge>
+                        </div>
+                      </div>
+
+                      {/* Duplicate Target Conflict Alert */}
+                      {hasDuplicateMappings && (
+                        <div className="p-3 rounded-lg border border-destructive/40 bg-destructive/10 text-destructive text-xs space-y-1">
+                          <div className="flex items-center gap-2 font-bold">
+                            <AlertCircle className="h-4 w-4" />
+                            Duplicate Target Field Conflict:
+                          </div>
+                          <p className="text-[11px]">
+                            The following canonical targets are assigned to multiple columns:{' '}
+                            <strong>{Object.keys(duplicateTargets).join(', ')}</strong>. Each canonical target field can only be mapped to one column.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Missing Structural Fields Warning */}
+                      {discoveryResult.missing_structural_fields &&
+                        discoveryResult.missing_structural_fields.length > 0 && (
+                          <div className="p-3 rounded-lg border border-amber-300 bg-amber-50/60 text-amber-900 text-xs flex items-start gap-2.5">
+                            <Info className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
+                            <div className="space-y-0.5">
+                              <span className="font-semibold block">Missing Core Fields Notice:</span>
+                              <p className="text-[11px] leading-relaxed">
+                                Expected structural fields (<strong>{discoveryResult.missing_structural_fields.join(', ')}</strong>) were not automatically detected. If your file contains candidate name or team columns under different headers, please map them below.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                      {/* Search & Actions Toolbar */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+                        <div className="relative flex-1 max-w-xs">
+                          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                          <Input
+                            placeholder="Filter discovered columns..."
+                            value={mappingSearch}
+                            onChange={(e) => setMappingSearch(e.target.value)}
+                            className="pl-8 text-xs h-8"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={handleResetToAutoSuggestions}
+                            className="text-xs h-8 gap-1.5"
+                          >
+                            <Sparkles className="h-3.5 w-3.5 text-forest-700" />
+                            Reset to Auto-Detected
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={handleClearAllMappings}
+                            className="text-xs h-8 text-muted-foreground hover:text-foreground"
+                          >
+                            Clear All
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Discovered Columns Table */}
+                      <div className="rounded border border-border overflow-hidden">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-muted/40 text-[11px]">
+                              <TableHead className="w-1/3">File Column Name</TableHead>
+                              <TableHead className="w-1/4">Sample Values</TableHead>
+                              <TableHead className="w-1/3">Mapped Canonical Signal / Field</TableHead>
+                              <TableHead className="w-28 text-right">Status</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {filteredDiscoveredFields.map((df) => {
+                              const currentTarget = columnMappings[df.original_name] || '';
+                              const isDuplicate = currentTarget && (duplicateTargets[currentTarget.toLowerCase()]?.length || 0) > 1;
+                              const isDirect = df.is_recognized && currentTarget === df.recognized_field;
+                              const isSuggested = Boolean(df.suggested_mapping && currentTarget === df.suggested_mapping);
+
+                              return (
+                                <TableRow key={df.original_name} className="text-xs hover:bg-muted/20">
+                                  {/* Original Name & Type */}
+                                  <TableCell className="align-top py-2.5">
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="font-mono font-semibold text-foreground text-xs">
+                                          {df.original_name}
+                                        </span>
+                                        <Badge variant="outline" className="text-[9px] px-1 py-0 font-mono text-muted-foreground uppercase">
+                                          {df.inferred_type}
+                                        </Badge>
+                                      </div>
+                                      <div className="text-[10px] text-muted-foreground">
+                                        {df.non_empty_count} / {df.total_count} populated ({df.total_count ? Math.round((df.non_empty_count / df.total_count) * 100) : 0}%)
+                                      </div>
+                                    </div>
+                                  </TableCell>
+
+                                  {/* Sample Preview */}
+                                  <TableCell className="align-top py-2.5">
+                                    <div className="flex flex-wrap gap-1 max-w-xs">
+                                      {df.sample_values && df.sample_values.length > 0 ? (
+                                        df.sample_values.slice(0, 2).map((val, idx) => (
+                                          <span
+                                            key={idx}
+                                            className="inline-block px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono text-muted-foreground truncate max-w-[140px]"
+                                            title={String(val)}
+                                          >
+                                            {String(val)}
+                                          </span>
+                                        ))
+                                      ) : (
+                                        <span className="text-muted-foreground/60 italic text-[10px]">No sample data</span>
+                                      )}
+                                    </div>
+                                  </TableCell>
+
+                                  {/* Target Select Dropdown */}
+                                  <TableCell className="align-top py-2.5">
+                                    <div className="space-y-1">
+                                      <select
+                                        value={currentTarget}
+                                        onChange={(e) => handleMappingChange(df.original_name, e.target.value)}
+                                        className={cn(
+                                          'w-full h-8 px-2.5 text-xs rounded-md border bg-background text-foreground transition-colors focus:outline-none focus:ring-1',
+                                          isDuplicate
+                                            ? 'border-destructive focus:ring-destructive text-destructive'
+                                            : currentTarget
+                                            ? 'border-forest-600 focus:ring-forest-600'
+                                            : 'border-input focus:ring-ring text-muted-foreground'
+                                        )}
+                                      >
+                                        <option value="">-- Do not map (Keep as custom field) --</option>
+                                        {Object.entries(groupedCanonicalFields).map(([cat, fields]) => (
+                                          <optgroup key={cat} label={cat}>
+                                            {fields.map((f) => (
+                                              <option key={f.field_key} value={f.field_key}>
+                                                {f.display_name} ({f.field_key}){f.is_structural_required ? ' *' : ''}
+                                              </option>
+                                            ))}
+                                          </optgroup>
+                                        ))}
+                                      </select>
+                                      {df.suggestion_reason && isSuggested && (
+                                        <p className="text-[10px] text-muted-foreground italic">
+                                          {df.suggestion_reason}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </TableCell>
+
+                                  {/* Status Badge */}
+                                  <TableCell className="text-right align-top py-2.5">
+                                    {isDuplicate ? (
+                                      <Badge variant="destructive" className="text-[10px]">
+                                        Conflict
+                                      </Badge>
+                                    ) : isDirect ? (
+                                      <Badge variant="success" className="text-[10px]">
+                                        Direct Match
+                                      </Badge>
+                                    ) : isSuggested ? (
+                                      <Badge variant="forest" className="text-[10px]">
+                                        Suggested
+                                      </Badge>
+                                    ) : currentTarget ? (
+                                      <Badge variant="secondary" className="text-[10px]">
+                                        User Mapped
+                                      </Badge>
+                                    ) : (
+                                      <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                                        Custom
+                                      </Badge>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+
+                      {/* Confirm & Ingest Action */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-border">
+                        <span className="text-[11px] text-muted-foreground">
+                          {mappedCount > 0
+                            ? `${mappedCount} column(s) will be translated into standard signals during ingestion.`
+                            : 'No column mappings specified. Columns will be stored as raw candidate data.'}
+                        </span>
+                        <Button
+                          size="sm"
+                          onClick={handleUploadSubmit}
+                          disabled={isUploading || hasDuplicateMappings}
+                          className="gap-1.5 shadow-sm"
+                        >
+                          {isUploading ? (
+                            <>
+                              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              Ingesting with Applied Mappings...
+                            </>
+                          ) : (
+                            <>
+                              <UploadCloud className="h-3.5 w-3.5" />
+                              Confirm Mapping & Ingest Dataset
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Fallback Direct Upload Button if Discovery is not active */}
+                  {!discoveryResult && !isInspecting && (
+                    <div className="flex justify-end pt-1">
+                      <Button
+                        size="sm"
+                        onClick={handleUploadSubmit}
+                        disabled={isUploading}
+                        className="gap-1.5"
+                      >
+                        {isUploading ? (
+                          <>
+                            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                            Validating & Ingesting...
+                          </>
+                        ) : (
+                          <>
+                            <UploadCloud className="h-3.5 w-3.5" />
+                            Upload & Ingest Directly
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -267,6 +267,10 @@ class UploadResponse(BaseModel):
         default=None,
         description="Dataset identifier for persistent storage (populated when saved).",
     )
+    mapping: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="Applied field mapping dictionary",
+    )
 
 
 # ---------------------------------------------------------------------------

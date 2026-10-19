@@ -5,6 +5,7 @@
 
 import { apiClient } from './api-client';
 import type {
+  DatasetRecord,
   DatasetSummary,
   UploadResponse,
   ExtractionRunSummary,
@@ -26,6 +27,8 @@ import type {
   RankingRunSummaryItem,
   RankingRunResponse,
   HealthResponse,
+  FieldDiscoveryResponse,
+  CanonicalFieldInfo,
 } from '@/types';
 
 
@@ -49,10 +52,36 @@ export const apiService = {
   },
 
   /**
-   * Upload a candidate registration file (CSV or JSON).
+   * Retrieve full dataset record by ID, including applied field mapping and details.
    */
-  uploadDataset(file: File): Promise<UploadResponse> {
-    return apiClient.upload<UploadResponse>('/api/ingestion/upload', file);
+  getDataset(datasetId: string): Promise<DatasetRecord> {
+    return apiClient.get<DatasetRecord>(`/api/ingestion/datasets/${datasetId}`);
+  },
+
+  /**
+   * Inspect a candidate registration file without committing to storage.
+   * Discovers columns, computes fill stats, and suggests canonical field mappings.
+   */
+  inspectDataset(file: File): Promise<FieldDiscoveryResponse> {
+    return apiClient.upload<FieldDiscoveryResponse>('/api/ingestion/inspect', file);
+  },
+
+  /**
+   * Retrieve catalog of recognized canonical target fields and descriptions.
+   */
+  getCanonicalFields(): Promise<CanonicalFieldInfo[]> {
+    return apiClient.get<CanonicalFieldInfo[]>('/api/ingestion/canonical-fields');
+  },
+
+  /**
+   * Upload a candidate registration file (CSV or JSON) with optional column mapping.
+   */
+  uploadDataset(file: File, mapping?: Record<string, string>): Promise<UploadResponse> {
+    const extraFields =
+      mapping && Object.keys(mapping).length > 0
+        ? { mapping: JSON.stringify(mapping) }
+        : undefined;
+    return apiClient.upload<UploadResponse>('/api/ingestion/upload', file, extraFields);
   },
 
   /**

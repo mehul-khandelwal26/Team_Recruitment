@@ -9,6 +9,7 @@ import {
   RotateCcw,
   Sparkles,
   Info,
+  TableProperties,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -16,7 +17,7 @@ import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/ca
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TruncatedId } from '@/components/common/TruncatedId';
-import { useWizardExtractions } from '@/hooks/useEvaluationWizard';
+import { useWizardExtractions, useDatasetRecord } from '@/hooks/useEvaluationWizard';
 import type { DatasetSummary, ExtractionRunSummary } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -107,6 +108,27 @@ export const Step2Signals: React.FC<Step2SignalsProps> = ({
     isError: isRunsError,
     refetch: refetchRuns,
   } = useWizardExtractions(selectedDataset.dataset_id);
+
+  const { data: activeDatasetRecord } = useDatasetRecord(selectedDataset.dataset_id);
+  const activeMapping: Record<string, string> = React.useMemo(() => {
+    return (
+      (selectedDataset.mapping as Record<string, string>) ||
+      (activeDatasetRecord?.mapping as Record<string, string>) ||
+      {}
+    );
+  }, [selectedDataset, activeDatasetRecord]);
+
+  const mappedAcademicCols = React.useMemo(() => {
+    return Object.entries(activeMapping).filter(([_, tgt]) =>
+      ['cgpa', 'academic_year'].includes(tgt.toLowerCase())
+    );
+  }, [activeMapping]);
+
+  const mappedGithubCols = React.useMemo(() => {
+    return Object.entries(activeMapping).filter(([_, tgt]) =>
+      tgt.toLowerCase() === 'github_url'
+    );
+  }, [activeMapping]);
 
   const toggleSignal = (key: string) => {
     if (selectedSignals.includes(key)) {
@@ -212,20 +234,42 @@ export const Step2Signals: React.FC<Step2SignalsProps> = ({
       </div>
 
       {/* Dataset Context Bar */}
-      <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-card text-xs">
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <span>Active Dataset:</span>
-          <strong className="text-foreground">{selectedDataset.filename}</strong>
-          <span>·</span>
-          <span>
-            ID: <TruncatedId id={selectedDataset.dataset_id} />
-          </span>
-          <span>·</span>
-          <span>{selectedDataset.teams_count} teams</span>
+      <div className="p-3 rounded-lg border border-border bg-card text-xs space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <span>Active Dataset:</span>
+            <strong className="text-foreground">{selectedDataset.filename}</strong>
+            <span>·</span>
+            <span>
+              ID: <TruncatedId id={selectedDataset.dataset_id} />
+            </span>
+            <span>·</span>
+            <span>{selectedDataset.teams_count} teams</span>
+          </div>
+          <Badge variant="outline" className="font-mono text-[10px] uppercase">
+            {selectedDataset.file_type}
+          </Badge>
         </div>
-        <Badge variant="outline" className="font-mono text-[10px] uppercase">
-          {selectedDataset.file_type}
-        </Badge>
+
+        {/* Active Applied Column Mappings */}
+        {Object.keys(activeMapping).length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-border/60">
+            <div className="flex items-center gap-1 text-[10px] font-semibold text-forest-800 uppercase tracking-wider">
+              <TableProperties className="h-3 w-3 text-forest-700" />
+              <span>Applied Ingestion Field Mappings:</span>
+            </div>
+            {Object.entries(activeMapping).map(([orig, tgt]) => (
+              <span
+                key={orig}
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-forest-50 border border-forest-200 font-mono text-[10px] text-forest-950"
+              >
+                <span className="font-semibold">{orig}</span>
+                <span className="text-forest-600">→</span>
+                <span className="font-bold text-forest-900">{tgt}</span>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* MODE 1: CONFIGURE SIGNALS */}
@@ -239,9 +283,16 @@ export const Step2Signals: React.FC<Step2SignalsProps> = ({
                   <GraduationCap className="h-3.5 w-3.5" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-semibold text-foreground">
-                    Academic Performance Signals
-                  </h4>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-semibold text-foreground">
+                      Academic Performance Signals
+                    </h4>
+                    {mappedAcademicCols.map(([orig, tgt]) => (
+                      <Badge key={orig} variant="forest" className="text-[9px] font-mono py-0">
+                        Mapped: "{orig}" → {tgt}
+                      </Badge>
+                    ))}
+                  </div>
                   <p className="text-[11px] text-muted-foreground">
                     Extracted deterministically from registration metadata. Zero external network calls.
                   </p>
@@ -317,9 +368,16 @@ export const Step2Signals: React.FC<Step2SignalsProps> = ({
                   <Github className="h-3.5 w-3.5" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-semibold text-foreground">
-                    GitHub Technical & Activity Signals
-                  </h4>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-semibold text-foreground">
+                      GitHub Technical & Activity Signals
+                    </h4>
+                    {mappedGithubCols.map(([orig, tgt]) => (
+                      <Badge key={orig} variant="forest" className="text-[9px] font-mono py-0">
+                        Mapped: "{orig}" → {tgt}
+                      </Badge>
+                    ))}
+                  </div>
                   <p className="text-[11px] text-muted-foreground">
                     Optional candidate developer metrics gathered via GitHub API.
                   </p>

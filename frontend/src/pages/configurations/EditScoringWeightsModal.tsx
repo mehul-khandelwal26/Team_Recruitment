@@ -165,6 +165,8 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
 
   const [criteria, setCriteria] = useState<EvaluationCriterionInput[]>([]);
   const [expandedCritIndex, setExpandedCritIndex] = useState<number | null>(null);
+  const [newCatName, setNewCatName] = useState<Record<number, string>>({});
+  const [newCatScore, setNewCatScore] = useState<Record<number, string>>({});
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -181,23 +183,47 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
       setIsSettingsOpen(false);
 
       setCriteria(
-        (config.criteria || []).map((c) => ({
-          criterion_id: c.criterion_id,
-          name: c.name,
-          description: c.description,
-          target_signal_key: c.target_signal_key,
-          criterion_type: c.criterion_type as any,
-          weight: c.weight,
-          is_enabled: c.is_enabled,
-          normalization: c.normalization ? JSON.parse(JSON.stringify(c.normalization)) : {},
-          aggregation: c.aggregation as any,
-          top_k_value: c.top_k_value,
-          missing_data_policy: (c.missing_data_policy as any) || 'exclude_and_renormalize',
-          confidence_adjustment: c.confidence_adjustment,
-          config: c.config || {},
-        }))
+        (config.criteria || []).map((c) => {
+          let norm = c.normalization ? JSON.parse(JSON.stringify(c.normalization)) : {};
+          if (c.criterion_type === 'categorical') {
+            if (
+              !norm.categorical_mapping ||
+              !norm.categorical_mapping.category_scores ||
+              Object.keys(norm.categorical_mapping.category_scores).length === 0
+            ) {
+              const foundSig = AVAILABLE_SIGNALS.find((s) => s.signal_key === c.target_signal_key);
+              norm = {
+                ...norm,
+                categorical_mapping: foundSig?.normalization?.categorical_mapping
+                  ? JSON.parse(JSON.stringify(foundSig.normalization.categorical_mapping))
+                  : {
+                      category_scores: { 'Option A': 0.5, 'Option B': 1.0 },
+                      default_score: 0.5,
+                      case_sensitive: false,
+                    },
+              };
+            }
+          }
+          return {
+            criterion_id: c.criterion_id,
+            name: c.name,
+            description: c.description,
+            target_signal_key: c.target_signal_key,
+            criterion_type: c.criterion_type as any,
+            weight: c.weight,
+            is_enabled: c.is_enabled,
+            normalization: norm,
+            aggregation: c.aggregation as any,
+            top_k_value: c.top_k_value,
+            missing_data_policy: (c.missing_data_policy as any) || 'exclude_and_renormalize',
+            confidence_adjustment: c.confidence_adjustment,
+            config: c.config || {},
+          };
+        })
       );
       setExpandedCritIndex(null);
+      setNewCatName({});
+      setNewCatScore({});
       setIsAddMenuOpen(false);
       setShowConfirm(false);
       setErrorMessage(null);
@@ -288,6 +314,126 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
     });
   };
 
+  // Categorical mapping: change single category score
+  const handleCategoryScoreChange = (index: number, catKey: string, rawVal: string) => {
+    const val = parseFloat(rawVal);
+    const score = isNaN(val) ? 0 : Math.min(1.0, Math.max(0.0, val));
+    setCriteria((prev) => {
+      const copy = [...prev];
+      const crit = copy[index];
+      const norm = crit.normalization || {};
+      const catMap = norm.categorical_mapping || {
+        category_scores: {} as Record<string, number>,
+        default_score: 0.5,
+        case_sensitive: false,
+      };
+      copy[index] = {
+        ...crit,
+        normalization: {
+          ...norm,
+          categorical_mapping: {
+            ...catMap,
+            case_sensitive: catMap.case_sensitive ?? false,
+            category_scores: {
+              ...(catMap.category_scores || {}),
+              [catKey]: score,
+            },
+          },
+        },
+      };
+      return copy;
+    });
+  };
+
+  // Categorical mapping: add category
+  const handleAddCategory = (index: number, catKey: string, rawScore: string) => {
+    const cleanKey = catKey.trim();
+    if (!cleanKey) return;
+    const val = parseFloat(rawScore);
+    const score = isNaN(val) ? 0.5 : Math.min(1.0, Math.max(0.0, val));
+    setCriteria((prev) => {
+      const copy = [...prev];
+      const crit = copy[index];
+      const norm = crit.normalization || {};
+      const catMap = norm.categorical_mapping || {
+        category_scores: {} as Record<string, number>,
+        default_score: 0.5,
+        case_sensitive: false,
+      };
+      copy[index] = {
+        ...crit,
+        normalization: {
+          ...norm,
+          categorical_mapping: {
+            ...catMap,
+            case_sensitive: catMap.case_sensitive ?? false,
+            category_scores: {
+              ...(catMap.category_scores || {}),
+              [cleanKey]: score,
+            },
+          },
+        },
+      };
+      return copy;
+    });
+  };
+
+  // Categorical mapping: remove category
+  const handleRemoveCategory = (index: number, catKey: string) => {
+    setCriteria((prev) => {
+      const copy = [...prev];
+      const crit = copy[index];
+      const norm = crit.normalization || {};
+      const catMap = norm.categorical_mapping || {
+        category_scores: {} as Record<string, number>,
+        default_score: 0.5,
+        case_sensitive: false,
+      };
+      const currentScores: Record<string, number> = { ...(catMap.category_scores || {}) };
+      delete currentScores[catKey];
+      copy[index] = {
+        ...crit,
+        normalization: {
+          ...norm,
+          categorical_mapping: {
+            ...catMap,
+            case_sensitive: catMap.case_sensitive ?? false,
+            category_scores: currentScores,
+          },
+        },
+      };
+      return copy;
+    });
+  };
+
+  // Categorical mapping: change default fallback score
+  const handleCategoryDefaultScoreChange = (index: number, rawVal: string) => {
+    const val = parseFloat(rawVal);
+    const defScore = isNaN(val) ? 0.5 : Math.min(1.0, Math.max(0.0, val));
+    setCriteria((prev) => {
+      const copy = [...prev];
+      const crit = copy[index];
+      const norm = crit.normalization || {};
+      const catMap = norm.categorical_mapping || {
+        category_scores: {} as Record<string, number>,
+        default_score: 0.5,
+        case_sensitive: false,
+      };
+      copy[index] = {
+        ...crit,
+        normalization: {
+          ...norm,
+          categorical_mapping: {
+            ...catMap,
+            case_sensitive: catMap.case_sensitive ?? false,
+            default_score: defScore,
+          },
+        },
+      };
+      return copy;
+    });
+  };
+
   // Remove a criterion
   const handleRemoveCriterion = (index: number) => {
     setCriteria((prev) => prev.filter((_, i) => i !== index));
@@ -348,6 +494,18 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
         if (typeof min_value === 'number' && typeof max_value === 'number') {
           if (max_value <= min_value) {
             return `Criterion "${c.name}": max_value (${max_value}) must be strictly greater than min_value (${min_value}).`;
+          }
+        }
+      }
+      if (c.criterion_type === 'categorical') {
+        const catMap = c.normalization?.categorical_mapping;
+        const catScores = catMap?.category_scores || {};
+        if (Object.keys(catScores).length === 0) {
+          return `Criterion "${c.name}": categorical mapping must have at least one category score defined.`;
+        }
+        for (const [catName, score] of Object.entries(catScores)) {
+          if (typeof score !== 'number' || score < 0.0 || score > 1.0) {
+            return `Criterion "${c.name}": score for category "${catName}" must be between 0.0 and 1.0.`;
           }
         }
       }
@@ -693,6 +851,21 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                   </span>
                                 </button>
                               )}
+
+                              {c.criterion_type === 'categorical' && (
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedCritIndex(isExpanded ? null : idx)}
+                                  className="text-[10px] text-forest-700 hover:text-forest-800 font-medium flex items-center gap-0.5 mt-1 cursor-pointer"
+                                >
+                                  <Sliders className="h-2.5 w-2.5" />
+                                  <span>
+                                    {isExpanded
+                                      ? 'Hide Category Rubric'
+                                      : `Category Rubric: [${Object.keys(c.normalization?.categorical_mapping?.category_scores || {}).length} categories]`}
+                                  </span>
+                                </button>
+                              )}
                             </td>
                             <td className="py-2.5 px-3 align-top pt-2">
                               <select
@@ -773,7 +946,7 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                     Linear Range Mapping:
                                   </span>
                                   <div className="flex items-center gap-1.5">
-                                    <span className="text-[10px] text-muted-foreground">Min (0.0):</span>
+                                    <span className="text-[10px] text-muted-foreground font-medium">Min (0.0):</span>
                                     <Input
                                       type="number"
                                       step="0.5"
@@ -781,11 +954,11 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                       onChange={(e) =>
                                         handleLinearRangeChange(idx, 'min', parseFloat(e.target.value) || 0)
                                       }
-                                      className="h-6 w-16 text-xs font-mono"
+                                      className="h-7 w-20 text-xs font-mono text-center px-1.5 focus:ring-forest-600"
                                     />
                                   </div>
                                   <div className="flex items-center gap-1.5">
-                                    <span className="text-[10px] text-muted-foreground">Max (1.0):</span>
+                                    <span className="text-[10px] text-muted-foreground font-medium">Max (1.0):</span>
                                     <Input
                                       type="number"
                                       step="0.5"
@@ -793,8 +966,121 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                       onChange={(e) =>
                                         handleLinearRangeChange(idx, 'max', parseFloat(e.target.value) || 1)
                                       }
-                                      className="h-6 w-16 text-xs font-mono"
+                                      className="h-7 w-20 text-xs font-mono text-center px-1.5 focus:ring-forest-600"
                                     />
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+
+                          {/* Expanded Categorical Rubric Editor Row */}
+                          {isExpanded && c.criterion_type === 'categorical' && (
+                            <tr className="bg-muted/30">
+                              <td colSpan={7} className="p-3 border-t border-border/60">
+                                <div className="bg-card p-3 rounded-lg border border-border space-y-3">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 pb-2">
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant="forest" className="font-mono text-[9px]">
+                                        Categorical Scoring Rubric
+                                      </Badge>
+                                      <span className="text-[11px] font-semibold text-foreground">
+                                        Map discrete values to normalized scores [0.0 to 1.0]
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] text-muted-foreground font-medium">Default Fallback Score:</span>
+                                      <Input
+                                        type="number"
+                                        step="0.05"
+                                        min="0"
+                                        max="1"
+                                        value={c.normalization?.categorical_mapping?.default_score ?? 0.5}
+                                        onChange={(e) => handleCategoryDefaultScoreChange(idx, e.target.value)}
+                                        className="h-7 w-20 text-xs font-mono text-center px-1.5 focus:ring-forest-600"
+                                        title="Fallback score for unlisted categories (0.0 to 1.0)"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* Existing Category Scores Grid */}
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                                    {Object.entries(c.normalization?.categorical_mapping?.category_scores || {}).map(
+                                      ([catKey, catScore]) => {
+                                        const catCount = Object.keys(c.normalization?.categorical_mapping?.category_scores || {}).length;
+                                        return (
+                                          <div
+                                            key={catKey}
+                                            className="flex items-center justify-between gap-2 p-2 rounded-md border border-border bg-muted/20 text-xs"
+                                          >
+                                            <span className="font-semibold text-foreground truncate min-w-[60px]" title={catKey}>
+                                              {catKey}
+                                            </span>
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                              <Input
+                                                type="number"
+                                                step="0.05"
+                                                min="0"
+                                                max="1"
+                                                value={catScore as number}
+                                                onChange={(e) => handleCategoryScoreChange(idx, catKey, e.target.value)}
+                                                className="h-7 w-20 text-xs font-mono text-center px-1.5 focus:ring-forest-600"
+                                                title={`Score for ${catKey} (0.0 to 1.0)`}
+                                              />
+                                              <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                disabled={catCount <= 1}
+                                                onClick={() => handleRemoveCategory(idx, catKey)}
+                                                className="h-6 w-6 text-muted-foreground hover:text-red-600 disabled:opacity-30"
+                                                title={`Delete category ${catKey}`}
+                                              >
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                              </Button>
+                                            </div>
+                                          </div>
+                                        );
+                                      }
+                                    )}
+                                  </div>
+
+                                  {/* Add Category Form */}
+                                  <div className="flex items-center gap-2 pt-2 border-t border-border/50">
+                                    <Input
+                                      placeholder="New category name (e.g. Master's, 5th Year)..."
+                                      value={newCatName[idx] || ''}
+                                      onChange={(e) => setNewCatName((prev) => ({ ...prev, [idx]: e.target.value }))}
+                                      className="h-7 text-xs flex-1"
+                                    />
+                                    <Input
+                                      type="number"
+                                      step="0.05"
+                                      min="0"
+                                      max="1"
+                                      placeholder="Score (0.0 - 1.0)"
+                                      value={newCatScore[idx] ?? '1.0'}
+                                      onChange={(e) => setNewCatScore((prev) => ({ ...prev, [idx]: e.target.value }))}
+                                      className="h-7 w-28 text-xs font-mono text-center px-1.5 focus:ring-forest-600"
+                                    />
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        const name = newCatName[idx];
+                                        const score = newCatScore[idx] ?? '1.0';
+                                        if (name && name.trim()) {
+                                          handleAddCategory(idx, name.trim(), score);
+                                          setNewCatName((prev) => ({ ...prev, [idx]: '' }));
+                                          setNewCatScore((prev) => ({ ...prev, [idx]: '1.0' }));
+                                        }
+                                      }}
+                                      className="h-7 px-3 text-xs gap-1 text-forest-700 border-forest-300 hover:bg-forest-50"
+                                    >
+                                      <Plus className="h-3.5 w-3.5" />
+                                      Add Category
+                                    </Button>
                                   </div>
                                 </div>
                               </td>
