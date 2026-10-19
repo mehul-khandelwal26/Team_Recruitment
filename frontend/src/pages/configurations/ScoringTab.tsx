@@ -8,18 +8,39 @@ import {
   Layers,
   UserCheck,
   RefreshCw,
+  Trash2,
+  Lock,
+  Loader2,
 } from 'lucide-react';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
   useScoringConfigs,
   useScoringConfig,
   useScoringConfigVersions,
+  useDeleteScoringConfigMutation,
 } from '@/hooks/useConfigurations';
 import { EditScoringWeightsModal } from './EditScoringWeightsModal';
 import { CreateScoringConfigModal } from './CreateScoringConfigModal';
+
+const BUILTIN_SCORING_PRESETS = [
+  'balanced',
+  'technical_heavy',
+  'academic_heavy',
+  'technical_focus',
+  'academic_focus',
+  'hackathon_demo',
+];
 
 interface ScoringTabProps {
   initialConfigId?: string;
@@ -31,6 +52,7 @@ export const ScoringTab: React.FC<ScoringTabProps> = ({
   initialVersion,
 }) => {
   const configsQuery = useScoringConfigs();
+  const deleteMutation = useDeleteScoringConfigMutation();
 
   const [selectedConfigId, setSelectedConfigId] = useState<string | null>(
     initialConfigId || null
@@ -38,6 +60,11 @@ export const ScoringTab: React.FC<ScoringTabProps> = ({
   const [selectedVersion, setSelectedVersion] = useState<number | undefined>(
     initialVersion
   );
+
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const configs = configsQuery.data || [];
   const currentConfigId = selectedConfigId || configs[0]?.config_id || null;
@@ -53,8 +80,20 @@ export const ScoringTab: React.FC<ScoringTabProps> = ({
   const singleConfigQuery = useScoringConfig(currentConfigId, effectiveVersion);
   const currentConfig = singleConfigQuery.data || configs.find((c) => c.config_id === currentConfigId);
 
-  const [isEditOpen, setIsEditOpen] = useState(false);
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const handleConfirmDelete = async () => {
+    if (!currentConfig) return;
+    setDeleteError(null);
+    try {
+      await deleteMutation.mutateAsync(currentConfig.config_id);
+      setIsDeleteOpen(false);
+      const remaining = configs.filter((c) => c.config_id !== currentConfig.config_id);
+      setSelectedConfigId(remaining[0]?.config_id || null);
+      setSelectedVersion(undefined);
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.message || 'Failed to delete scoring model.';
+      setDeleteError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    }
+  };
 
   const handleSelectConfig = (configId: string) => {
     setSelectedConfigId(configId);
@@ -161,8 +200,13 @@ export const ScoringTab: React.FC<ScoringTabProps> = ({
                   </code>
                 </div>
                 <div className="mt-2">
-                  <h4 className="text-xs font-bold text-foreground truncate">{cfg.name}</h4>
-                  <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1 leading-snug">
+                  <h4 className="text-xs font-bold text-foreground truncate cursor-help" title={cfg.name}>
+                    {cfg.name}
+                  </h4>
+                  <p
+                    className="text-[11px] text-muted-foreground line-clamp-2 mt-1 leading-snug cursor-help"
+                    title={cfg.description || 'No description provided.'}
+                  >
                     {cfg.description || 'No description provided.'}
                   </p>
                 </div>
@@ -246,6 +290,29 @@ export const ScoringTab: React.FC<ScoringTabProps> = ({
                     <Edit3 className="h-3.5 w-3.5" />
                     Edit Weights
                   </Button>
+
+                  {/* Builtin protection / Delete button */}
+                  {BUILTIN_SCORING_PRESETS.includes(currentConfig.config_id) ? (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] text-muted-foreground border-dashed flex items-center gap-1 py-1"
+                      title="Built-in system presets cannot be deleted"
+                    >
+                      <Lock className="h-3 w-3" />
+                      Preset (Protected)
+                    </Badge>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsDeleteOpen(true)}
+                      className="gap-1.5 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                      title="Deactivate this custom scoring model"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Delete
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -451,6 +518,72 @@ export const ScoringTab: React.FC<ScoringTabProps> = ({
           configsQuery.refetch();
         }}
       />
+
+      {/* Delete Confirmation Dialog */}
+      {currentConfig && (
+        <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+          <DialogContent onClose={() => setIsDeleteOpen(false)} className="max-w-md">
+            <DialogHeader>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="border-red-300 text-red-700 bg-red-50 text-[10px]">
+                  Deactivate Model
+                </Badge>
+              </div>
+              <DialogTitle className="text-base font-semibold text-red-950">
+                Delete Scoring Model: {currentConfig.name}
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                Are you sure you want to deactivate <span className="font-mono font-semibold text-foreground">{currentConfig.config_id}</span>?
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3 py-2 text-xs text-muted-foreground leading-relaxed">
+              <p>
+                This custom scoring model will be deactivated and removed from active selection pickers and wizard pipelines.
+              </p>
+              <p className="text-[11px] bg-muted/60 p-2.5 rounded border border-border">
+                <strong>Historical Reproducibility:</strong> Prior evaluations conducted with this scoring model will remain fully preserved and intact.
+              </p>
+              {deleteError && (
+                <div className="p-2.5 rounded border border-red-300 bg-red-50 text-red-800 text-xs flex items-start gap-1.5">
+                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>{deleteError}</span>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsDeleteOpen(false)}
+                disabled={deleteMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleConfirmDelete}
+                disabled={deleteMutation.isPending}
+                className="gap-1.5"
+              >
+                {deleteMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Confirm Delete
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 };

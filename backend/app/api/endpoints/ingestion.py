@@ -136,6 +136,7 @@ async def upload_registration_file(
         )
         saved = default_dataset_store.save(record)
         result.dataset_id = saved.dataset_id
+        result.mapping = saved.mapping
 
     return result
 

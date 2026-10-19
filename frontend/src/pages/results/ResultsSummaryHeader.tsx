@@ -8,6 +8,7 @@ import {
   AlertCircle,
   PlusCircle,
   Calendar,
+  History,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -113,6 +114,17 @@ export const ResultsSummaryHeader: React.FC<ResultsSummaryHeaderProps> = ({
 
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate('/results')}
+            className="text-xs gap-1.5 shadow-sm"
+            title="Browse all historical ranking evaluation runs"
+          >
+            <History className="h-3.5 w-3.5 text-forest-700" />
+            All Runs
+          </Button>
+
           <Button
             variant="outline"
             size="sm"

@@ -62,22 +62,47 @@ export const CreateScoringConfigModal: React.FC<CreateScoringConfigModalProps> =
       return;
     }
 
-    const template = existingConfigs.find((c) => c.config_id === basePresetId);
-    const templateCriteria: EvaluationCriterionInput[] = (template?.criteria || []).map((c) => ({
-      criterion_id: c.criterion_id,
-      name: c.name,
-      description: c.description,
-      target_signal_key: c.target_signal_key,
-      criterion_type: c.criterion_type as any,
-      weight: c.weight,
-      is_enabled: c.is_enabled,
-      normalization: c.normalization,
-      aggregation: c.aggregation as any,
-      top_k_value: c.top_k_value,
-      missing_data_policy: c.missing_data_policy as any,
-      confidence_adjustment: c.confidence_adjustment,
-      config: c.config || {},
-    }));
+    const isScratch = basePresetId === '__scratch__';
+    const template = isScratch ? null : existingConfigs.find((c) => c.config_id === basePresetId);
+
+    const starterCriteria: EvaluationCriterionInput[] = [
+      {
+        criterion_id: 'crit_repos',
+        name: 'Public GitHub Repositories',
+        description: 'Measures candidate development activity via public GitHub repositories.',
+        target_signal_key: 'github_public_repo_count',
+        criterion_type: 'numeric_range' as any,
+        weight: 1.0,
+        is_enabled: true,
+        normalization: {
+          linear_range: {
+            min_value: 0,
+            max_value: 20,
+          },
+        },
+        aggregation: 'mean' as any,
+        missing_data_policy: 'exclude_and_renormalize' as any,
+        config: {},
+      },
+    ];
+
+    const templateCriteria: EvaluationCriterionInput[] = isScratch
+      ? starterCriteria
+      : (template?.criteria || []).map((c) => ({
+          criterion_id: c.criterion_id,
+          name: c.name,
+          description: c.description,
+          target_signal_key: c.target_signal_key,
+          criterion_type: c.criterion_type as any,
+          weight: c.weight,
+          is_enabled: c.is_enabled,
+          normalization: c.normalization,
+          aggregation: c.aggregation as any,
+          top_k_value: c.top_k_value,
+          missing_data_policy: c.missing_data_policy as any,
+          confidence_adjustment: c.confidence_adjustment,
+          config: c.config || {},
+        }));
 
     setErrorMessage(null);
     try {
@@ -189,14 +214,15 @@ export const CreateScoringConfigModal: React.FC<CreateScoringConfigModalProps> =
               onChange={(e) => setBasePresetId(e.target.value)}
               className="w-full h-8 text-xs rounded border border-border bg-card px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-forest-600"
             >
+              <option value="__scratch__">✨ Start from Scratch (Clean Custom Model)</option>
               {existingConfigs.map((cfg) => (
                 <option key={cfg.config_id} value={cfg.config_id}>
-                  {cfg.name} ({cfg.criteria?.length || 0} criteria)
+                  Clone from: {cfg.name} ({cfg.criteria?.length || 0} criteria)
                 </option>
               ))}
             </select>
             <p className="text-[10px] text-muted-foreground">
-              Copies criteria and initial weights from this model.
+              Start with a clean single starter criterion to build custom weights, or clone an existing model.
             </p>
           </div>
         </div>

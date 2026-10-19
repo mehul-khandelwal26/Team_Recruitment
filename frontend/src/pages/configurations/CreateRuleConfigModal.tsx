@@ -58,8 +58,27 @@ export const CreateRuleConfigModal: React.FC<CreateRuleConfigModalProps> = ({
       return;
     }
 
-    const template = existingConfigs.find((c) => c.config_id === basePresetId);
-    const templateRules = template?.rules || [];
+    const isScratch = basePresetId === '__scratch__';
+    const template = isScratch ? null : existingConfigs.find((c) => c.config_id === basePresetId);
+
+    const starterRules = [
+      {
+        rule_id: 'rule_team_min_size',
+        name: 'Minimum Team Size',
+        rule_type: 'team_size_min',
+        description: 'Requires teams to have at least 2 registered members.',
+        severity: 'hard' as const,
+        scope: 'team' as const,
+        order: 0,
+        on_missing: 'manual_review' as const,
+        is_enabled: true,
+        parameters: { min_size: 2 },
+      },
+    ];
+
+    const rulesToCreate = isScratch
+      ? starterRules
+      : (template?.rules || []).map((r) => ({ ...r }));
 
     setErrorMessage(null);
     try {
@@ -67,7 +86,7 @@ export const CreateRuleConfigModal: React.FC<CreateRuleConfigModalProps> = ({
         config_id: cleanId,
         name: name.trim(),
         description: description.trim(),
-        rules: templateRules.map((r) => ({ ...r })),
+        rules: rulesToCreate as any,
         global_config: template?.global_config || {
           lead_field: 'role',
           lead_values: ['lead', 'team lead', 'captain', 'leader'],
@@ -157,14 +176,15 @@ export const CreateRuleConfigModal: React.FC<CreateRuleConfigModalProps> = ({
               onChange={(e) => setBasePresetId(e.target.value)}
               className="w-full h-8 text-xs rounded border border-border bg-card px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-forest-600"
             >
+              <option value="__scratch__">✨ Start from Scratch (Blank - 0 rules)</option>
               {existingConfigs.map((cfg) => (
                 <option key={cfg.config_id} value={cfg.config_id}>
-                  {cfg.name} ({cfg.rules?.length || 0} rules)
+                  Clone from: {cfg.name} ({cfg.rules?.length || 0} rules)
                 </option>
               ))}
             </select>
             <p className="text-[10px] text-muted-foreground">
-              Copies evaluator rules from this configuration into the newly created config.
+              Start with an empty rule set to build custom criteria from scratch, or clone an existing preset.
             </p>
           </div>
         </div>

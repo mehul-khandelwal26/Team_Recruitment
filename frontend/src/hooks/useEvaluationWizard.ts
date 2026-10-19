@@ -10,6 +10,7 @@ import type {
 
 export const WIZARD_QUERY_KEYS = {
   datasets: (limit = 50) => ['wizard', 'datasets', limit] as const,
+  datasetRecord: (datasetId?: string) => ['wizard', 'dataset', datasetId] as const,
   extractionsForDataset: (datasetId?: string) => ['wizard', 'extractions', datasetId] as const,
   ruleConfigs: () => ['wizard', 'rules', 'configs'] as const,
   scoringConfigs: () => ['wizard', 'scoring', 'configs'] as const,
@@ -24,6 +25,18 @@ export function useWizardDatasets(limit = 50) {
     queryKey: WIZARD_QUERY_KEYS.datasets(limit),
     queryFn: () => apiService.getDatasetSummaries(limit),
     staleTime: 1000 * 30,
+  });
+}
+
+/**
+ * Hook to retrieve a specific dataset record with full schema and applied field mappings.
+ */
+export function useDatasetRecord(datasetId?: string) {
+  return useQuery({
+    queryKey: WIZARD_QUERY_KEYS.datasetRecord(datasetId),
+    queryFn: () => (datasetId ? apiService.getDataset(datasetId) : null),
+    enabled: Boolean(datasetId),
+    staleTime: 1000 * 60,
   });
 }
 

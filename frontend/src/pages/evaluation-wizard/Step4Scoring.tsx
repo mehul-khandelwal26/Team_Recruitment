@@ -179,7 +179,10 @@ export const Step4Scoring: React.FC<Step4ScoringProps> = ({
                             key={crit.criterion_id}
                             className="flex items-center justify-between text-[11px]"
                           >
-                            <span className="font-medium text-foreground truncate max-w-[160px]">
+                            <span
+                              className="font-medium text-foreground truncate max-w-[160px] cursor-help"
+                              title={crit.name}
+                            >
                               {crit.name}
                             </span>
                             <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
