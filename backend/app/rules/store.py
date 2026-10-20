@@ -25,6 +25,7 @@ class RunStore(Protocol):
     def save(self, record: EligibilityRunResponse) -> None: ...
     def get(self, run_id: str) -> Optional[EligibilityRunResponse]: ...
     def list_runs(self, config_id: Optional[str] = None) -> list[EligibilityRunResponse]: ...
+    def delete(self, run_id: str) -> bool: ...
     def reset(self) -> None: ...
 
 
@@ -62,6 +63,13 @@ class InMemoryRunStore:
         if config_id:
             runs = [r for r in runs if r.config_id == config_id]
         return [r.model_copy(deep=True) for r in runs]
+
+    def delete(self, run_id: str) -> bool:
+        """Delete eligibility run by run_id."""
+        if run_id in self._runs:
+            del self._runs[run_id]
+            return True
+        return False
 
     def reset(self) -> None:
         self._runs.clear()

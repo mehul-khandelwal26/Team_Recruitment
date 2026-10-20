@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Trophy,
   AlertCircle,
@@ -7,12 +8,16 @@ import {
   PlusCircle,
   ArrowRight,
   Layers,
+  Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 
 import { TruncatedId } from '@/components/common/TruncatedId';
+import { DeleteConfirmModal } from '@/components/common/DeleteConfirmModal';
+import { apiService } from '@/lib/api-services';
+import type { RankingRunSummaryItem } from '@/types';
 import {
   useRankingRun,
   useEligibilityRun,
@@ -26,6 +31,7 @@ import { TeamDetailModal, type UnifiedLeaderboardRow } from './results/TeamDetai
 export const ResultsPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const runId = searchParams.get('run_id');
 
   // Queries
@@ -38,7 +44,10 @@ export const ResultsPage: React.FC = () => {
   } = useRankingRun(runId);
 
   const { data: eligibilityRun } = useEligibilityRun(rankingRun?.eligibility_run_id);
-  const { data: recentRuns, isLoading: isLoadingRecent } = useRecentRankingRuns(10);
+  const { data: recentRuns, isLoading: isLoadingRecent, refetch: refetchRecent } = useRecentRankingRuns(10);
+
+  // Run to delete in history view
+  const [runToDelete, setRunToDelete] = useState<RankingRunSummaryItem | null>(null);
 
   // Stale state tracking (set when reviewer applies a manual eligibility override)
   const [isStale, setIsStale] = useState<boolean>(false);
@@ -142,7 +151,7 @@ export const ResultsPage: React.FC = () => {
                     <th className="py-2.5 px-3 text-left font-semibold">Evaluated At</th>
                     <th className="py-2.5 px-3 text-right font-semibold">Top-X</th>
                     <th className="py-2.5 px-3 text-right font-semibold">Selected</th>
-                    <th className="py-2.5 px-3 text-right font-semibold">Action</th>
+                    <th className="py-2.5 px-3 text-right font-semibold">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -163,14 +172,26 @@ export const ResultsPage: React.FC = () => {
                         {r.selected_teams_count || r.selected || 0}
                       </td>
                       <td className="py-2.5 px-3 text-right">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2 text-xs gap-1 text-forest-700 hover:text-forest-900 hover:bg-forest-50"
-                        >
-                          View
-                          <ArrowRight className="h-3 w-3" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-xs gap-1 text-forest-700 hover:text-forest-900 hover:bg-forest-50"
+                            onClick={() => navigate(`/results?run_id=${r.run_id}`)}
+                          >
+                            View
+                            <ArrowRight className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            title={`Delete ranking run ${r.run_id}`}
+                            onClick={() => setRunToDelete(r)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -179,6 +200,36 @@ export const ResultsPage: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* Delete Modal for Recent Runs List */}
+        {runToDelete && (
+          <DeleteConfirmModal
+            open={Boolean(runToDelete)}
+            onOpenChange={(isOpen) => {
+              if (!isOpen) setRunToDelete(null);
+            }}
+            itemType="ranking_run"
+            itemId={runToDelete.run_id}
+            itemTitle={runToDelete.dataset_filename ? `Ranking for ${runToDelete.dataset_filename}` : undefined}
+            onDownloadBackup={async () => {
+              const { blob, filename } = await apiService.exportRankingRunCsv(runToDelete.run_id);
+              const blobUrl = window.URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = blobUrl;
+              a.download = filename || `ranking_run_${runToDelete.run_id}.csv`;
+              document.body.appendChild(a);
+              a.click();
+              window.URL.revokeObjectURL(blobUrl);
+              document.body.removeChild(a);
+            }}
+            onSuccess={() => {
+              queryClient.removeQueries({ queryKey: ['ranking', 'run', runToDelete.run_id] });
+              queryClient.invalidateQueries({ queryKey: ['ranking'] });
+              refetchRecent();
+              setRunToDelete(null);
+            }}
+          />
+        )}
       </div>
     );
   }

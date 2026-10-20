@@ -14,7 +14,11 @@ import {
   Database,
   CheckCircle2,
   AlertTriangle,
+  Trash2,
 } from 'lucide-react';
+import { DeleteConfirmModal } from '@/components/common/DeleteConfirmModal';
+import { apiService } from '@/lib/api-services';
+import type { DatasetSummary, ExtractionRunSummary, RankingRunSummaryItem } from '@/types';
 import {
   useDatasetSummaries,
   useExtractionRunSummaries,
@@ -44,6 +48,10 @@ export const DashboardPage: React.FC = () => {
   const datasets = datasetsQuery.data || [];
   const extractions = extractionsQuery.data || [];
   const rankingRuns = rankingsQuery.data || [];
+
+  const [datasetToDelete, setDatasetToDelete] = React.useState<DatasetSummary | null>(null);
+  const [rankingRunToDelete, setRankingRunToDelete] = React.useState<RankingRunSummaryItem | null>(null);
+  const [extractionToDelete, setExtractionToDelete] = React.useState<ExtractionRunSummary | null>(null);
 
   return (
     <div className="space-y-8">
@@ -369,7 +377,7 @@ export const DashboardPage: React.FC = () => {
                   <TableHead className="w-[100px] text-right">Members</TableHead>
                   <TableHead className="w-[140px]">Warnings</TableHead>
                   <TableHead className="w-[190px]">Uploaded At</TableHead>
-                  <TableHead className="w-[90px] text-right">Action</TableHead>
+                  <TableHead className="w-[120px] text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -405,11 +413,22 @@ export const DashboardPage: React.FC = () => {
                       {formatDateTime(ds.uploaded_at)}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1 text-forest-700 hover:text-forest-900 hover:bg-forest-50">
-                        <Link to={`/evaluate?dataset_id=${ds.dataset_id}`}>
-                          Evaluate <ArrowRight className="h-3 w-3" />
-                        </Link>
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1 text-forest-700 hover:text-forest-900 hover:bg-forest-50">
+                          <Link to={`/evaluate?dataset_id=${ds.dataset_id}`}>
+                            Evaluate <ArrowRight className="h-3 w-3" />
+                          </Link>
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                          title={`Delete dataset ${ds.filename}`}
+                          onClick={() => setDatasetToDelete(ds)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -521,7 +540,7 @@ export const DashboardPage: React.FC = () => {
                   <TableHead className="w-[110px] text-right">Selected</TableHead>
                   <TableHead className="w-[120px] text-right">Needs Review</TableHead>
                   <TableHead className="w-[120px]">Cutoff Status</TableHead>
-                  <TableHead className="w-[80px] text-right">Action</TableHead>
+                  <TableHead className="w-[100px] text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -586,11 +605,22 @@ export const DashboardPage: React.FC = () => {
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1 text-forest-700 hover:text-forest-900 hover:bg-forest-50">
-                          <Link to={`/results?run_id=${r.run_id}`}>
-                            View <ArrowRight className="h-3 w-3" />
-                          </Link>
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1 text-forest-700 hover:text-forest-900 hover:bg-forest-50">
+                            <Link to={`/results?run_id=${r.run_id}`}>
+                              View <ArrowRight className="h-3 w-3" />
+                            </Link>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            title={`Delete ranking run ${r.run_id}`}
+                            onClick={() => setRankingRunToDelete(r)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -702,7 +732,7 @@ export const DashboardPage: React.FC = () => {
                   <TableHead className="w-[90px] text-right">Teams</TableHead>
                   <TableHead className="w-[110px]">Warnings</TableHead>
                   <TableHead className="w-[100px]">Errors</TableHead>
-                  <TableHead className="w-[90px] text-right">Action</TableHead>
+                  <TableHead className="w-[110px] text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -755,11 +785,22 @@ export const DashboardPage: React.FC = () => {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1 text-forest-700 hover:text-forest-900 hover:bg-forest-50">
-                        <Link to={`/evaluate?${ex.dataset_id ? `dataset_id=${ex.dataset_id}&` : ''}extraction_run_id=${ex.run_id}`}>
-                          Evaluate <ArrowRight className="h-3 w-3" />
-                        </Link>
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1 text-forest-700 hover:text-forest-900 hover:bg-forest-50">
+                          <Link to={`/evaluate?${ex.dataset_id ? `dataset_id=${ex.dataset_id}&` : ''}extraction_run_id=${ex.run_id}`}>
+                            Evaluate <ArrowRight className="h-3 w-3" />
+                          </Link>
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                          title={`Delete extraction run ${ex.run_id}`}
+                          onClick={() => setExtractionToDelete(ex)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -768,6 +809,71 @@ export const DashboardPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Dataset Delete Modal */}
+      {datasetToDelete && (
+        <DeleteConfirmModal
+          open={Boolean(datasetToDelete)}
+          onOpenChange={(isOpen) => {
+            if (!isOpen) setDatasetToDelete(null);
+          }}
+          itemType="dataset"
+          itemId={datasetToDelete.dataset_id}
+          itemTitle={datasetToDelete.filename}
+          onSuccess={() => {
+            datasetsQuery.refetch();
+            rankingsQuery.refetch();
+            extractionsQuery.refetch();
+            setDatasetToDelete(null);
+          }}
+        />
+      )}
+
+      {/* Ranking Run Delete Modal */}
+      {rankingRunToDelete && (
+        <DeleteConfirmModal
+          open={Boolean(rankingRunToDelete)}
+          onOpenChange={(isOpen) => {
+            if (!isOpen) setRankingRunToDelete(null);
+          }}
+          itemType="ranking_run"
+          itemId={rankingRunToDelete.run_id}
+          itemTitle={rankingRunToDelete.dataset_filename ? `Ranking for ${rankingRunToDelete.dataset_filename}` : undefined}
+          onDownloadBackup={async () => {
+            const { blob, filename } = await apiService.exportRankingRunCsv(rankingRunToDelete.run_id);
+            const blobUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = filename || `ranking_run_${rankingRunToDelete.run_id}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(blobUrl);
+            document.body.removeChild(a);
+          }}
+          onSuccess={() => {
+            rankingsQuery.refetch();
+            setRankingRunToDelete(null);
+          }}
+        />
+      )}
+
+      {/* Extraction Run Delete Modal */}
+      {extractionToDelete && (
+        <DeleteConfirmModal
+          open={Boolean(extractionToDelete)}
+          onOpenChange={(isOpen) => {
+            if (!isOpen) setExtractionToDelete(null);
+          }}
+          itemType="extraction_run"
+          itemId={extractionToDelete.run_id}
+          itemTitle={`Extraction Run (${extractionToDelete.total_teams} teams)`}
+          onSuccess={() => {
+            extractionsQuery.refetch();
+            rankingsQuery.refetch();
+            setExtractionToDelete(null);
+          }}
+        />
+      )}
     </div>
   );
 };

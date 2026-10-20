@@ -1,4 +1,5 @@
 import React from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Cpu,
   GraduationCap,
@@ -10,7 +11,9 @@ import {
   Sparkles,
   Info,
   TableProperties,
+  Trash2,
 } from 'lucide-react';
+import { DeleteConfirmModal } from '@/components/common/DeleteConfirmModal';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 
@@ -102,12 +105,15 @@ export const Step2Signals: React.FC<Step2SignalsProps> = ({
   onBack,
   onNext,
 }) => {
+  const queryClient = useQueryClient();
   const {
     data: existingRuns,
     isLoading: isLoadingRuns,
     isError: isRunsError,
     refetch: refetchRuns,
   } = useWizardExtractions(selectedDataset.dataset_id);
+
+  const [extractionToDelete, setExtractionToDelete] = React.useState<ExtractionRunSummary | null>(null);
 
   const { data: activeDatasetRecord } = useDatasetRecord(selectedDataset.dataset_id);
   const activeMapping: Record<string, string> = React.useMemo(() => {
@@ -541,12 +547,24 @@ export const Step2Signals: React.FC<Step2SignalsProps> = ({
                           </div>
                         </div>
 
-                        {isSelected && (
-                          <Badge variant="forest" className="gap-1 text-[10px]">
-                            <CheckCircle2 className="h-3 w-3" />
-                            Selected
-                          </Badge>
-                        )}
+                        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                          {isSelected && (
+                            <Badge variant="forest" className="gap-1 text-[10px]">
+                              <CheckCircle2 className="h-3 w-3" />
+                              Selected
+                            </Badge>
+                          )}
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            title={`Delete extraction run ${run.run_id}`}
+                            onClick={() => setExtractionToDelete(run)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </div>
 
                       {run.selected_signals && run.selected_signals.length > 0 && (
@@ -595,6 +613,29 @@ export const Step2Signals: React.FC<Step2SignalsProps> = ({
           </Button>
         </div>
       </div>
+
+      {/* Extraction Run Delete Modal */}
+      {extractionToDelete && (
+        <DeleteConfirmModal
+          open={Boolean(extractionToDelete)}
+          onOpenChange={(isOpen) => {
+            if (!isOpen) setExtractionToDelete(null);
+          }}
+          itemType="extraction_run"
+          itemId={extractionToDelete.run_id}
+          itemTitle={`Extraction Run (${extractionToDelete.total_teams} teams)`}
+          onSuccess={() => {
+            queryClient.removeQueries({ queryKey: ['signals', 'run', extractionToDelete.run_id] });
+            queryClient.invalidateQueries({ queryKey: ['signals'] });
+            queryClient.invalidateQueries({ queryKey: ['wizard', 'extractions'] });
+            if (selectedExtractionRun?.run_id === extractionToDelete.run_id) {
+              onSelectExtractionRun(null);
+            }
+            refetchRuns();
+            setExtractionToDelete(null);
+          }}
+        />
+      )}
     </div>
   );
 };

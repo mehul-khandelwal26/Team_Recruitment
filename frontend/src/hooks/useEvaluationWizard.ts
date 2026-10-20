@@ -25,6 +25,7 @@ export function useWizardDatasets(limit = 50) {
     queryKey: WIZARD_QUERY_KEYS.datasets(limit),
     queryFn: () => apiService.getDatasetSummaries(limit),
     staleTime: 1000 * 30,
+    refetchOnMount: 'always',
   });
 }
 
@@ -49,6 +50,7 @@ export function useWizardExtractions(datasetId?: string) {
     queryFn: () => apiService.getExtractionRunSummaries(50, datasetId),
     enabled: Boolean(datasetId),
     staleTime: 1000 * 30,
+    refetchOnMount: 'always',
   });
 }
 

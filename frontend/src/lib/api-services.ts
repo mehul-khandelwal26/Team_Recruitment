@@ -29,6 +29,9 @@ import type {
   HealthResponse,
   FieldDiscoveryResponse,
   CanonicalFieldInfo,
+  DatasetDependenciesResponse,
+  ExtractionRunDependenciesResponse,
+  DeleteResponse,
 } from '@/types';
 
 
@@ -319,6 +322,45 @@ export const apiService = {
    */
   exportRankingRunCsv(runId: string): Promise<{ blob: Blob; filename?: string }> {
     return apiClient.downloadBlob(`/api/ranking/runs/${runId}/export`);
+  },
+
+  /**
+   * Check dependent run counts for a dataset before deletion.
+   */
+  getDatasetDependencies(datasetId: string): Promise<DatasetDependenciesResponse> {
+    return apiClient.get<DatasetDependenciesResponse>(`/api/ingestion/datasets/${datasetId}/dependencies`);
+  },
+
+  /**
+   * Permanently delete a dataset from backend storage.
+   */
+  deleteDataset(datasetId: string, cascade = false): Promise<DeleteResponse> {
+    return apiClient.delete<DeleteResponse>(`/api/ingestion/datasets/${datasetId}`, {
+      params: { cascade },
+    });
+  },
+
+  /**
+   * Permanently delete a recorded ranking run from backend storage.
+   */
+  deleteRankingRun(runId: string): Promise<DeleteResponse> {
+    return apiClient.delete<DeleteResponse>(`/api/ranking/runs/${runId}`);
+  },
+
+  /**
+   * Check dependent run counts for a signal extraction run before deletion.
+   */
+  getExtractionRunDependencies(runId: string): Promise<ExtractionRunDependenciesResponse> {
+    return apiClient.get<ExtractionRunDependenciesResponse>(`/api/signals/runs/${runId}/dependencies`);
+  },
+
+  /**
+   * Permanently delete an extraction run from backend storage.
+   */
+  deleteExtractionRun(runId: string, cascade = false): Promise<DeleteResponse> {
+    return apiClient.delete<DeleteResponse>(`/api/signals/runs/${runId}`, {
+      params: { cascade },
+    });
   },
 };
 

@@ -199,6 +199,28 @@ def get_ranking_run(run_id: str) -> RankingRunResponse:
     return record
 
 
+@router.delete("/runs/{run_id}")
+def delete_ranking_run(run_id: str) -> dict[str, Any]:
+    """Permanently delete a recorded ranking run."""
+    record = default_ranking_run_store.get(run_id)
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Ranking run '{run_id}' not found.",
+        )
+    deleted = default_ranking_run_store.delete(run_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Ranking run '{run_id}' could not be deleted.",
+        )
+    return {
+        "success": True,
+        "run_id": run_id,
+        "message": f"Ranking run '{run_id}' deleted successfully.",
+    }
+
+
 @router.get("/runs", response_model=Union[list[RankingRunResponse], list[RankingRunSummaryItem]])
 def list_ranking_runs(
     summary: bool = Query(default=False, description="Return lightweight summary objects without team lists"),

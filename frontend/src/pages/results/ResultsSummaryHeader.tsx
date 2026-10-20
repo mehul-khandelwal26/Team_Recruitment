@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Trophy,
   Download,
@@ -9,11 +10,13 @@ import {
   PlusCircle,
   Calendar,
   History,
+  Trash2,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { TruncatedId } from '@/components/common/TruncatedId';
+import { DeleteConfirmModal } from '@/components/common/DeleteConfirmModal';
 import { apiService } from '@/lib/api-services';
 import type { RankingRunResponse } from '@/types';
 
@@ -31,8 +34,10 @@ export const ResultsSummaryHeader: React.FC<ResultsSummaryHeaderProps> = ({
   isRerunning = false,
 }) => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const handleExportCsv = async () => {
     setIsExporting(true);
@@ -154,8 +159,37 @@ export const ResultsSummaryHeader: React.FC<ResultsSummaryHeaderProps> = ({
             <PlusCircle className="h-3.5 w-3.5 text-forest-700" />
             New Evaluation
           </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowDeleteModal(true)}
+            className="text-xs gap-1.5 shadow-sm text-muted-foreground hover:text-destructive hover:border-destructive/30 hover:bg-destructive/10"
+            title="Delete this ranking run"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete Run
+          </Button>
         </div>
       </div>
+
+      {/* Delete Run Confirmation Modal */}
+      {showDeleteModal && (
+        <DeleteConfirmModal
+          open={showDeleteModal}
+          onOpenChange={setShowDeleteModal}
+          itemType="ranking_run"
+          itemId={rankingRun.run_id}
+          itemTitle={`Ranking Shortlist (${rankingRun.summary?.selected_teams_count || 0} selected)`}
+          onDownloadBackup={handleExportCsv}
+          onSuccess={() => {
+            // Evict single run cache immediately & invalidate all ranking lists
+            queryClient.removeQueries({ queryKey: ['ranking', 'run', rankingRun.run_id] });
+            queryClient.invalidateQueries({ queryKey: ['ranking'] });
+            navigate('/results');
+          }}
+        />
+      )}
 
       {/* Export Error Alert */}
       {exportError && (

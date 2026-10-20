@@ -459,6 +459,16 @@ class PostgresEligibilityRunStore(BasePostgresStore):
             rows = s.execute(stmt).scalars().all()
             return [EligibilityRunResponse.model_validate(r.payload) for r in rows]
 
+    def delete(self, run_id: str) -> bool:
+        """Delete eligibility run by run_id."""
+        with self.session() as s:
+            stmt = select(EligibilityRunModel).where(EligibilityRunModel.run_id == run_id)
+            row = s.execute(stmt).scalars().first()
+            if row is None:
+                return False
+            s.delete(row)
+            return True
+
     def reset(self) -> None:
         """Test isolation helper: clears all eligibility runs."""
         self._assert_safe_reset()
@@ -562,6 +572,16 @@ class PostgresScoringRunStore(BasePostgresStore):
             stmt = stmt.order_by(ScoringRunModel.evaluated_at.desc())
             rows = s.execute(stmt).scalars().all()
             return [ScoringRunResponse.model_validate(r.payload) for r in rows]
+
+    def delete(self, run_id: str) -> bool:
+        """Delete scoring run by run_id."""
+        with self.session() as s:
+            stmt = select(ScoringRunModel).where(ScoringRunModel.run_id == run_id)
+            row = s.execute(stmt).scalars().first()
+            if row is None:
+                return False
+            s.delete(row)
+            return True
 
     def reset(self) -> None:
         """Test isolation helper: clears all scoring runs."""
@@ -690,6 +710,15 @@ class PostgresRankingRunStore(BasePostgresStore):
                 )
             return summaries
 
+    def delete(self, run_id: str) -> bool:
+        """Delete ranking run by run_id. Returns True if deleted, False if not found."""
+        with self.session() as s:
+            stmt = select(RankingRunModel).where(RankingRunModel.run_id == run_id)
+            row = s.execute(stmt).scalars().first()
+            if row is None:
+                return False
+            s.delete(row)
+            return True
 
     def reset(self) -> None:
         """Test isolation helper: clears all ranking runs."""
@@ -842,13 +871,67 @@ class PostgresDatasetStore(BasePostgresStore):
                 for r in rows
             ]
 
-    def delete(self, dataset_id: str) -> bool:
+    def get_dependent_counts(self, dataset_id: str) -> dict[str, int]:
+        """Count downstream runs that reference this dataset directly or via its extractions."""
+        with self.session() as s:
+            # Find extraction run IDs for this dataset
+            ext_ids_q = select(ExtractionRunModel.run_id).where(ExtractionRunModel.dataset_id == dataset_id)
+            ext_ids = list(s.execute(ext_ids_q).scalars().all())
 
+            ranking_cond = [RankingRunModel.dataset_id == dataset_id]
+            scoring_cond = [ScoringRunModel.dataset_id == dataset_id]
+            elig_cond = [EligibilityRunModel.dataset_id == dataset_id]
+            if ext_ids:
+                ranking_cond.append(RankingRunModel.extraction_run_id.in_(ext_ids))
+                scoring_cond.append(ScoringRunModel.extraction_run_id.in_(ext_ids))
+                elig_cond.append(EligibilityRunModel.extraction_run_id.in_(ext_ids))
+
+            ranking_count = s.execute(select(func.count()).select_from(RankingRunModel).where(sa.or_(*ranking_cond))).scalar() or 0
+            scoring_count = s.execute(select(func.count()).select_from(ScoringRunModel).where(sa.or_(*scoring_cond))).scalar() or 0
+            elig_count = s.execute(select(func.count()).select_from(EligibilityRunModel).where(sa.or_(*elig_cond))).scalar() or 0
+            ext_count = len(ext_ids)
+
+            return {
+                "ranking_runs": int(ranking_count),
+                "scoring_runs": int(scoring_count),
+                "eligibility_runs": int(elig_count),
+                "extraction_runs": int(ext_count),
+                "total": int(ranking_count + scoring_count + elig_count + ext_count),
+            }
+
+    def delete(self, dataset_id: str, cascade: bool = False) -> bool:
+        """Delete dataset with safe transactional cascade."""
         with self.session() as s:
             stmt = select(DatasetModel).where(DatasetModel.dataset_id == dataset_id)
             row = s.execute(stmt).scalars().first()
             if row is None:
                 return False
+
+            if not cascade:
+                s.delete(row)
+                return True
+
+            ext_ids_q = select(ExtractionRunModel.run_id).where(ExtractionRunModel.dataset_id == dataset_id)
+            ext_ids = list(s.execute(ext_ids_q).scalars().all())
+
+            ranking_cond = [RankingRunModel.dataset_id == dataset_id]
+            scoring_cond = [ScoringRunModel.dataset_id == dataset_id]
+            elig_cond = [EligibilityRunModel.dataset_id == dataset_id]
+            if ext_ids:
+                ranking_cond.append(RankingRunModel.extraction_run_id.in_(ext_ids))
+                scoring_cond.append(ScoringRunModel.extraction_run_id.in_(ext_ids))
+                elig_cond.append(EligibilityRunModel.extraction_run_id.in_(ext_ids))
+
+            # Cascade deletion in child-first order to satisfy ON DELETE RESTRICT
+            s.execute(sa.delete(RankingRunModel).where(sa.or_(*ranking_cond)))
+            s.execute(sa.delete(ScoringRunModel).where(sa.or_(*scoring_cond)))
+            elig_ids = list(s.execute(select(EligibilityRunModel.run_id).where(sa.or_(*elig_cond))).scalars().all())
+            if elig_ids:
+                s.execute(sa.delete(ManualOverrideModel).where(ManualOverrideModel.run_id.in_(elig_ids)))
+                s.execute(sa.delete(EligibilityRunModel).where(EligibilityRunModel.run_id.in_(elig_ids)))
+            if ext_ids:
+                s.execute(sa.delete(ExtractionRunModel).where(ExtractionRunModel.run_id.in_(ext_ids)))
+
             s.delete(row)
             return True
 
@@ -960,6 +1043,49 @@ class PostgresExtractionRunStore(BasePostgresStore):
                 )
                 for r in rows
             ]
+
+    def get_dependent_counts(self, run_id: str) -> dict[str, int]:
+        """Count downstream runs that reference this extraction run."""
+        with self.session() as s:
+            ranking_count = s.execute(
+                select(func.count()).select_from(RankingRunModel).where(RankingRunModel.extraction_run_id == run_id)
+            ).scalar() or 0
+            scoring_count = s.execute(
+                select(func.count()).select_from(ScoringRunModel).where(ScoringRunModel.extraction_run_id == run_id)
+            ).scalar() or 0
+            elig_count = s.execute(
+                select(func.count()).select_from(EligibilityRunModel).where(EligibilityRunModel.extraction_run_id == run_id)
+            ).scalar() or 0
+
+            return {
+                "ranking_runs": int(ranking_count),
+                "scoring_runs": int(scoring_count),
+                "eligibility_runs": int(elig_count),
+                "total": int(ranking_count + scoring_count + elig_count),
+            }
+
+    def delete(self, run_id: str, cascade: bool = False) -> bool:
+        """Delete extraction run with safe transactional cascade."""
+        with self.session() as s:
+            stmt = select(ExtractionRunModel).where(ExtractionRunModel.run_id == run_id)
+            row = s.execute(stmt).scalars().first()
+            if row is None:
+                return False
+
+            if not cascade:
+                s.delete(row)
+                return True
+
+            # Cascade in child-first order
+            s.execute(sa.delete(RankingRunModel).where(RankingRunModel.extraction_run_id == run_id))
+            s.execute(sa.delete(ScoringRunModel).where(ScoringRunModel.extraction_run_id == run_id))
+            elig_ids = list(s.execute(select(EligibilityRunModel.run_id).where(EligibilityRunModel.extraction_run_id == run_id)).scalars().all())
+            if elig_ids:
+                s.execute(sa.delete(ManualOverrideModel).where(ManualOverrideModel.run_id.in_(elig_ids)))
+                s.execute(sa.delete(EligibilityRunModel).where(EligibilityRunModel.run_id.in_(elig_ids)))
+
+            s.delete(row)
+            return True
 
     def reset(self) -> None:
 

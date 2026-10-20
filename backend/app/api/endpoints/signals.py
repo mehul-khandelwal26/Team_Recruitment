@@ -329,6 +329,72 @@ async def get_extraction_run(run_id: str) -> ExtractionRunResponse:
     return record
 
 
+@router.get("/runs/{run_id}/dependencies")
+async def get_extraction_run_dependencies(run_id: str) -> dict[str, Any]:
+    """Retrieve counts of downstream evaluation runs dependent on this extraction run."""
+    record = default_extraction_run_store.get(run_id)
+    if record is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Extraction run '{run_id}' not found.",
+        )
+    counts = default_extraction_run_store.get_dependent_counts(run_id)
+    return {
+        "run_id": run_id,
+        "dataset_id": record.dataset_id,
+        "dependencies": counts,
+        "has_dependencies": counts.get("total", 0) > 0,
+    }
+
+
+@router.delete("/runs/{run_id}")
+async def delete_extraction_run(
+    run_id: str,
+    cascade: bool = Query(default=False, description="Cascade delete all dependent scoring and ranking runs"),
+) -> dict[str, Any]:
+    """Permanently delete an extraction run and optionally cascade delete dependent runs."""
+    record = default_extraction_run_store.get(run_id)
+    if record is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Extraction run '{run_id}' not found.",
+        )
+
+    counts = default_extraction_run_store.get_dependent_counts(run_id)
+    if not cascade and counts.get("total", 0) > 0:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": f"Cannot delete extraction run '{run_id}' because it has {counts['total']} dependent run(s).",
+                "run_id": run_id,
+                "counts": counts,
+                "hint": "Provide ?cascade=true to delete the extraction run and all associated downstream runs.",
+            },
+        )
+
+    try:
+        deleted = default_extraction_run_store.delete(run_id, cascade=cascade)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        )
+
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Extraction run '{run_id}' could not be deleted.",
+        )
+
+    return {
+        "success": True,
+        "run_id": run_id,
+        "dataset_id": record.dataset_id,
+        "deleted_runs": counts if cascade else {},
+        "message": f"Extraction run '{run_id}' deleted successfully.",
+    }
+
+
 @router.get("/runs", response_model=Union[list[ExtractionRunResponse], list[ExtractionRunSummary]])
 async def list_extraction_runs(
     dataset_id: Optional[str] = Query(default=None, description="Optional dataset ID filter"),

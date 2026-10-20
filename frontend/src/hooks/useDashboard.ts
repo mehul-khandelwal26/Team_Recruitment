@@ -22,6 +22,7 @@ export function useDatasetSummaries(limit = 10) {
     queryKey: DASHBOARD_QUERY_KEYS.datasets(limit),
     queryFn: () => apiService.getDatasetSummaries(limit),
     staleTime: 1000 * 30, // 30s
+    refetchOnMount: 'always',
   });
 }
 
@@ -33,6 +34,7 @@ export function useExtractionRunSummaries(limit = 10) {
     queryKey: DASHBOARD_QUERY_KEYS.extractions(limit),
     queryFn: () => apiService.getExtractionRunSummaries(limit),
     staleTime: 1000 * 30,
+    refetchOnMount: 'always',
   });
 }
 
@@ -44,6 +46,7 @@ export function useRankingRunSummaries(limit = 10) {
     queryKey: DASHBOARD_QUERY_KEYS.rankings(limit),
     queryFn: () => apiService.getRankingRunSummaries(limit),
     staleTime: 1000 * 30,
+    refetchOnMount: 'always',
   });
 }
 

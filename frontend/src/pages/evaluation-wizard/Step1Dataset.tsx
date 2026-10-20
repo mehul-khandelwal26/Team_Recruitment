@@ -1,4 +1,5 @@
 import React, { useState, useRef, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   UploadCloud,
   FileSpreadsheet,
@@ -14,7 +15,9 @@ import {
   Sparkles,
   X,
   Info,
+  Trash2,
 } from 'lucide-react';
+import { DeleteConfirmModal } from '@/components/common/DeleteConfirmModal';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -55,7 +58,7 @@ const DEFAULT_CANONICAL_FIELDS: CanonicalFieldInfo[] = [
 
 interface Step1DatasetProps {
   selectedDataset: DatasetSummary | null;
-  onSelectDataset: (dataset: DatasetSummary) => void;
+  onSelectDataset: (dataset: DatasetSummary | null) => void;
   onNext: () => void;
   initialTab?: 'existing' | 'upload';
 }
@@ -66,6 +69,7 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
   onNext,
   initialTab,
 }) => {
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'existing' | 'upload'>(initialTab || 'existing');
 
   React.useEffect(() => {
@@ -75,6 +79,7 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
   }, [initialTab]);
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [datasetToDelete, setDatasetToDelete] = useState<DatasetSummary | null>(null);
 
   // Upload States
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
@@ -291,7 +296,9 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
           mapping: response.mapping || columnMappings,
         };
 
-        // Refresh existing list so it appears there too
+        // Refresh and invalidate existing dataset lists across wizard and dashboard
+        queryClient.invalidateQueries({ queryKey: ['datasets'] });
+        queryClient.invalidateQueries({ queryKey: ['wizard', 'datasets'] });
         refetchDatasets();
         onSelectDataset(newDatasetSummary);
       } else if (response.errors && response.errors.length > 0) {
@@ -512,7 +519,7 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
                     <TableHead className="text-right">Teams</TableHead>
                     <TableHead className="text-right">Members</TableHead>
                     <TableHead>Uploaded At</TableHead>
-                    <TableHead className="w-24 text-right">Action</TableHead>
+                    <TableHead className="w-28 text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -564,17 +571,25 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
                           {formatDate(ds.uploaded_at)}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant={isSelected ? 'default' : 'outline'}
-                            className="h-7 text-xs px-2.5"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSelectDataset(ds);
-                            }}
-                          >
-                            {isSelected ? 'Selected' : 'Select'}
-                          </Button>
+                          <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              size="sm"
+                              variant={isSelected ? 'default' : 'outline'}
+                              className="h-7 text-xs px-2.5"
+                              onClick={() => onSelectDataset(ds)}
+                            >
+                              {isSelected ? 'Selected' : 'Select'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                              title={`Delete ${ds.filename}`}
+                              onClick={() => setDatasetToDelete(ds)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -1056,6 +1071,30 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
           <ArrowRight className="h-4 w-4" />
         </Button>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {datasetToDelete && (
+        <DeleteConfirmModal
+          open={Boolean(datasetToDelete)}
+          onOpenChange={(isOpen) => {
+            if (!isOpen) setDatasetToDelete(null);
+          }}
+          itemType="dataset"
+          itemId={datasetToDelete.dataset_id}
+          itemTitle={datasetToDelete.filename}
+          onSuccess={() => {
+            queryClient.removeQueries({ queryKey: ['wizard', 'dataset', datasetToDelete.dataset_id] });
+            queryClient.invalidateQueries({ queryKey: ['datasets'] });
+            queryClient.invalidateQueries({ queryKey: ['wizard', 'datasets'] });
+            queryClient.invalidateQueries({ queryKey: ['wizard', 'extractions', datasetToDelete.dataset_id] });
+            if (selectedDataset?.dataset_id === datasetToDelete.dataset_id) {
+              onSelectDataset(null);
+            }
+            refetchDatasets();
+            setDatasetToDelete(null);
+          }}
+        />
+      )}
     </div>
   );
 };
