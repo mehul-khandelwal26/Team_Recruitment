@@ -153,6 +153,72 @@ async def get_dataset(dataset_id: str) -> DatasetRecord:
     return record
 
 
+@router.get("/datasets/{dataset_id}/dependencies")
+async def get_dataset_dependencies(dataset_id: str) -> dict[str, Any]:
+    """Retrieve counts of downstream evaluation runs dependent on this dataset."""
+    record = default_dataset_store.get(dataset_id)
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Dataset '{dataset_id}' not found.",
+        )
+    counts = default_dataset_store.get_dependent_counts(dataset_id)
+    return {
+        "dataset_id": dataset_id,
+        "filename": record.filename,
+        "dependencies": counts,
+        "has_dependencies": counts.get("total", 0) > 0,
+    }
+
+
+@router.delete("/datasets/{dataset_id}")
+async def delete_dataset(
+    dataset_id: str,
+    cascade: bool = Query(default=False, description="Cascade delete all associated runs"),
+) -> dict[str, Any]:
+    """Permanently delete an uploaded dataset and optionally cascade delete dependent runs."""
+    record = default_dataset_store.get(dataset_id)
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Dataset '{dataset_id}' not found.",
+        )
+
+    counts = default_dataset_store.get_dependent_counts(dataset_id)
+    if not cascade and counts.get("total", 0) > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": f"Cannot delete dataset '{dataset_id}' because it has {counts['total']} dependent run(s).",
+                "dataset_id": dataset_id,
+                "counts": counts,
+                "hint": "Provide ?cascade=true to delete the dataset and all associated runs.",
+            },
+        )
+
+    try:
+        deleted = default_dataset_store.delete(dataset_id, cascade=cascade)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )
+
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Dataset '{dataset_id}' could not be deleted.",
+        )
+
+    return {
+        "success": True,
+        "dataset_id": dataset_id,
+        "filename": record.filename,
+        "deleted_runs": counts if cascade else {},
+        "message": f"Dataset '{record.filename}' ({dataset_id}) deleted successfully.",
+    }
+
+
 @router.get("/datasets", response_model=Union[list[DatasetRecord], list[DatasetSummary]])
 async def list_datasets(
     summary: bool = Query(default=False, description="Return lightweight summary objects without teams or payload"),

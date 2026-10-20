@@ -20,6 +20,7 @@ class RankingRunStoreProtocol(Protocol):
     def get(self, run_id: str) -> Optional[RankingRunResponse]: ...
     def list_runs(self) -> list[RankingRunResponse]: ...
     def list_summaries(self, limit: int = 50) -> list[RankingRunSummaryItem]: ...
+    def delete(self, run_id: str) -> bool: ...
     def reset(self) -> None: ...
 
 
@@ -133,6 +134,12 @@ class InMemoryRankingRunStore:
             )
         return summaries
 
+    def delete(self, run_id: str) -> bool:
+        """Delete ranking run by run_id. Returns True if deleted, False if not found."""
+        if run_id in self._runs:
+            del self._runs[run_id]
+            return True
+        return False
 
     def reset(self) -> None:
         self._runs.clear()

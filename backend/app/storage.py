@@ -289,6 +289,11 @@ class DelegatingRunStore:
     def list_runs(self, config_id: Optional[str] = None) -> list[EligibilityRunResponse]:
         return self._store.list_runs(config_id=config_id)
 
+    def delete(self, run_id: str) -> bool:
+        if hasattr(self._store, "delete"):
+            return self._store.delete(run_id)
+        return False
+
     def reset(self) -> None:
         return self._store.reset()
 
@@ -337,6 +342,11 @@ class DelegatingScoringRunStore:
     def list_runs(self, config_id: Optional[str] = None) -> list[ScoringRunResponse]:
         return self._store.list_runs(config_id=config_id)
 
+    def delete(self, run_id: str) -> bool:
+        if hasattr(self._store, "delete"):
+            return self._store.delete(run_id)
+        return False
+
     def reset(self) -> None:
         return self._store.reset()
 
@@ -363,6 +373,11 @@ class DelegatingRankingRunStore:
 
     def list_summaries(self, limit: int = 50) -> list[RankingRunSummaryItem]:
         return self._store.list_summaries(limit=limit)
+
+    def delete(self, run_id: str) -> bool:
+        if hasattr(self._store, "delete"):
+            return self._store.delete(run_id)
+        return False
 
     def reset(self) -> None:
         return self._store.reset()
@@ -391,8 +406,18 @@ class DelegatingDatasetStore:
     def list_summaries(self, limit: int = 50) -> list[DatasetSummary]:
         return self._store.list_summaries(limit=limit)
 
-    def delete(self, dataset_id: str) -> bool:
-        return self._store.delete(dataset_id)
+    def get_dependent_counts(self, dataset_id: str) -> dict[str, int]:
+        if hasattr(self._store, "get_dependent_counts"):
+            return self._store.get_dependent_counts(dataset_id)
+        return {"ranking_runs": 0, "scoring_runs": 0, "eligibility_runs": 0, "extraction_runs": 0, "total": 0}
+
+    def delete(self, dataset_id: str, cascade: bool = False) -> bool:
+        if hasattr(self._store, "delete"):
+            try:
+                return self._store.delete(dataset_id, cascade=cascade)
+            except TypeError:
+                return self._store.delete(dataset_id)
+        return False
 
     def reset(self) -> None:
         return self._store.reset()
@@ -422,6 +447,19 @@ class DelegatingExtractionRunStore:
         self, limit: int = 50, dataset_id: Optional[str] = None
     ) -> list[ExtractionRunSummary]:
         return self._store.list_summaries(limit=limit, dataset_id=dataset_id)
+
+    def get_dependent_counts(self, run_id: str) -> dict[str, int]:
+        if hasattr(self._store, "get_dependent_counts"):
+            return self._store.get_dependent_counts(run_id)
+        return {"ranking_runs": 0, "scoring_runs": 0, "eligibility_runs": 0, "total": 0}
+
+    def delete(self, run_id: str, cascade: bool = False) -> bool:
+        if hasattr(self._store, "delete"):
+            try:
+                return self._store.delete(run_id, cascade=cascade)
+            except TypeError:
+                return self._store.delete(run_id)
+        return False
 
     def reset(self) -> None:
         return self._store.reset()

@@ -118,9 +118,17 @@ export const NewEvaluationPage: React.FC = () => {
     setCompletedSteps((prev) => new Set([...prev, stepNumber]));
   };
 
-  const handleSelectDataset = (dataset: DatasetSummary) => {
+  const handleSelectDataset = (dataset: DatasetSummary | null) => {
     setSelectedDataset(dataset);
-    markStepComplete(1);
+    if (dataset) {
+      markStepComplete(1);
+    } else {
+      setCompletedSteps((prev) => {
+        const next = new Set(prev);
+        next.delete(1);
+        return next;
+      });
+    }
     // If dataset changes, clear previously selected extraction run as it was for another dataset
     setSelectedExtractionRun(null);
   };

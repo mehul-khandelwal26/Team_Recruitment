@@ -20,6 +20,8 @@ class ExtractionRunStoreProtocol(Protocol):
     def list_summaries(
         self, limit: int = 50, dataset_id: Optional[str] = None
     ) -> list[ExtractionRunSummary]: ...
+    def get_dependent_counts(self, run_id: str) -> dict[str, int]: ...
+    def delete(self, run_id: str, cascade: bool = False) -> bool: ...
     def reset(self) -> None: ...
 
 
@@ -75,6 +77,55 @@ class InMemoryExtractionRunStore:
             for r in items
         ]
 
+    def get_dependent_counts(self, run_id: str) -> dict[str, int]:
+        """Count downstream runs that reference this extraction run."""
+        from app.storage import default_storage_factory
+        ranking_store = default_storage_factory.get_ranking_run_store()
+        scoring_store = default_storage_factory.get_scoring_run_store()
+        elig_store = default_storage_factory.get_eligibility_run_store()
+
+        ranking_count = sum(1 for r in ranking_store.list_runs() if getattr(r, "extraction_run_id", None) == run_id)
+        scoring_count = sum(1 for r in scoring_store.list_runs() if getattr(r, "extraction_run_id", None) == run_id)
+        elig_count = sum(1 for r in elig_store.list_runs() if getattr(r, "extraction_run_id", None) == run_id)
+
+        return {
+            "ranking_runs": ranking_count,
+            "scoring_runs": scoring_count,
+            "eligibility_runs": elig_count,
+            "total": ranking_count + scoring_count + elig_count,
+        }
+
+    def delete(self, run_id: str, cascade: bool = False) -> bool:
+        """Delete extraction run with optional cascade of dependent runs."""
+        if run_id not in self._runs:
+            return False
+
+        counts = self.get_dependent_counts(run_id)
+        if not cascade and counts["total"] > 0:
+            raise ValueError(
+                f"Cannot delete extraction run '{run_id}' because it has {counts['total']} dependent run(s). Use cascade=True to delete them."
+            )
+
+        if cascade:
+            from app.storage import default_storage_factory
+            ranking_store = default_storage_factory.get_ranking_run_store()
+            scoring_store = default_storage_factory.get_scoring_run_store()
+            elig_store = default_storage_factory.get_eligibility_run_store()
+
+            for r in ranking_store.list_runs():
+                if getattr(r, "extraction_run_id", None) == run_id:
+                    ranking_store.delete(r.run_id)
+
+            for r in scoring_store.list_runs():
+                if getattr(r, "extraction_run_id", None) == run_id:
+                    scoring_store.delete(r.run_id)
+
+            for r in elig_store.list_runs():
+                if getattr(r, "extraction_run_id", None) == run_id:
+                    elig_store.delete(r.run_id)
+
+        del self._runs[run_id]
+        return True
 
     def reset(self) -> None:
         self._runs.clear()

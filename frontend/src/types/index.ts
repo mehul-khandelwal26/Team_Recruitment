@@ -102,6 +102,35 @@ export type HealthResponse = {
   storage_backend: string;
 };
 
+// Deletion & Dependency models
+export interface DependencyCounts {
+  ranking_runs: number;
+  scoring_runs: number;
+  eligibility_runs: number;
+  extraction_runs?: number;
+  total: number;
+}
+
+export interface DatasetDependenciesResponse {
+  dataset_id: string;
+  filename: string;
+  dependencies: DependencyCounts;
+  has_dependencies: boolean;
+}
+
+export interface ExtractionRunDependenciesResponse {
+  run_id: string;
+  dataset_id?: string | null;
+  dependencies: DependencyCounts;
+  has_dependencies: boolean;
+}
+
+export interface DeleteResponse {
+  success: boolean;
+  message?: string;
+  [key: string]: unknown;
+}
+
 // Navigation types
 export type NavItem = {
   title: string;

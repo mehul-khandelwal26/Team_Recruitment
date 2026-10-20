@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Trophy,
   CheckCircle2,
@@ -70,6 +71,7 @@ export const Step5ReviewAndRun: React.FC<Step5ReviewAndRunProps> = ({
   onReset,
 }) => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   // Execution States
   const [isExecuting, setIsExecuting] = useState(false);
@@ -138,6 +140,12 @@ export const Step5ReviewAndRun: React.FC<Step5ReviewAndRunProps> = ({
         topX,
         includeNeedsReview
       );
+      // Seed newly created run into cache & invalidate lists so Results and Dashboard reflect it immediately
+      queryClient.setQueryData(['ranking', 'run', rankingRes.run_id], rankingRes);
+      queryClient.invalidateQueries({ queryKey: ['ranking'] });
+      queryClient.invalidateQueries({ queryKey: ['signals'] });
+      queryClient.invalidateQueries({ queryKey: ['wizard', 'extractions'] });
+
       setCompletedStages((prev) => new Set([...prev, 'ranking']));
       setRankingResult(rankingRes);
       setCurrentStage(null);

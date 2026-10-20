@@ -26,6 +26,7 @@ export function useRankingRun(runId?: string | null) {
     },
     enabled: Boolean(runId),
     staleTime: 1000 * 60, // 1 min
+    refetchOnMount: 'always',
     retry: (failureCount, error: any) => {
       if (error?.status === 404) return false;
       return failureCount < 2;
@@ -57,6 +58,7 @@ export function useRecentRankingRuns(limit = 10) {
     queryKey: RESULTS_QUERY_KEYS.recentRuns(limit),
     queryFn: () => apiService.getRankingRunSummaries(limit),
     staleTime: 1000 * 30,
+    refetchOnMount: 'always',
   });
 }
 
