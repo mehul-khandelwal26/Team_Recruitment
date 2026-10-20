@@ -762,7 +762,8 @@ def parse_csv(
             team_rows.setdefault(team_id, []).append(member_data)
 
     # Build & validate teams
-    teams, team_errors, team_warnings = _build_teams(team_rows, team_metas)
+    mapped_targets = set(normalized_mapping.values()) if mapping else None
+    teams, team_errors, team_warnings = _build_teams(team_rows, team_metas, mapped_fields=mapped_targets)
     errors.extend(team_errors)
     warnings.extend(team_warnings)
 
@@ -1195,6 +1196,7 @@ def _apply_json_mapping(obj: dict[str, Any], norm_mapping: dict[str, str]) -> di
 def _build_teams(
     team_rows: dict[str, list[dict[str, Any]]],
     team_metas: dict[str, Any],
+    mapped_fields: Optional[set[str]] = None,
 ) -> tuple[list[TeamSchema], list[ValidationError], list[ValidationWarning]]:
     """Validate grouped rows into TeamSchema objects."""
     teams: list[TeamSchema] = []
@@ -1265,7 +1267,7 @@ def _build_teams(
             errors.append(ValidationError(location=f"team '{team_id}'", message=dup_err))
             continue
 
-        warnings.extend(_missing_profile_warnings(team))
+        warnings.extend(_missing_profile_warnings(team, mapped_fields=mapped_fields))
         teams.append(team)
 
     return teams, errors, warnings
@@ -1300,11 +1302,25 @@ def _check_duplicate_team_ids(teams: list[TeamSchema]) -> list[ValidationError]:
     return errors
 
 
-def _missing_profile_warnings(team: TeamSchema) -> list[ValidationWarning]:
-    """Generate warnings for members who have missing optional profile fields."""
+def _missing_profile_warnings(
+    team: TeamSchema,
+    mapped_fields: Optional[set[str]] = None,
+) -> list[ValidationWarning]:
+    """Generate warnings for members who have missing optional profile fields.
+
+    When mapped_fields is provided (explicit wizard mapping), only warn for optional
+    fields that were actually mapped into the dataset by the organizer.
+    When mapped_fields is None (raw API upload without explicit mapping), check all
+    standard optional profile fields for backward compatibility.
+    """
     warns: list[ValidationWarning] = []
+    fields_to_check = (
+        [f for f in _OPTIONAL_PROFILE_FIELDS if f in mapped_fields]
+        if mapped_fields is not None
+        else _OPTIONAL_PROFILE_FIELDS
+    )
     for member in team.members:
-        for field in _OPTIONAL_PROFILE_FIELDS:
+        for field in fields_to_check:
             value = getattr(member, field, None)
             if value is None:
                 warns.append(

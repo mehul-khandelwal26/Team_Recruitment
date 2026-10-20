@@ -36,7 +36,7 @@ export const CreateScoringConfigModal: React.FC<CreateScoringConfigModalProps> =
   const [configId, setConfigId] = useState('');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [scaleMax, setScaleMax] = useState<number>(100);
+  const [scaleMax, setScaleMax] = useState<number | string>(100);
   const [basePresetId, setBasePresetId] = useState<string>(
     existingConfigs[0]?.config_id || ''
   );
@@ -52,7 +52,7 @@ export const CreateScoringConfigModal: React.FC<CreateScoringConfigModalProps> =
       setErrorMessage('Please enter a Scoring Model Name.');
       return;
     }
-    if (scaleMax <= 0) {
+    if (Number(scaleMax) <= 0) {
       setErrorMessage('Scale Maximum must be strictly greater than 0.');
       return;
     }
@@ -110,7 +110,7 @@ export const CreateScoringConfigModal: React.FC<CreateScoringConfigModalProps> =
         config_id: cleanId,
         name: name.trim(),
         description: description.trim(),
-        scale_max: scaleMax,
+        scale_max: Number(scaleMax) || 100,
         criteria: templateCriteria,
         lead_field: template?.lead_field || 'role',
         lead_values: template?.lead_values || ['lead', 'team lead', 'captain', 'leader'],
@@ -197,7 +197,22 @@ export const CreateScoringConfigModal: React.FC<CreateScoringConfigModalProps> =
                   min="1"
                   step="1"
                   value={scaleMax}
-                  onChange={(e) => setScaleMax(parseFloat(e.target.value) || 0)}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    if (raw === '') {
+                      setScaleMax('');
+                      return;
+                    }
+                    const clean = raw.replace(/^0+(?=\d)/, '');
+                    setScaleMax(clean);
+                  }}
+                  onBlur={() => {
+                    if (scaleMax === '' || Number(scaleMax) < 1) {
+                      setScaleMax(100);
+                    } else {
+                      setScaleMax(Number(scaleMax));
+                    }
+                  }}
                   className="text-xs h-8 font-mono"
                 />
                 <span className="text-xs text-muted-foreground font-mono">pts</span>

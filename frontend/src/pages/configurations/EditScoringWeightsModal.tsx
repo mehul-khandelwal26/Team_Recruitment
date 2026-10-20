@@ -153,7 +153,7 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
 
   const [name, setName] = useState(config.name || '');
   const [description, setDescription] = useState(config.description || '');
-  const [scaleMax, setScaleMax] = useState<number>(config.scale_max || 100);
+  const [scaleMax, setScaleMax] = useState<number | string>(config.scale_max || 100);
   const [scoreIneligibleTeams, setScoreIneligibleTeams] = useState<boolean>(
     config.score_ineligible_teams ?? true
   );
@@ -232,12 +232,23 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
 
   // Handle weight change for a specific criterion
   const handleWeightChange = (index: number, rawVal: string) => {
-    const val = parseFloat(rawVal);
+    if (rawVal === '') {
+      setCriteria((prev) => {
+        const copy = [...prev];
+        copy[index] = {
+          ...copy[index],
+          weight: '' as any,
+        };
+        return copy;
+      });
+      return;
+    }
+    const clean = rawVal.replace(/^0+(?=\d)/, '');
     setCriteria((prev) => {
       const copy = [...prev];
       copy[index] = {
         ...copy[index],
-        weight: isNaN(val) ? 0 : Math.max(0, val),
+        weight: clean as any,
       };
       return copy;
     });
@@ -270,12 +281,24 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
   };
 
   // Change top_k_value
-  const handleTopKChange = (index: number, kVal: number) => {
+  const handleTopKChange = (index: number, rawVal: string) => {
+    if (rawVal === '') {
+      setCriteria((prev) => {
+        const copy = [...prev];
+        copy[index] = {
+          ...copy[index],
+          top_k_value: '' as any,
+        };
+        return copy;
+      });
+      return;
+    }
+    const clean = rawVal.replace(/^0+(?=\d)/, '');
     setCriteria((prev) => {
       const copy = [...prev];
       copy[index] = {
         ...copy[index],
-        top_k_value: Math.max(1, kVal),
+        top_k_value: clean as any,
       };
       return copy;
     });
@@ -294,7 +317,29 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
   };
 
   // Change linear range bounds
-  const handleLinearRangeChange = (index: number, bound: 'min' | 'max', val: number) => {
+  const handleLinearRangeChange = (index: number, bound: 'min' | 'max', rawVal: string) => {
+    const field = bound === 'min' ? 'min_value' : 'max_value';
+    if (rawVal === '') {
+      setCriteria((prev) => {
+        const copy = [...prev];
+        const crit = copy[index];
+        const norm = crit.normalization || {};
+        const lr = norm.linear_range || { min_value: 0, max_value: 10 };
+        copy[index] = {
+          ...crit,
+          normalization: {
+            ...norm,
+            linear_range: {
+              ...lr,
+              [field]: '' as any,
+            },
+          },
+        };
+        return copy;
+      });
+      return;
+    }
+    const clean = rawVal.replace(/^(-?)0+(?=\d)/, '$1');
     setCriteria((prev) => {
       const copy = [...prev];
       const crit = copy[index];
@@ -306,7 +351,7 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
           ...norm,
           linear_range: {
             ...lr,
-            [bound === 'min' ? 'min_value' : 'max_value']: val,
+            [field]: clean as any,
           },
         },
       };
@@ -316,14 +361,41 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
 
   // Categorical mapping: change single category score
   const handleCategoryScoreChange = (index: number, catKey: string, rawVal: string) => {
-    const val = parseFloat(rawVal);
-    const score = isNaN(val) ? 0 : Math.min(1.0, Math.max(0.0, val));
+    if (rawVal === '') {
+      setCriteria((prev) => {
+        const copy = [...prev];
+        const crit = copy[index];
+        const norm = crit.normalization || {};
+        const catMap = norm.categorical_mapping || {
+          category_scores: {} as Record<string, any>,
+          default_score: 0.5,
+          case_sensitive: false,
+        };
+        copy[index] = {
+          ...crit,
+          normalization: {
+            ...norm,
+            categorical_mapping: {
+              ...catMap,
+              case_sensitive: catMap.case_sensitive ?? false,
+              category_scores: {
+                ...(catMap.category_scores || {}),
+                [catKey]: '' as any,
+              },
+            },
+          },
+        };
+        return copy;
+      });
+      return;
+    }
+    const clean = rawVal.replace(/^0+(?=\d)/, '');
     setCriteria((prev) => {
       const copy = [...prev];
       const crit = copy[index];
       const norm = crit.normalization || {};
       const catMap = norm.categorical_mapping || {
-        category_scores: {} as Record<string, number>,
+        category_scores: {} as Record<string, any>,
         default_score: 0.5,
         case_sensitive: false,
       };
@@ -336,7 +408,7 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
             case_sensitive: catMap.case_sensitive ?? false,
             category_scores: {
               ...(catMap.category_scores || {}),
-              [catKey]: score,
+              [catKey]: clean as any,
             },
           },
         },
@@ -408,14 +480,38 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
 
   // Categorical mapping: change default fallback score
   const handleCategoryDefaultScoreChange = (index: number, rawVal: string) => {
-    const val = parseFloat(rawVal);
-    const defScore = isNaN(val) ? 0.5 : Math.min(1.0, Math.max(0.0, val));
+    if (rawVal === '') {
+      setCriteria((prev) => {
+        const copy = [...prev];
+        const crit = copy[index];
+        const norm = crit.normalization || {};
+        const catMap = norm.categorical_mapping || {
+          category_scores: {} as Record<string, any>,
+          default_score: 0.5,
+          case_sensitive: false,
+        };
+        copy[index] = {
+          ...crit,
+          normalization: {
+            ...norm,
+            categorical_mapping: {
+              ...catMap,
+              case_sensitive: catMap.case_sensitive ?? false,
+              default_score: '' as any,
+            },
+          },
+        };
+        return copy;
+      });
+      return;
+    }
+    const clean = rawVal.replace(/^0+(?=\d)/, '');
     setCriteria((prev) => {
       const copy = [...prev];
       const crit = copy[index];
       const norm = crit.normalization || {};
       const catMap = norm.categorical_mapping || {
-        category_scores: {} as Record<string, number>,
+        category_scores: {} as Record<string, any>,
         default_score: 0.5,
         case_sensitive: false,
       };
@@ -426,7 +522,7 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
           categorical_mapping: {
             ...catMap,
             case_sensitive: catMap.case_sensitive ?? false,
-            default_score: defScore,
+            default_score: clean as any,
           },
         },
       };
@@ -463,14 +559,14 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
 
   // Calculations
   const activeCriteria = criteria.filter((c) => c.is_enabled);
-  const totalWeight = activeCriteria.reduce((sum, c) => sum + (c.weight || 0), 0);
+  const totalWeight = activeCriteria.reduce((sum, c) => sum + (parseFloat(String(c.weight)) || 0), 0);
 
   // Validation
   const validateForm = (): string | null => {
     if (!name.trim()) {
       return 'Model Name cannot be left empty.';
     }
-    if (scaleMax <= 0) {
+    if (Number(scaleMax) <= 0) {
       return 'Scale Max must be strictly greater than 0.';
     }
     if (activeCriteria.length === 0) {
@@ -481,19 +577,22 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
     }
 
     for (const c of activeCriteria) {
-      if (c.weight < 0) {
+      const w = parseFloat(String(c.weight));
+      if (isNaN(w) || w < 0) {
         return `Criterion "${c.name}" cannot have a negative weight.`;
       }
       if (c.aggregation === 'top_k') {
-        if (!c.top_k_value || c.top_k_value < 1) {
+        const k = parseInt(String(c.top_k_value), 10);
+        if (isNaN(k) || k < 1) {
           return `Criterion "${c.name}" uses top_k aggregation and requires top_k_value >= 1.`;
         }
       }
       if (c.criterion_type === 'numeric_range' && c.normalization?.linear_range) {
-        const { min_value, max_value } = c.normalization.linear_range;
-        if (typeof min_value === 'number' && typeof max_value === 'number') {
-          if (max_value <= min_value) {
-            return `Criterion "${c.name}": max_value (${max_value}) must be strictly greater than min_value (${min_value}).`;
+        const min_val = parseFloat(String(c.normalization.linear_range.min_value));
+        const max_val = parseFloat(String(c.normalization.linear_range.max_value));
+        if (!isNaN(min_val) && !isNaN(max_val)) {
+          if (max_val <= min_val) {
+            return `Criterion "${c.name}": max_value (${max_val}) must be strictly greater than min_value (${min_val}).`;
           }
         }
       }
@@ -504,7 +603,8 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
           return `Criterion "${c.name}": categorical mapping must have at least one category score defined.`;
         }
         for (const [catName, score] of Object.entries(catScores)) {
-          if (typeof score !== 'number' || score < 0.0 || score > 1.0) {
+          const numScore = parseFloat(String(score));
+          if (isNaN(numScore) || numScore < 0.0 || numScore > 1.0) {
             return `Criterion "${c.name}": score for category "${catName}" must be between 0.0 and 1.0.`;
           }
         }
@@ -531,17 +631,37 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
         .map((s) => s.trim().toLowerCase())
         .filter(Boolean);
 
-      const cleanedCriteria = criteria.map((c) => ({
-        ...c,
-        top_k_value: c.aggregation === 'top_k' ? c.top_k_value || 2 : undefined,
-      }));
+      const cleanedCriteria = criteria.map((c) => {
+        const norm = c.normalization ? JSON.parse(JSON.stringify(c.normalization)) : {};
+        if (norm.linear_range) {
+          norm.linear_range.min_value = parseFloat(String(norm.linear_range.min_value)) || 0;
+          norm.linear_range.max_value = parseFloat(String(norm.linear_range.max_value)) || 10;
+        }
+        if (norm.categorical_mapping) {
+          const defParsed = parseFloat(String(norm.categorical_mapping.default_score));
+          norm.categorical_mapping.default_score = isNaN(defParsed) ? 0.5 : Math.min(1.0, Math.max(0.0, defParsed));
+          const scores: Record<string, number> = {};
+          for (const [k, v] of Object.entries(norm.categorical_mapping.category_scores || {})) {
+            const parsed = parseFloat(String(v));
+            scores[k] = isNaN(parsed) ? 0 : Math.min(1.0, Math.max(0.0, parsed));
+          }
+          norm.categorical_mapping.category_scores = scores;
+        }
+
+        return {
+          ...c,
+          weight: isNaN(parseFloat(String(c.weight))) ? 0 : Math.max(0, parseFloat(String(c.weight))),
+          top_k_value: c.aggregation === 'top_k' ? (parseInt(String(c.top_k_value), 10) || 2) : undefined,
+          normalization: norm,
+        };
+      });
 
       const updated = await updateMutation.mutateAsync({
         configId: config.config_id,
         payload: {
           name: name.trim() || config.name,
           description: description.trim(),
-          scale_max: scaleMax,
+          scale_max: Number(scaleMax) || 100,
           score_ineligible_teams: scoreIneligibleTeams,
           lead_field: leadField.trim() || 'role',
           lead_values: parsedLeadValues.length > 0 ? parsedLeadValues : ['lead', 'team lead'],
@@ -606,7 +726,22 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                   min="1"
                   step="1"
                   value={scaleMax}
-                  onChange={(e) => setScaleMax(parseFloat(e.target.value) || 0)}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    if (raw === '') {
+                      setScaleMax('');
+                      return;
+                    }
+                    const clean = raw.replace(/^0+(?=\d)/, '');
+                    setScaleMax(clean);
+                  }}
+                  onBlur={() => {
+                    if (scaleMax === '' || Number(scaleMax) < 1) {
+                      setScaleMax(100);
+                    } else {
+                      setScaleMax(Number(scaleMax));
+                    }
+                  }}
                   className="text-xs h-8 font-mono"
                 />
                 <span className="text-xs text-muted-foreground font-mono">points</span>
@@ -890,7 +1025,19 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                     min="1"
                                     disabled={!c.is_enabled}
                                     value={c.top_k_value ?? 2}
-                                    onChange={(e) => handleTopKChange(idx, parseInt(e.target.value, 10) || 1)}
+                                    onChange={(e) => handleTopKChange(idx, e.target.value)}
+                                    onBlur={() => {
+                                      setCriteria((prev) => {
+                                        const copy = [...prev];
+                                        const cur = copy[idx].top_k_value;
+                                        const parsed = parseInt(String(cur), 10);
+                                        copy[idx] = {
+                                          ...copy[idx],
+                                          top_k_value: isNaN(parsed) || parsed < 1 ? 2 : parsed,
+                                        };
+                                        return copy;
+                                      });
+                                    }}
                                     className="h-5 w-14 text-[10px] font-mono px-1 py-0 bg-white"
                                     title="Top K highest members"
                                   />
@@ -917,6 +1064,18 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                 disabled={!c.is_enabled}
                                 value={c.weight}
                                 onChange={(e) => handleWeightChange(idx, e.target.value)}
+                                onBlur={() => {
+                                  setCriteria((prev) => {
+                                    const copy = [...prev];
+                                    const cur = copy[idx].weight;
+                                    const parsed = parseFloat(String(cur));
+                                    copy[idx] = {
+                                      ...copy[idx],
+                                      weight: isNaN(parsed) || parsed < 0 ? 0 : parsed,
+                                    };
+                                    return copy;
+                                  });
+                                }}
                                 className="h-6 w-20 text-right font-mono text-xs ml-auto"
                               />
                             </td>
@@ -952,8 +1111,28 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                       step="0.5"
                                       value={c.normalization?.linear_range?.min_value ?? 0}
                                       onChange={(e) =>
-                                        handleLinearRangeChange(idx, 'min', parseFloat(e.target.value) || 0)
+                                        handleLinearRangeChange(idx, 'min', e.target.value)
                                       }
+                                      onBlur={() => {
+                                        setCriteria((prev) => {
+                                          const copy = [...prev];
+                                          const crit = copy[idx];
+                                          const norm = crit.normalization || {};
+                                          const lr = norm.linear_range || { min_value: 0, max_value: 10 };
+                                          const parsed = parseFloat(String(lr.min_value));
+                                          copy[idx] = {
+                                            ...crit,
+                                            normalization: {
+                                              ...norm,
+                                              linear_range: {
+                                                ...lr,
+                                                min_value: isNaN(parsed) ? 0 : parsed,
+                                              },
+                                            },
+                                          };
+                                          return copy;
+                                        });
+                                      }}
                                       className="h-7 w-20 text-xs font-mono text-center px-1.5 focus:ring-forest-600"
                                     />
                                   </div>
@@ -964,8 +1143,28 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                       step="0.5"
                                       value={c.normalization?.linear_range?.max_value ?? 10}
                                       onChange={(e) =>
-                                        handleLinearRangeChange(idx, 'max', parseFloat(e.target.value) || 1)
+                                        handleLinearRangeChange(idx, 'max', e.target.value)
                                       }
+                                      onBlur={() => {
+                                        setCriteria((prev) => {
+                                          const copy = [...prev];
+                                          const crit = copy[idx];
+                                          const norm = crit.normalization || {};
+                                          const lr = norm.linear_range || { min_value: 0, max_value: 10 };
+                                          const parsed = parseFloat(String(lr.max_value));
+                                          copy[idx] = {
+                                            ...crit,
+                                            normalization: {
+                                              ...norm,
+                                              linear_range: {
+                                                ...lr,
+                                                max_value: isNaN(parsed) ? 10 : parsed,
+                                              },
+                                            },
+                                          };
+                                          return copy;
+                                        });
+                                      }}
                                       className="h-7 w-20 text-xs font-mono text-center px-1.5 focus:ring-forest-600"
                                     />
                                   </div>
@@ -997,6 +1196,30 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                         max="1"
                                         value={c.normalization?.categorical_mapping?.default_score ?? 0.5}
                                         onChange={(e) => handleCategoryDefaultScoreChange(idx, e.target.value)}
+                                        onBlur={() => {
+                                          setCriteria((prev) => {
+                                            const copy = [...prev];
+                                            const crit = copy[idx];
+                                            const norm = crit.normalization || {};
+                                            const catMap = norm.categorical_mapping || {
+                                              category_scores: {},
+                                              default_score: 0.5,
+                                              case_sensitive: false,
+                                            };
+                                            const parsed = parseFloat(String(catMap.default_score));
+                                            copy[idx] = {
+                                              ...crit,
+                                              normalization: {
+                                                ...norm,
+                                                categorical_mapping: {
+                                                  ...catMap,
+                                                  default_score: isNaN(parsed) ? 0.5 : Math.min(1.0, Math.max(0.0, parsed)),
+                                                },
+                                              },
+                                            };
+                                            return copy;
+                                          });
+                                        }}
                                         className="h-7 w-20 text-xs font-mono text-center px-1.5 focus:ring-forest-600"
                                         title="Fallback score for unlisted categories (0.0 to 1.0)"
                                       />
@@ -1022,8 +1245,35 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                                 step="0.05"
                                                 min="0"
                                                 max="1"
-                                                value={catScore as number}
+                                                value={catScore as any}
                                                 onChange={(e) => handleCategoryScoreChange(idx, catKey, e.target.value)}
+                                                onBlur={() => {
+                                                  setCriteria((prev) => {
+                                                    const copy = [...prev];
+                                                    const crit = copy[idx];
+                                                    const norm = crit.normalization || {};
+                                                    const catMap = norm.categorical_mapping || {
+                                                      category_scores: {},
+                                                      default_score: 0.5,
+                                                      case_sensitive: false,
+                                                    };
+                                                    const parsed = parseFloat(String(catMap.category_scores?.[catKey]));
+                                                    copy[idx] = {
+                                                      ...crit,
+                                                      normalization: {
+                                                        ...norm,
+                                                        categorical_mapping: {
+                                                          ...catMap,
+                                                          category_scores: {
+                                                            ...(catMap.category_scores || {}),
+                                                            [catKey]: isNaN(parsed) ? 0.0 : Math.min(1.0, Math.max(0.0, parsed)),
+                                                          },
+                                                        },
+                                                      },
+                                                    };
+                                                    return copy;
+                                                  });
+                                                }}
                                                 className="h-7 w-20 text-xs font-mono text-center px-1.5 focus:ring-forest-600"
                                                 title={`Score for ${catKey} (0.0 to 1.0)`}
                                               />
@@ -1060,7 +1310,24 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                       max="1"
                                       placeholder="Score (0.0 - 1.0)"
                                       value={newCatScore[idx] ?? '1.0'}
-                                      onChange={(e) => setNewCatScore((prev) => ({ ...prev, [idx]: e.target.value }))}
+                                      onChange={(e) => {
+                                        const raw = e.target.value;
+                                        if (raw === '') {
+                                          setNewCatScore((prev) => ({ ...prev, [idx]: '' }));
+                                          return;
+                                        }
+                                        const clean = raw.replace(/^0+(?=\d)/, '');
+                                        setNewCatScore((prev) => ({ ...prev, [idx]: clean }));
+                                      }}
+                                      onBlur={() => {
+                                        const cur = newCatScore[idx];
+                                        if (cur === undefined || cur === '' || isNaN(parseFloat(cur))) {
+                                          setNewCatScore((prev) => ({ ...prev, [idx]: '1.0' }));
+                                        } else {
+                                          const parsed = Math.min(1.0, Math.max(0.0, parseFloat(cur)));
+                                          setNewCatScore((prev) => ({ ...prev, [idx]: String(parsed) }));
+                                        }
+                                      }}
                                       className="h-7 w-28 text-xs font-mono text-center px-1.5 focus:ring-forest-600"
                                     />
                                     <Button

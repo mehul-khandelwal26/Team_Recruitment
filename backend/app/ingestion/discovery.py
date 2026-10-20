@@ -152,10 +152,8 @@ def _discover_csv_fields(raw_bytes: bytes, file_name: str) -> FieldDiscoveryResp
         )
 
     total_rows = len(df)
-    discovered_fields: list[DiscoveredField] = []
-    suggested_mappings: dict[str, str] = {}
-    matched_canonical_fields: set[str] = set()
-
+    # Pass 1: Raw matching for all discovered columns
+    raw_matches: list[dict[str, Any]] = []
     for col in df.columns:
         original_col_name = str(col)
         series = df[col].astype(str)
@@ -169,45 +167,90 @@ def _discover_csv_fields(raw_bytes: bytes, file_name: str) -> FieldDiscoveryResp
         )
         sample_values = list(dict.fromkeys(values[:5]))  # preserve order, unique
         inferred_type = _infer_type(values)
-
         match_info = _match_canonical(original_col_name)
 
-        target = match_info["canonical_field"]
-        confidence = match_info["confidence"]
-        is_exact = match_info["is_exact"]
-        reason = match_info["reason"]
+        raw_matches.append({
+            "col_name": original_col_name,
+            "inferred_type": inferred_type,
+            "sample_values": sample_values,
+            "total_count": total_count,
+            "non_empty_count": non_empty_count,
+            "missing_count": missing_count,
+            "is_consistently_populated": is_consistently_populated,
+            "target": match_info["canonical_field"],
+            "confidence": match_info["confidence"],
+            "is_exact": match_info["is_exact"],
+            "reason": match_info["reason"],
+        })
 
-        status = "unmapped"
-        suggested_target: Optional[str] = None
-        recognized_target: Optional[str] = None
+    # Pass 2: Conflict resolution by canonical target (highest confidence wins)
+    target_groups: dict[str, list[dict[str, Any]]] = {}
+    for m in raw_matches:
+        tgt = m["target"]
+        if tgt:
+            target_groups.setdefault(tgt, []).append(m)
 
-        if is_exact and target:
-            status = "recognized"
-            recognized_target = target
-            suggested_target = target
-            suggested_mappings[original_col_name] = target
-            matched_canonical_fields.add(target)
-        elif target and confidence > 0.0:
-            status = "suggested"
-            suggested_target = target
-            suggested_mappings[original_col_name] = target
-            matched_canonical_fields.add(target)
+    winning_cols: dict[str, str] = {}
+    for tgt, candidates in target_groups.items():
+        if len(candidates) == 1:
+            winning_cols[tgt] = candidates[0]["col_name"]
+        else:
+            sorted_cands = sorted(
+                candidates,
+                key=lambda c: (1 if c["is_exact"] else 0, c["confidence"]),
+                reverse=True,
+            )
+            winning_cols[tgt] = sorted_cands[0]["col_name"]
+
+    # Build final discovered_fields and suggested_mappings
+    discovered_fields: list[DiscoveredField] = []
+    suggested_mappings: dict[str, str] = {}
+    matched_canonical_fields: set[str] = set()
+
+    for m in raw_matches:
+        col_name = m["col_name"]
+        tgt = m["target"]
+
+        if tgt and winning_cols.get(tgt) == col_name:
+            is_recognized = m["is_exact"]
+            status = "recognized" if is_recognized else "suggested"
+            recognized_target = tgt if is_recognized else None
+            suggested_target = tgt
+            confidence = m["confidence"]
+            reason = m["reason"]
+            suggested_mappings[col_name] = tgt
+            matched_canonical_fields.add(tgt)
+        elif tgt:
+            winner = winning_cols[tgt]
+            status = "unmapped"
+            is_recognized = False
+            recognized_target = None
+            suggested_target = None
+            confidence = 0.0
+            reason = f"Duplicate candidate for canonical '{tgt}'; assigned to higher-confidence column '{winner}'"
+        else:
+            status = "unmapped"
+            is_recognized = False
+            recognized_target = None
+            suggested_target = None
+            confidence = 0.0
+            reason = m["reason"]
 
         is_structural = (
-            target in REQUIRED_STRUCTURAL_FIELDS if target else False
+            tgt in REQUIRED_STRUCTURAL_FIELDS if tgt and suggested_target else False
         )
 
         discovered_fields.append(
             DiscoveredField(
-                original_name=original_col_name,
-                normalized_key=_normalize_key(original_col_name),
-                inferred_type=inferred_type,
-                sample_values=sample_values,
-                total_count=total_count,
-                non_empty_count=non_empty_count,
-                missing_count=missing_count,
-                is_consistently_populated=is_consistently_populated,
-                is_recognized=is_exact,
+                original_name=col_name,
+                normalized_key=_normalize_key(col_name),
+                inferred_type=m["inferred_type"],
+                sample_values=m["sample_values"],
+                total_count=m["total_count"],
+                non_empty_count=m["non_empty_count"],
+                missing_count=m["missing_count"],
+                is_consistently_populated=m["is_consistently_populated"],
+                is_recognized=is_recognized,
                 recognized_field=recognized_target,
                 suggested_mapping=suggested_target,
                 suggestion_confidence=confidence,
@@ -309,10 +352,6 @@ def _discover_json_fields(raw_bytes: bytes, file_name: str) -> FieldDiscoveryRes
                         for mk, mv in m.items():
                             member_keys.setdefault(mk, []).append(mv)
 
-    discovered_fields: list[DiscoveredField] = []
-    suggested_mappings: dict[str, str] = {}
-    matched_canonical_fields: set[str] = set()
-
     # Combine keys, giving team-level precedence for team fields
     all_keys: dict[str, tuple[list[Any], int]] = {}
     for k, vals in team_keys.items():
@@ -324,6 +363,7 @@ def _discover_json_fields(raw_bytes: bytes, file_name: str) -> FieldDiscoveryRes
         else:
             all_keys[k] = (vals, total_members)
 
+    raw_matches_json: list[dict[str, Any]] = []
     for original_key, (vals, total_count) in all_keys.items():
         non_empty = [str(v).strip() for v in vals if v is not None and str(v).strip()]
         non_empty_count = len(non_empty)
@@ -335,40 +375,85 @@ def _discover_json_fields(raw_bytes: bytes, file_name: str) -> FieldDiscoveryRes
         inferred_type = _infer_type(non_empty)
 
         match_info = _match_canonical(original_key)
-        target = match_info["canonical_field"]
-        confidence = match_info["confidence"]
-        is_exact = match_info["is_exact"]
-        reason = match_info["reason"]
+        raw_matches_json.append({
+            "key": original_key,
+            "inferred_type": inferred_type,
+            "sample_values": sample_values,
+            "total_count": total_count,
+            "non_empty_count": non_empty_count,
+            "missing_count": missing_count,
+            "is_consistently_populated": is_consistently_populated,
+            "target": match_info["canonical_field"],
+            "confidence": match_info["confidence"],
+            "is_exact": match_info["is_exact"],
+            "reason": match_info["reason"],
+        })
 
-        status = "unmapped"
-        suggested_target: Optional[str] = None
-        recognized_target: Optional[str] = None
+    # Conflict resolution across canonical targets (highest confidence wins)
+    target_groups_json: dict[str, list[dict[str, Any]]] = {}
+    for m in raw_matches_json:
+        tgt = m["target"]
+        if tgt:
+            target_groups_json.setdefault(tgt, []).append(m)
 
-        if is_exact and target:
-            status = "recognized"
-            recognized_target = target
-            suggested_target = target
-            suggested_mappings[original_key] = target
-            matched_canonical_fields.add(target)
-        elif target and confidence > 0.0:
-            status = "suggested"
-            suggested_target = target
-            suggested_mappings[original_key] = target
-            matched_canonical_fields.add(target)
+    winning_cols_json: dict[str, str] = {}
+    for tgt, candidates in target_groups_json.items():
+        if len(candidates) == 1:
+            winning_cols_json[tgt] = candidates[0]["key"]
+        else:
+            sorted_cands = sorted(
+                candidates,
+                key=lambda c: (1 if c["is_exact"] else 0, c["confidence"]),
+                reverse=True,
+            )
+            winning_cols_json[tgt] = sorted_cands[0]["key"]
 
-        is_structural = target in REQUIRED_STRUCTURAL_FIELDS if target else False
+    discovered_fields: list[DiscoveredField] = []
+    suggested_mappings: dict[str, str] = {}
+    matched_canonical_fields: set[str] = set()
+
+    for m in raw_matches_json:
+        original_key = m["key"]
+        tgt = m["target"]
+
+        if tgt and winning_cols_json.get(tgt) == original_key:
+            is_recognized = m["is_exact"]
+            status = "recognized" if is_recognized else "suggested"
+            recognized_target = tgt if is_recognized else None
+            suggested_target = tgt
+            confidence = m["confidence"]
+            reason = m["reason"]
+            suggested_mappings[original_key] = tgt
+            matched_canonical_fields.add(tgt)
+        elif tgt:
+            winner = winning_cols_json[tgt]
+            status = "unmapped"
+            is_recognized = False
+            recognized_target = None
+            suggested_target = None
+            confidence = 0.0
+            reason = f"Duplicate candidate for canonical '{tgt}'; assigned to higher-confidence field '{winner}'"
+        else:
+            status = "unmapped"
+            is_recognized = False
+            recognized_target = None
+            suggested_target = None
+            confidence = 0.0
+            reason = m["reason"]
+
+        is_structural = tgt in REQUIRED_STRUCTURAL_FIELDS if tgt and suggested_target else False
 
         discovered_fields.append(
             DiscoveredField(
                 original_name=original_key,
                 normalized_key=_normalize_key(original_key),
-                inferred_type=inferred_type,
-                sample_values=sample_values,
-                total_count=total_count,
-                non_empty_count=non_empty_count,
-                missing_count=missing_count,
-                is_consistently_populated=is_consistently_populated,
-                is_recognized=is_exact,
+                inferred_type=m["inferred_type"],
+                sample_values=m["sample_values"],
+                total_count=m["total_count"],
+                non_empty_count=m["non_empty_count"],
+                missing_count=m["missing_count"],
+                is_consistently_populated=m["is_consistently_populated"],
+                is_recognized=is_recognized,
                 recognized_field=recognized_target,
                 suggested_mapping=suggested_target,
                 suggestion_confidence=confidence,
@@ -434,6 +519,14 @@ def _match_canonical(original_name: str) -> dict[str, Any]:
                         "confidence": 0.75,
                         "is_exact": False,
                         "reason": "Matches related academic metric 'CPI' (note: scale may differ from standard 4.0/10.0 CGPA)",
+                    }
+                # Handles / user IDs get 0.70 confidence so full URLs/links take precedence
+                if alias in ("github_id", "github id", "github_handle", "github handle"):
+                    return {
+                        "canonical_field": canonical_key,
+                        "confidence": 0.70,
+                        "is_exact": False,
+                        "reason": f"Matches GitHub handle identifier alias '{alias}' for '{canonical_key}'",
                     }
                 return {
                     "canonical_field": canonical_key,

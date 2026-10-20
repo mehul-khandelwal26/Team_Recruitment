@@ -480,6 +480,11 @@ def reset_test_database(engine: Engine) -> None:
     """
     url_str = engine.url.render_as_string(hide_password=False)
     assert_safe_test_database(url_str)
+    try:
+        from app.db.models import Base
+        Base.metadata.create_all(bind=engine)
+    except Exception:
+        pass
 
     tables = [
         "ranking_runs",

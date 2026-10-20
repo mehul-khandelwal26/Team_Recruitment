@@ -41,7 +41,7 @@ const DEFAULT_PARAMETERS_BY_TYPE: Record<string, Record<string, any>> = {
     aggregation: 'all',
   },
   signal_contains: {
-    signal_key: 'skills',
+    signal_key: 'resume_programming_languages',
     expected_value: 'Python',
     member_selection: 'any_member',
   },
@@ -77,7 +77,7 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
   const [leadValues, setLeadValues] = useState(
     (config.global_config?.lead_values || ['lead', 'team lead', 'captain', 'leader', 'team_lead']).join(', ')
   );
-  const [defaultAcademicScale, setDefaultAcademicScale] = useState<number>(
+  const [defaultAcademicScale, setDefaultAcademicScale] = useState<number | string>(
     config.global_config?.default_academic_scale ?? 10.0
   );
   const [isGlobalConfigOpen, setIsGlobalConfigOpen] = useState(false);
@@ -276,9 +276,26 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
       const globalConfigPayload: GlobalRuleConfig = {
         lead_field: leadField.trim() || 'role',
         lead_values: parsedLeadValues.length > 0 ? parsedLeadValues : ['lead', 'team lead'],
-        default_academic_scale: defaultAcademicScale > 0 ? defaultAcademicScale : 10.0,
+        default_academic_scale: Number(defaultAcademicScale) > 0 ? Number(defaultAcademicScale) : 10.0,
         extra_mappings: config.global_config?.extra_mappings || {},
       };
+
+      const cleanedRules = rules.map((r) => {
+        const p = { ...(r.parameters || {}) };
+        if (r.rule_type === 'team_size_min' && p.min_size !== undefined) {
+          p.min_size = parseInt(String(p.min_size), 10) || 0;
+        }
+        if (r.rule_type === 'team_size_max' && p.max_size !== undefined) {
+          p.max_size = parseInt(String(p.max_size), 10) || 1;
+        }
+        if (r.rule_type === 'signal_threshold' && p.threshold !== undefined) {
+          p.threshold = parseFloat(String(p.threshold)) || 0;
+        }
+        if (r.rule_type === 'track_limit' && p.limit !== undefined) {
+          p.limit = parseInt(String(p.limit), 10) || 1;
+        }
+        return { ...r, parameters: p };
+      });
 
       const updated = await updateMutation.mutateAsync({
         configId: config.config_id,
@@ -286,7 +303,7 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
           name: name.trim() || config.name,
           description: description.trim(),
           global_config: globalConfigPayload,
-          rules: rules as any,
+          rules: cleanedRules as any,
         },
       });
       onSuccess(updated.version);
@@ -410,7 +427,24 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                       step="0.5"
                       min="1"
                       value={defaultAcademicScale}
-                      onChange={(e) => setDefaultAcademicScale(parseFloat(e.target.value) || 10.0)}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        if (raw === '' || raw === '-') {
+                          setDefaultAcademicScale('');
+                          return;
+                        }
+                        let clean = raw;
+                        if (clean.length > 1 && clean.startsWith('0') && !clean.startsWith('0.')) {
+                          clean = clean.replace(/^0+/, '') || '0';
+                        }
+                        const parsed = parseFloat(clean);
+                        setDefaultAcademicScale(isNaN(parsed) ? '' : parsed);
+                      }}
+                      onBlur={() => {
+                        if (!defaultAcademicScale || Number(defaultAcademicScale) < 1) {
+                          setDefaultAcademicScale(10.0);
+                        }
+                      }}
                       className="h-7 text-xs font-mono"
                     />
                     <p className="text-[10px] text-muted-foreground">
@@ -641,14 +675,22 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                         <Input
                                           type="number"
                                           min="0"
-                                          value={params.min_size ?? 2}
-                                          onChange={(e) =>
-                                            handleParameterChange(
-                                              idx,
-                                              'min_size',
-                                              parseInt(e.target.value, 10) || 0
-                                            )
-                                          }
+                                          value={params.min_size !== undefined ? params.min_size : 2}
+                                          onChange={(e) => {
+                                            const raw = e.target.value;
+                                            if (raw === '') {
+                                              handleParameterChange(idx, 'min_size', '');
+                                              return;
+                                            }
+                                            const clean = raw.length > 1 && raw.startsWith('0') ? raw.replace(/^0+/, '') || '0' : raw;
+                                            const parsed = parseInt(clean, 10);
+                                            handleParameterChange(idx, 'min_size', isNaN(parsed) ? '' : parsed);
+                                          }}
+                                          onBlur={() => {
+                                            if (params.min_size === '' || params.min_size === undefined || isNaN(Number(params.min_size))) {
+                                              handleParameterChange(idx, 'min_size', 2);
+                                            }
+                                          }}
                                           className="h-7 text-xs font-mono"
                                         />
                                       </div>
@@ -662,14 +704,22 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                         <Input
                                           type="number"
                                           min="1"
-                                          value={params.max_size ?? 5}
-                                          onChange={(e) =>
-                                            handleParameterChange(
-                                              idx,
-                                              'max_size',
-                                              parseInt(e.target.value, 10) || 1
-                                            )
-                                          }
+                                          value={params.max_size !== undefined ? params.max_size : 5}
+                                          onChange={(e) => {
+                                            const raw = e.target.value;
+                                            if (raw === '') {
+                                              handleParameterChange(idx, 'max_size', '');
+                                              return;
+                                            }
+                                            const clean = raw.length > 1 && raw.startsWith('0') ? raw.replace(/^0+/, '') || '1' : raw;
+                                            const parsed = parseInt(clean, 10);
+                                            handleParameterChange(idx, 'max_size', isNaN(parsed) ? '' : parsed);
+                                          }}
+                                          onBlur={() => {
+                                            if (params.max_size === '' || params.max_size === undefined || isNaN(Number(params.max_size))) {
+                                              handleParameterChange(idx, 'max_size', 5);
+                                            }
+                                          }}
                                           className="h-7 text-xs font-mono"
                                         />
                                       </div>
@@ -794,14 +844,25 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                           <Input
                                             type="number"
                                             step="0.1"
-                                            value={params.threshold ?? 7.0}
-                                            onChange={(e) =>
-                                              handleParameterChange(
-                                                idx,
-                                                'threshold',
-                                                parseFloat(e.target.value) || 0
-                                              )
-                                            }
+                                            value={params.threshold !== undefined ? params.threshold : 7.0}
+                                            onChange={(e) => {
+                                              const raw = e.target.value;
+                                              if (raw === '' || raw === '-') {
+                                                handleParameterChange(idx, 'threshold', '');
+                                                return;
+                                              }
+                                              let clean = raw;
+                                              if (clean.length > 1 && clean.startsWith('0') && !clean.startsWith('0.')) {
+                                                clean = clean.replace(/^0+/, '') || '0';
+                                              }
+                                              const parsed = parseFloat(clean);
+                                              handleParameterChange(idx, 'threshold', isNaN(parsed) ? '' : parsed);
+                                            }}
+                                            onBlur={() => {
+                                              if (params.threshold === '' || params.threshold === undefined || isNaN(Number(params.threshold))) {
+                                                handleParameterChange(idx, 'threshold', 7.0);
+                                              }
+                                            }}
                                             className="h-7 text-xs font-mono"
                                           />
                                         </div>
@@ -1031,14 +1092,22 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                           <Input
                                             type="number"
                                             min="1"
-                                            value={params.limit ?? 10}
-                                            onChange={(e) =>
-                                              handleParameterChange(
-                                                idx,
-                                                'limit',
-                                                parseInt(e.target.value, 10) || 1
-                                              )
-                                            }
+                                            value={params.limit !== undefined ? params.limit : 10}
+                                            onChange={(e) => {
+                                              const raw = e.target.value;
+                                              if (raw === '') {
+                                                handleParameterChange(idx, 'limit', '');
+                                                return;
+                                              }
+                                              const clean = raw.length > 1 && raw.startsWith('0') ? raw.replace(/^0+/, '') || '1' : raw;
+                                              const parsed = parseInt(clean, 10);
+                                              handleParameterChange(idx, 'limit', isNaN(parsed) ? '' : parsed);
+                                            }}
+                                            onBlur={() => {
+                                              if (params.limit === '' || params.limit === undefined || isNaN(Number(params.limit))) {
+                                                handleParameterChange(idx, 'limit', 10);
+                                              }
+                                            }}
                                             className="h-7 text-xs font-mono"
                                           />
                                         </div>

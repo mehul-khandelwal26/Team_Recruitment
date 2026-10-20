@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -85,6 +85,13 @@ export const Step5ReviewAndRun: React.FC<Step5ReviewAndRunProps> = ({
 
   // Success Results
   const [rankingResult, setRankingResult] = useState<RankingRunResponse | null>(null);
+
+  // Local TopX state for controlled, bug-free typing
+  const [localTopX, setLocalTopX] = useState<number | string>(topX);
+
+  useEffect(() => {
+    setLocalTopX(topX);
+  }, [topX]);
 
   // Pipeline Execution Routine
   const handleExecutePipeline = async () => {
@@ -485,9 +492,30 @@ export const Step5ReviewAndRun: React.FC<Step5ReviewAndRunProps> = ({
                     type="number"
                     min={1}
                     max={500}
-                    value={topX}
+                    value={localTopX}
                     disabled={isExecuting}
-                    onChange={(e) => onTopXChange(parseInt(e.target.value, 10) || 0)}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === '') {
+                        setLocalTopX('');
+                        onTopXChange(0);
+                        return;
+                      }
+                      const clean = raw.replace(/^0+(?=\d)/, '');
+                      setLocalTopX(clean);
+                      const parsed = parseInt(clean, 10);
+                      onTopXChange(isNaN(parsed) ? 0 : parsed);
+                    }}
+                    onBlur={() => {
+                      if (localTopX === '' || Number(localTopX) < 1) {
+                        setLocalTopX(5);
+                        onTopXChange(5);
+                      } else {
+                        const clamped = Math.min(500, Math.max(1, Math.round(Number(localTopX))));
+                        setLocalTopX(clamped);
+                        onTopXChange(clamped);
+                      }
+                    }}
                     className={cn(
                       'font-mono text-sm h-9',
                       !isTopXValid && 'border-destructive focus-visible:ring-destructive'

@@ -88,6 +88,7 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResponse | null>(null);
+  const [showAllWarnings, setShowAllWarnings] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
 
@@ -1104,19 +1105,38 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
                   {/* Non-fatal Warnings */}
                   {uploadResult.warnings && uploadResult.warnings.length > 0 && (
                     <div className="mt-2 pt-2 border-t border-emerald-200">
-                      <div className="flex items-center gap-1.5 text-amber-800 font-semibold mb-1">
-                        <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
-                        {uploadResult.warnings.length} Non-fatal Ingestion Warnings:
+                      <div className="flex items-center justify-between text-amber-800 font-semibold mb-1">
+                        <div className="flex items-center gap-1.5">
+                          <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+                          <span>{uploadResult.warnings.length} Non-fatal Ingestion Warnings:</span>
+                        </div>
+                        {uploadResult.warnings.length > 5 && (
+                          <button
+                            type="button"
+                            onClick={() => setShowAllWarnings((prev) => !prev)}
+                            className="text-xs text-amber-900 underline hover:text-amber-950 font-medium cursor-pointer"
+                          >
+                            {showAllWarnings ? 'Show less (5)' : `Show all (${uploadResult.warnings.length})`}
+                          </button>
+                        )}
                       </div>
-                      <div className="max-h-28 overflow-y-auto space-y-1 bg-white/70 p-2 rounded border border-emerald-200/60 font-mono text-[11px]">
-                        {uploadResult.warnings.slice(0, 5).map((w, idx) => (
+                      <div
+                        className={cn(
+                          'overflow-y-auto space-y-1 bg-white/70 p-2 rounded border border-emerald-200/60 font-mono text-[11px]',
+                          showAllWarnings ? 'max-h-60' : 'max-h-28'
+                        )}
+                      >
+                        {(showAllWarnings
+                          ? uploadResult.warnings
+                          : uploadResult.warnings.slice(0, 5)
+                        ).map((w, idx) => (
                           <div key={idx} className="text-amber-900">
                             • [{w.team_id || 'Global'}] {w.field}: {w.message}
                           </div>
                         ))}
-                        {uploadResult.warnings.length > 5 && (
+                        {!showAllWarnings && uploadResult.warnings.length > 5 && (
                           <div className="text-muted-foreground italic">
-                            ... and {uploadResult.warnings.length - 5} more warnings
+                            ... and {uploadResult.warnings.length - 5} more warnings (click &apos;Show all&apos; above)
                           </div>
                         )}
                       </div>
