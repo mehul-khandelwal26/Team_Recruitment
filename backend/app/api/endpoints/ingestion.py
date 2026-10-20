@@ -42,12 +42,16 @@ async def _read_upload_file_bounded(file: UploadFile, max_bytes: int = MAX_UPLOA
 # Supported MIME types -> parser mapping
 _PARSERS = {
     "text/csv": parse_csv,
+    "text/tab-separated-values": parse_csv,
+    "text/plain": parse_csv,
     "application/json": parse_json,
     "application/vnd.ms-excel": parse_csv,
 }
 
 _EXTENSION_MAP = {
     ".csv": parse_csv,
+    ".tsv": parse_csv,
+    ".txt": parse_csv,
     ".json": parse_json,
 }
 

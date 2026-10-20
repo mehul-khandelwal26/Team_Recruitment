@@ -519,10 +519,18 @@ def extract_text_from_document(
         except Exception as exc:
             return None, f"Corrupted or invalid DOCX document: {exc}", {"format": "docx", "corrupted": True}
 
+    elif filename_or_url.lower().endswith(".txt"):
+        from app.ingestion.parser import decode_text_bytes
+
+        full_text = decode_text_bytes(raw_bytes)
+        if not full_text or len(re.sub(r"\s+", "", full_text)) < 20:
+            return None, "Document contains no readable text.", {"format": "txt", "empty": True}
+        return full_text, None, {"format": "txt", "char_count": len(full_text)}
+
     else:
         return (
             None,
-            "Unsupported resume file format. Only PDF (.pdf) and DOCX (.docx) documents are supported.",
+            "Unsupported resume file format. Only PDF (.pdf), DOCX (.docx), and text (.txt) documents are supported.",
             {"unsupported": True},
         )
 

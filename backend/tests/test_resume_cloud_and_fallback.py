@@ -272,3 +272,47 @@ class TestCompanionZipIngestion:
         cgpa_sig = next(s for s in alice_sigs if s.signal_key == "academic_cgpa")
         assert cgpa_sig.value == 9.4
         assert cgpa_sig.evidence.source == "resume_parser"
+
+
+
+class TestEncodingAndDelimiterResilience:
+    """Test auto-encoding (UTF-8, UTF-16) and auto-delimiter (comma, tab, semicolon) detection."""
+
+    def test_utf16_le_tab_separated_tsv_parsing(self):
+        """Excel Unicode Text (UTF-16 LE with BOM and tabs) parses seamlessly."""
+        from app.ingestion.parser import parse_csv
+
+        tsv_str = "team_id\tteam_name\tmember_name\temail\nT1\tTeam Alpha\tAlice\talice@example.com\nT1\tTeam Alpha\tBob\tbob@example.com"
+        raw_bytes = tsv_str.encode("utf-16")
+
+        res = parse_csv(raw_bytes)
+        assert res.success is True
+        assert res.teams_count == 1
+        assert len(res.teams[0].members) == 2
+        assert res.teams[0].members[0].name == "Alice"
+        assert res.teams[0].members[1].name == "Bob"
+
+    def test_semicolon_separated_csv_parsing(self):
+        """European-style semicolon-separated CSVs parse correctly."""
+        from app.ingestion.parser import parse_csv
+
+        csv_str = "team_id;team_name;name;email\nT2;Team Beta;Charlie;charlie@example.com"
+        raw_bytes = csv_str.encode("utf-8")
+
+        res = parse_csv(raw_bytes)
+        assert res.success is True
+        assert res.teams_count == 1
+        assert res.teams[0].members[0].name == "Charlie"
+
+    def test_discovery_on_utf16_tab_separated(self):
+        """Field discovery inspects UTF-16 TSV and detects fields accurately."""
+        from app.ingestion.discovery import _discover_csv_fields
+
+        tsv_str = "team_id\tteam_name\tmember_name\tgithub_url\nT3\tTeam Gamma\tDave\thttps://github.com/dave"
+        raw_bytes = tsv_str.encode("utf-16")
+
+        disc = _discover_csv_fields(raw_bytes, "export.tsv")
+        assert disc.total_records == 1
+        assert disc.total_teams_detected == 1
+        assert disc.suggested_mappings.get("member_name") == "name"
+        assert disc.suggested_mappings.get("github_url") == "github_url"

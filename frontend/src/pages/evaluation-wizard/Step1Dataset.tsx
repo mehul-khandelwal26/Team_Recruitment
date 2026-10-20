@@ -650,7 +650,7 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".csv,.json"
+                  accept=".csv,.tsv,.txt,.json"
                   onChange={handleFileChange}
                   className="hidden"
                 />
@@ -664,7 +664,7 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
                   Click to browse or drag and drop registration file here
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Supports standardized CSV or JSON registration exports (Max 15MB)
+                  Supports CSV, TSV, or JSON registration exports (Max 15MB)
                 </p>
               </div>
 

@@ -311,12 +311,73 @@ def _match_member_resume(
     return None
 
 
+def decode_text_bytes(raw_bytes: bytes) -> str:
+    """Decode raw bytes into a string safely handling UTF-8, UTF-16, and Latin-1.
+
+    Handles:
+    - UTF-16 LE with BOM (b'\xff\xfe')
+    - UTF-16 BE with BOM (b'\xfe\xff')
+    - UTF-16 without BOM (detects interleaved null bytes in initial sample)
+    - UTF-8 with or without BOM (utf-8-sig)
+    - Fallback to Latin-1 if invalid UTF-8 byte sequences are encountered
+    """
+    if not raw_bytes:
+        return ""
+
+    # 1. Explicit UTF-16 BOM markers (common in Windows Excel Unicode export)
+    if raw_bytes.startswith(b"\xff\xfe") or raw_bytes.startswith(b"\xfe\xff"):
+        return raw_bytes.decode("utf-16", errors="replace").strip()
+
+    # 2. Heuristic for UTF-16 without BOM (embedded null bytes in ASCII range)
+    sample = raw_bytes[:min(len(raw_bytes), 200)]
+    if b"\x00" in sample:
+        try:
+            return raw_bytes.decode("utf-16", errors="replace").strip()
+        except Exception:
+            pass
+
+    # 3. Standard UTF-8 with or without BOM
+    try:
+        return raw_bytes.decode("utf-8-sig").strip()
+    except UnicodeDecodeError:
+        # 4. Fallback to Latin-1
+        return raw_bytes.decode("latin-1", errors="replace").strip()
+
+
+def detect_csv_delimiter(text: str) -> str:
+    """Detect CSV/TSV delimiter: comma (','), tab ('\t'), or semicolon (';').
+
+    Analyzes the header line to compare delimiter frequency. Defaults to comma (',')
+    unless tabs or semicolons are strictly more frequent.
+    """
+    if not text:
+        return ","
+
+    first_line = text.split("\n", 1)[0].strip()
+    if not first_line:
+        return ","
+
+    tab_count = first_line.count("\t")
+    comma_count = first_line.count(",")
+    semi_count = first_line.count(";")
+
+    # If tabs are dominant (e.g. TSV export)
+    if tab_count > comma_count and tab_count > semi_count:
+        return "\t"
+
+    # If semicolons are dominant (e.g. European Excel export)
+    if semi_count > comma_count and semi_count > tab_count:
+        return ";"
+
+    return ","
+
+
 def parse_csv(
     raw_bytes: bytes,
     mapping: Optional[dict[str, str]] = None,
     resumes_zip_bytes: Optional[bytes] = None,
 ) -> UploadResponse:
-    """Parse a CSV file (one row per member) into teams with custom field preservation.
+    """Parse a CSV or TSV file (one row per member) into teams with custom field preservation.
 
     Supports optional explicit field mapping from original column names to
     canonical fields. Unmapped columns are safely retained in ``custom_fields``
@@ -332,16 +393,18 @@ def parse_csv(
         warnings.extend(zip_warnings)
     matched_filenames: set[str] = set()
 
-    text = raw_bytes.decode("utf-8-sig", errors="replace").strip()
+    text = decode_text_bytes(raw_bytes)
     if not text:
         return UploadResponse(
             success=False,
             errors=[ValidationError(location="file", message="Uploaded CSV file is empty.")],
         )
 
+    sep = detect_csv_delimiter(text)
+
     # Read into a DataFrame
     try:
-        df = pd.read_csv(io.StringIO(text), dtype=str, keep_default_na=False)
+        df = pd.read_csv(io.StringIO(text), sep=sep, dtype=str, keep_default_na=False)
     except Exception as exc:
         return UploadResponse(
             success=False,
@@ -757,7 +820,7 @@ def parse_json(
     errors: list[ValidationError] = []
     warnings: list[ValidationWarning] = []
 
-    text = raw_bytes.decode("utf-8-sig", errors="replace").strip()
+    text = decode_text_bytes(raw_bytes)
     if not text:
         return UploadResponse(
             success=False,

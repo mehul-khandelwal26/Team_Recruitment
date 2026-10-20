@@ -51,6 +51,7 @@ CANONICAL_ALIASES: dict[str, list[str]] = {
         "member_id", "member id", "memberid", "participant_id", "participant id",
         "participantid", "student_id", "student id", "roll_no", "roll no",
         "roll number", "registration_number", "reg_no", "reg no",
+        "member_number", "member number", "member_no", "member no",
     ],
     CanonicalField.MEMBER_NAME.value: [
         "name", "member_name", "member name", "full_name", "full name",
@@ -64,10 +65,11 @@ CANONICAL_ALIASES: dict[str, list[str]] = {
     CanonicalField.RESUME_URL.value: [
         "resume_url", "resume url", "resume", "cv", "cv_url", "cv url",
         "resume_link", "resume link", "curriculum vitae",
+        "resume_path", "resume path", "resume_file", "resume file",
     ],
     CanonicalField.GITHUB_URL.value: [
         "github_url", "github url", "github", "github_profile", "github profile",
-        "github link", "github_handle", "github handle",
+        "github link", "github_handle", "github handle", "github_id", "github id",
     ],
     CanonicalField.LINKEDIN_URL.value: [
         "linkedin_url", "linkedin url", "linkedin", "linkedin_profile",

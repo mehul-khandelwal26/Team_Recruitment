@@ -122,7 +122,9 @@ def discover_fields_from_bytes(
 
 
 def _discover_csv_fields(raw_bytes: bytes, file_name: str) -> FieldDiscoveryResponse:
-    text = raw_bytes.decode("utf-8-sig", errors="replace").strip()
+    from app.ingestion.parser import decode_text_bytes, detect_csv_delimiter
+
+    text = decode_text_bytes(raw_bytes)
     if not text:
         return FieldDiscoveryResponse(
             file_name=file_name,
@@ -134,8 +136,10 @@ def _discover_csv_fields(raw_bytes: bytes, file_name: str) -> FieldDiscoveryResp
             canonical_fields=CANONICAL_FIELD_CATALOG,
         )
 
+    sep = detect_csv_delimiter(text)
+
     try:
-        df = pd.read_csv(io.StringIO(text), dtype=str, keep_default_na=False)
+        df = pd.read_csv(io.StringIO(text), sep=sep, dtype=str, keep_default_na=False)
     except Exception:
         return FieldDiscoveryResponse(
             file_name=file_name,
@@ -248,7 +252,9 @@ def _discover_csv_fields(raw_bytes: bytes, file_name: str) -> FieldDiscoveryResp
 
 
 def _discover_json_fields(raw_bytes: bytes, file_name: str) -> FieldDiscoveryResponse:
-    text = raw_bytes.decode("utf-8-sig", errors="replace").strip()
+    from app.ingestion.parser import decode_text_bytes
+
+    text = decode_text_bytes(raw_bytes)
     if not text:
         return FieldDiscoveryResponse(
             file_name=file_name,
