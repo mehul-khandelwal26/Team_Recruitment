@@ -965,7 +965,7 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
                                         <option value="">-- Do not map (Ignore / Discard) --</option>
                                         <optgroup label="✨ Custom Recruitment Signals">
                                           <option value={`custom:${df.original_name.toLowerCase().replace(/[^a-z0-9_]/g, '_')}`}>
-                                            ⭐ Map as Custom Signal (custom:{df.original_name.toLowerCase().replace(/[^a-z0-9_]/g, '_')})
+                                            ⭐ Map as Custom Signal
                                           </option>
                                         </optgroup>
                                         {Object.entries(groupedCanonicalFields).map(([cat, fields]) => (

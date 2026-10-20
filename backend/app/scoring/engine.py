@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import datetime
 import math
+import re
 import uuid
 from typing import Any, Optional
 
@@ -82,6 +83,41 @@ def parse_numeric_safely(val: Any) -> tuple[Optional[float], bool]:
     return None, False
 
 
+def compute_field_confidence(target: str, candidate_key: str) -> float:
+    """Calculate fuzzy/token similarity confidence between a target field name and a candidate column."""
+    t = target.lower().replace("custom:", "").replace("custom_", "").strip()
+    c = candidate_key.lower().replace("custom:", "").replace("custom_", "").strip()
+    if not t or not c:
+        return 0.0
+    if t == c:
+        return 1.0
+
+    t_stem = t.rstrip("s")
+    c_stem = c.rstrip("s")
+    if t_stem == c_stem:
+        return 0.98
+
+    # Token overlap
+    t_tokens = set(re.split(r"[_\s\-]+", t))
+    c_tokens = set(re.split(r"[_\s\-]+", c))
+    if t_tokens and c_tokens:
+        overlap = t_tokens & c_tokens
+        if overlap:
+            jaccard = len(overlap) / len(t_tokens | c_tokens)
+            if t in c_tokens or t_stem in {tok.rstrip("s") for tok in c_tokens}:
+                return max(0.85, 0.80 + 0.15 * jaccard)
+            return 0.75 + 0.20 * jaccard
+
+    # Substring root containment
+    if len(t_stem) >= 3:
+        if t_stem in c or c_stem in t:
+            len_ratio = min(len(t_stem), len(c_stem)) / max(len(t_stem), len(c_stem))
+            if len_ratio >= 0.5:
+                return 0.80 + 0.15 * len_ratio
+
+    return 0.0
+
+
 def resolve_member_signal_or_field(
     member: MemberSchema,
     signal_key: str,
@@ -137,6 +173,39 @@ def resolve_member_signal_or_field(
         if val is not None and not (isinstance(val, str) and not val.strip()):
             return val, "extracted", "registration_canonical", 1.0
         return None, "not_applicable", "registration_canonical", 1.0
+
+    # 5. Fallback: Fuzzy / Confidence matching for custom signals against available candidate fields (threshold >= 0.80)
+    best_key = None
+    best_conf = 0.0
+    best_val = None
+    best_source = None
+
+    candidates = [
+        (member.custom_fields, "registration_custom_fields"),
+        (member.raw_data, "registration_raw_data"),
+    ]
+    for c_dict, src_name in candidates:
+        for k, v in c_dict.items():
+            if v is not None and not (isinstance(v, str) and not v.strip()):
+                conf = compute_field_confidence(raw_k, k)
+                if conf > best_conf:
+                    best_conf = conf
+                    best_key = k
+                    best_val = v
+                    best_source = src_name
+
+    for k, sig in m_signals.items():
+        if sig.status == SignalStatus.EXTRACTED and sig.value is not None:
+            conf = compute_field_confidence(raw_k, k)
+            if conf > best_conf:
+                best_conf = conf
+                best_key = k
+                best_val = sig.value
+                best_source = sig.evidence.source if sig.evidence else "extracted_signal"
+
+    if best_conf >= 0.80 and best_val is not None:
+        effective_conf = round(best_conf, 2)
+        return best_val, "extracted", f"{best_source}:{best_key}", effective_conf
 
     return None, "unavailable", None, None
 
@@ -208,31 +277,81 @@ def normalize_value(
 
         return None, f"Value '{raw_val}' is not a valid boolean"
 
-    # C. CATEGORICAL
+    # C. CATEGORICAL & GENERALIZED VALUE/KEYWORD MATCHING
     elif ctype in (CriterionType.CATEGORICAL, CriterionType.CATEGORY_MATCH):
         cm = criterion.normalization.categorical_mapping
-        if cm is None or not cm.category_scores:
-            return None, "Missing categorical_mapping configuration"
+        category_map = cm.category_scores if cm else {}
 
         val_str = str(raw_val).strip()
-        category_map = cm.category_scores
 
-        if not cm.case_sensitive:
-            lower_map = {k.lower(): v for k, v in category_map.items()}
-            match_key = val_str.lower()
-            if match_key in lower_map:
-                score = lower_map[match_key]
-                return score, f"Category '{val_str}' mapped to {score}"
-        else:
-            if val_str in category_map:
-                score = category_map[val_str]
-                return score, f"Category '{val_str}' mapped to {score}"
+        # 1. Direct discrete category match (case-sensitive or case-insensitive)
+        if category_map:
+            if cm and not cm.case_sensitive:
+                lower_map = {k.lower(): v for k, v in category_map.items()}
+                match_key = val_str.lower()
+                if match_key in lower_map:
+                    score = lower_map[match_key]
+                    return score, f"Category '{val_str}' mapped to {score}"
+            else:
+                if val_str in category_map:
+                    score = category_map[val_str]
+                    return score, f"Category '{val_str}' mapped to {score}"
 
-        # Default fallback score if configured
-        if cm.default_score is not None:
+        # 2. Generalized Keyword / Desired Value Matching
+        # Used for custom recruitment signals, skill lists, comma-separated tokens, or when expected_values is configured
+        expected_items: list[str] = []
+        if criterion.config and criterion.config.get("expected_values"):
+            cfg_vals = criterion.config["expected_values"]
+            if isinstance(cfg_vals, list):
+                expected_items = [str(x).strip() for x in cfg_vals if str(x).strip()]
+            elif isinstance(cfg_vals, str):
+                expected_items = [str(x).strip() for x in re.split(r"[,;|/\n\r]+", cfg_vals) if str(x).strip()]
+
+        if not expected_items and category_map:
+            # Fall back to keys in category_map if multiple or custom
+            expected_items = [str(x).strip() for x in category_map.keys() if str(x).strip()]
+
+        if expected_items:
+            # Tokenize / parse candidate's raw value
+            if isinstance(raw_val, (list, tuple, set)):
+                cand_tokens = [str(x).strip().lower() for x in raw_val if str(x).strip()]
+                cand_text = " ".join(cand_tokens)
+            else:
+                cand_tokens = [t.strip().lower() for t in re.split(r"[,;|/\n\r]+", val_str) if t.strip()]
+                cand_text = val_str.lower()
+
+            matched_items: list[str] = []
+            words = [w.strip(".,!?:;\"'()[]{}").lower() for w in val_str.split() if w.strip()]
+            for item in expected_items:
+                item_clean = item.strip()
+                item_lower = item_clean.lower()
+                if item_lower in cand_tokens or item_lower in words:
+                    matched_items.append(item_clean)
+                else:
+                    pattern = r"(?:^|[\s,;|/(\[{<\"'])" + re.escape(item_lower) + r"(?:$|[\s,;|/.)\]}>\"':!?])"
+                    if re.search(pattern, cand_text, re.IGNORECASE):
+                        matched_items.append(item_clean)
+
+            match_mode = (criterion.config.get("match_mode") or "proportional").lower() if criterion.config else "proportional"
+            total = len(expected_items)
+            k = len(matched_items)
+
+            if match_mode == "any":
+                score = 1.0 if k > 0 else (cm.default_score if cm and cm.default_score is not None else 0.0)
+                matched_str = ", ".join(matched_items) if matched_items else "none"
+                return score, f"Matched {k} expected item(s) ({matched_str}) -> score: {round(score, 4)}"
+            else:
+                score = k / total if total > 0 else 0.0
+                if k == 0 and cm and cm.default_score is not None:
+                    score = cm.default_score
+                matched_str = ", ".join(matched_items) if matched_items else "none"
+                return score, f"Matched {k} of {total} expected item(s) ({matched_str}) -> score: {round(score, 4)}"
+
+        # 3. Default fallback score if configured
+        if cm and cm.default_score is not None:
             return cm.default_score, f"Unlisted category '{val_str}' mapped to default {cm.default_score}"
 
-        return None, f"Category '{val_str}' not found in allowed category scores"
+        return None, f"Category '{val_str}' not found in allowed category scores or expected values"
 
     return None, f"Unsupported criterion type '{ctype}'"
 

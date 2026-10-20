@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import type { ScoringConfiguration, EvaluationCriterionInput } from '@/types';
 import { useUpdateScoringConfigMutation } from '@/hooks/useConfigurations';
+import { cn } from '@/lib/utils';
 
 interface AvailableSignal {
   signal_key: string;
@@ -168,6 +169,8 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
   const [expandedCritIndex, setExpandedCritIndex] = useState<number | null>(null);
   const [newCatName, setNewCatName] = useState<Record<number, string>>({});
   const [newCatScore, setNewCatScore] = useState<Record<number, string>>({});
+  const [expectedValuesText, setExpectedValuesText] = useState<Record<number, string>>({});
+  const [hasSubmitted, setHasSubmitted] = useState(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -182,6 +185,17 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
       setLeadField(config.lead_field || 'role');
       setLeadValues((config.lead_values || ['lead', 'team lead', 'captain', 'leader']).join(', '));
       setIsSettingsOpen(false);
+
+      const initialTextMap: Record<number, string> = {};
+      (config.criteria || []).forEach((c, idx) => {
+        const isCustom = c.criterion_id.startsWith('crit_custom_') || c.target_signal_key.startsWith('custom:') || Boolean(c.config?.is_custom_field);
+        if (isCustom) {
+          const exp = c.config?.expected_values || Object.keys(c.normalization?.categorical_mapping?.category_scores || {});
+          initialTextMap[idx] = Array.isArray(exp) ? exp.join(', ') : '';
+        }
+      });
+      setExpectedValuesText(initialTextMap);
+      setHasSubmitted(false);
 
       setCriteria(
         (config.criteria || []).map((c) => {
@@ -562,6 +576,65 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
     setIsAddMenuOpen(false);
   };
 
+  // Expected values handler for custom criteria
+  const handleExpectedValuesChange = (critIdx: number, textVal: string) => {
+    setExpectedValuesText((prev) => ({ ...prev, [critIdx]: textVal }));
+    const items = textVal
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    setCriteria((prev) => {
+      const copy = [...prev];
+      const crit = copy[critIdx];
+      const category_scores = items.length > 0 ? Object.fromEntries(items.map((it) => [it, 1.0])) : {};
+      copy[critIdx] = {
+        ...crit,
+        normalization: {
+          ...crit.normalization,
+          categorical_mapping: {
+            category_scores,
+            default_score: 0.0,
+            case_sensitive: false,
+          },
+        },
+        config: {
+          ...crit.config,
+          is_custom_field: true,
+          expected_values: items,
+        },
+      };
+      return copy;
+    });
+  };
+
+  const handleRemoveExpectedValue = (critIdx: number, valToRemove: string) => {
+    setCriteria((prev) => {
+      const copy = [...prev];
+      const crit = copy[critIdx];
+      const currentItems: string[] = crit.config?.expected_values || [];
+      const newItems = currentItems.filter((it: string) => it !== valToRemove);
+      const category_scores = newItems.length > 0 ? Object.fromEntries(newItems.map((it) => [it, 1.0])) : {};
+      copy[critIdx] = {
+        ...crit,
+        normalization: {
+          ...crit.normalization,
+          categorical_mapping: {
+            category_scores,
+            default_score: 0.0,
+            case_sensitive: false,
+          },
+        },
+        config: {
+          ...crit.config,
+          expected_values: newItems,
+        },
+      };
+      setExpectedValuesText((tPrev) => ({ ...tPrev, [critIdx]: newItems.join(', ') }));
+      return copy;
+    });
+  };
+
   // Calculations
   const activeCriteria = criteria.filter((c) => c.is_enabled);
   const totalWeight = activeCriteria.reduce((sum, c) => sum + (parseFloat(String(c.weight)) || 0), 0);
@@ -582,9 +655,21 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
     }
 
     for (const c of activeCriteria) {
+      const isCustom = c.criterion_id.startsWith('crit_custom_') || c.target_signal_key.startsWith('custom:') || Boolean(c.config?.is_custom_field);
+      if (isCustom) {
+        const cleanField = (c.config?.custom_field_name || (c.target_signal_key.startsWith('custom:') ? c.target_signal_key.slice(7) : c.target_signal_key) || '').trim();
+        if (!cleanField) {
+          return 'Custom field name cannot be empty. Please enter a field name to evaluate (e.g. skills, city, track).';
+        }
+        const expVals = c.config?.expected_values || Object.keys(c.normalization?.categorical_mapping?.category_scores || {});
+        if (!expVals || expVals.length === 0) {
+          return `Custom field "${cleanField}" requires at least one expected value / keyword to match (e.g. Python, C++, JavaScript).`;
+        }
+      }
+
       const w = parseFloat(String(c.weight));
       if (isNaN(w) || w < 0) {
-        return `Criterion "${c.name}" cannot have a negative weight.`;
+        return `Criterion "${c.name || 'Custom Field'}" cannot have a negative weight.`;
       }
       if (c.aggregation === 'top_k') {
         const k = parseInt(String(c.top_k_value), 10);
@@ -601,7 +686,7 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
           }
         }
       }
-      if (c.criterion_type === 'categorical') {
+      if (c.criterion_type === 'categorical' && !isCustom) {
         const catMap = c.normalization?.categorical_mapping;
         const catScores = catMap?.category_scores || {};
         if (Object.keys(catScores).length === 0) {
@@ -619,6 +704,7 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
   };
 
   const handleReviewClick = () => {
+    setHasSubmitted(true);
     const err = validateForm();
     if (err) {
       setErrorMessage(err);
@@ -637,6 +723,11 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
         .filter(Boolean);
 
       const cleanedCriteria = criteria.map((c) => {
+        const isCustom = c.criterion_id.startsWith('crit_custom_') || c.target_signal_key.startsWith('custom:') || Boolean(c.config?.is_custom_field);
+        const cleanField = (c.config?.custom_field_name || (c.target_signal_key.startsWith('custom:') ? c.target_signal_key.slice(7) : c.target_signal_key) || '').trim();
+        const finalTargetKey = isCustom && cleanField ? `custom:${cleanField.toLowerCase().replace(/[^a-z0-9_]/g, '_')}` : c.target_signal_key;
+        const finalName = c.name.trim() || (isCustom && cleanField ? `${cleanField.charAt(0).toUpperCase() + cleanField.slice(1)} Match` : (c.name || 'Custom Field'));
+
         const norm = c.normalization ? JSON.parse(JSON.stringify(c.normalization)) : {};
         if (norm.linear_range) {
           norm.linear_range.min_value = parseFloat(String(norm.linear_range.min_value)) || 0;
@@ -644,17 +735,19 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
         }
         if (norm.categorical_mapping) {
           const defParsed = parseFloat(String(norm.categorical_mapping.default_score));
-          norm.categorical_mapping.default_score = isNaN(defParsed) ? 0.5 : Math.min(1.0, Math.max(0.0, defParsed));
+          norm.categorical_mapping.default_score = isNaN(defParsed) ? 0.0 : Math.min(1.0, Math.max(0.0, defParsed));
           const scores: Record<string, number> = {};
           for (const [k, v] of Object.entries(norm.categorical_mapping.category_scores || {})) {
             const parsed = parseFloat(String(v));
-            scores[k] = isNaN(parsed) ? 0 : Math.min(1.0, Math.max(0.0, parsed));
+            scores[k] = isNaN(parsed) ? 1.0 : Math.min(1.0, Math.max(0.0, parsed));
           }
           norm.categorical_mapping.category_scores = scores;
         }
 
         return {
           ...c,
+          name: finalName,
+          target_signal_key: finalTargetKey,
           weight: isNaN(parseFloat(String(c.weight))) ? 0 : Math.max(0, parseFloat(String(c.weight))),
           top_k_value: c.aggregation === 'top_k' ? (parseInt(String(c.top_k_value), 10) || 2) : undefined,
           normalization: norm,
@@ -879,28 +972,34 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                           const newId = `crit_custom_${Date.now().toString(36).slice(-4)}`;
                           const newCrit: EvaluationCriterionInput = {
                             criterion_id: newId,
-                            name: 'Custom Recruitment Field',
-                            description: 'Scores custom or miscellaneous candidate fields (e.g. skills, track, experience).',
-                            target_signal_key: 'custom:skills',
+                            name: '',
+                            description: '',
+                            target_signal_key: '',
                             criterion_type: 'categorical',
                             weight: 1.0,
                             is_enabled: true,
                             normalization: {
                               categorical_mapping: {
-                                category_scores: {
-                                  Python: 1.0,
-                                  JavaScript: 0.8,
-                                  'C++': 0.9,
-                                },
-                                default_score: 0.5,
+                                category_scores: {},
+                                default_score: 0.0,
                                 case_sensitive: false,
                               },
                             },
                             aggregation: 'mean',
                             missing_data_policy: 'exclude_and_renormalize',
-                            config: {},
+                            config: {
+                              is_custom_field: true,
+                              custom_field_name: '',
+                              expected_values: [],
+                              match_mode: 'proportional',
+                            },
                           };
-                          setCriteria((prev) => [...prev, newCrit]);
+                          setCriteria((prev) => {
+                            const next = [...prev, newCrit];
+                            setExpectedValuesText((tPrev) => ({ ...tPrev, [next.length - 1]: '' }));
+                            setExpandedCritIndex(next.length - 1);
+                            return next;
+                          });
                           setIsAddMenuOpen(false);
                         }}
                         className="w-full text-left p-2 rounded-md bg-purple-50/80 hover:bg-purple-100/90 border border-purple-200 transition-colors group flex flex-col cursor-pointer mb-1"
@@ -915,7 +1014,7 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                           </Badge>
                         </div>
                         <span className="text-[10px] text-purple-700/80 line-clamp-1 mt-0.5">
-                          Score custom CSV columns (skills, track, domain) with categorical weights.
+                          Score custom candidate columns (skills, locations, tracks) against desired keywords.
                         </span>
                       </button>
 
@@ -991,6 +1090,18 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                           : '0.0';
                       const isExpanded = expandedCritIndex === idx;
                       const hasLinearRange = c.criterion_type === 'numeric_range' && c.normalization?.linear_range;
+                      const isCustomCrit =
+                        c.criterion_id.startsWith('crit_custom_') ||
+                        c.target_signal_key.startsWith('custom:') ||
+                        Boolean(c.config?.is_custom_field);
+
+                      const cleanFieldName =
+                        c.config?.custom_field_name !== undefined
+                          ? c.config.custom_field_name
+                          : (c.target_signal_key.startsWith('custom:') ? c.target_signal_key.slice(7) : c.target_signal_key);
+
+                      const expectedCount =
+                        (c.config?.expected_values || Object.keys(c.normalization?.categorical_mapping?.category_scores || {})).length;
 
                       return (
                         <React.Fragment key={c.criterion_id}>
@@ -1009,7 +1120,7 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                             </td>
                             <td className="py-2.5 px-3">
                               <div className="flex items-center gap-1.5">
-                                {c.target_signal_key.startsWith('custom:') ? (
+                                {isCustomCrit ? (
                                   <input
                                     value={c.name}
                                     onChange={(e) => {
@@ -1021,7 +1132,7 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                       });
                                     }}
                                     className="font-semibold text-foreground text-xs px-1.5 py-0.5 border border-purple-300 rounded bg-purple-50/50 w-48 focus:outline-none focus:ring-1 focus:ring-purple-600"
-                                    placeholder="Criterion Display Name"
+                                    placeholder="Criterion Name (e.g. Skills)"
                                   />
                                 ) : (
                                   <span className="font-semibold text-foreground">{c.name}</span>
@@ -1029,30 +1140,52 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                 <Badge variant="forest" className="font-mono text-[9px] py-0 px-1">
                                   {c.criterion_type}
                                 </Badge>
-                                {c.target_signal_key.startsWith('custom:') && (
+                                {isCustomCrit && (
                                   <Badge variant="outline" className="text-[8px] font-mono py-0 px-1 border-purple-300 text-purple-800">
                                     custom
                                   </Badge>
                                 )}
                               </div>
-                              <div className="text-[10px] font-mono text-muted-foreground flex items-center gap-1 mt-0.5">
-                                <span>signal:</span>
-                                {c.target_signal_key.startsWith('custom:') ? (
-                                  <input
-                                    value={c.target_signal_key}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      setCriteria((prev) => {
-                                        const copy = [...prev];
-                                        copy[idx] = { ...copy[idx], target_signal_key: val };
-                                        return copy;
-                                      });
-                                    }}
-                                    className="text-purple-800 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-300 text-[10px] font-mono focus:outline-none focus:ring-1 focus:ring-purple-600"
-                                    placeholder="custom:skills"
-                                  />
+                              <div className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                                <span className="font-mono">signal:</span>
+                                {isCustomCrit ? (
+                                  <div className="flex flex-col">
+                                    <input
+                                      value={cleanFieldName}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setCriteria((prev) => {
+                                          const copy = [...prev];
+                                          const cleanVal = val.replace(/^custom:/, '');
+                                          const targetKey = cleanVal.trim()
+                                            ? `custom:${cleanVal.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_')}`
+                                            : '';
+                                          copy[idx] = {
+                                            ...copy[idx],
+                                            target_signal_key: targetKey,
+                                            config: {
+                                              ...copy[idx].config,
+                                              is_custom_field: true,
+                                              custom_field_name: val,
+                                            },
+                                          };
+                                          return copy;
+                                        });
+                                      }}
+                                      className={cn(
+                                        "text-purple-800 bg-purple-50 px-1.5 py-0.5 rounded border text-[10px] font-mono focus:outline-none focus:ring-1",
+                                        hasSubmitted && !cleanFieldName.trim()
+                                          ? "border-red-500 bg-red-50 text-red-900 focus:ring-red-500"
+                                          : "border-purple-300 focus:ring-purple-600"
+                                      )}
+                                      placeholder="e.g. skills, city, track"
+                                    />
+                                    {hasSubmitted && !cleanFieldName.trim() && (
+                                      <span className="text-[9px] text-red-600 font-semibold mt-0.5">Field name is required</span>
+                                    )}
+                                  </div>
                                 ) : (
-                                  <span className="text-forest-700 bg-forest-50 px-1 rounded">
+                                  <span className="text-forest-700 bg-forest-50 px-1 rounded font-mono">
                                     {c.target_signal_key}
                                   </span>
                                 )}
@@ -1088,8 +1221,10 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                   <Sliders className="h-2.5 w-2.5" />
                                   <span>
                                     {isExpanded
-                                      ? 'Hide Category Rubric'
-                                      : `Category Rubric: [${Object.keys(c.normalization?.categorical_mapping?.category_scores || {}).length} categories]`}
+                                      ? (isCustomCrit ? 'Hide Value Matcher' : 'Hide Category Rubric')
+                                      : (isCustomCrit
+                                          ? `Values to match: [${expectedCount} expected]`
+                                          : `Category Rubric: [${Object.keys(c.normalization?.categorical_mapping?.category_scores || {}).length} categories]`)}
                                   </span>
                                 </button>
                               )}
@@ -1265,11 +1400,100 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                             </tr>
                           )}
 
-                          {/* Expanded Categorical Rubric Editor Row */}
+                          {/* Expanded Categorical Rubric / Value Matcher Editor Row */}
                           {isExpanded && c.criterion_type === 'categorical' && (
                             <tr className="bg-muted/30">
                               <td colSpan={7} className="p-3 border-t border-border/60">
-                                <div className="bg-card p-3 rounded-lg border border-border space-y-3">
+                                {isCustomCrit ? (
+                                  <div className="bg-card p-3 rounded-lg border border-purple-200 shadow-xs space-y-3">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-purple-100 pb-2">
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="outline" className="font-mono text-[9px] border-purple-300 text-purple-900 bg-purple-50">
+                                          ✨ Custom Value Matcher
+                                        </Badge>
+                                        <span className="text-[11px] font-semibold text-foreground">
+                                          Evaluate candidate cell values against desired keywords
+                                        </span>
+                                      </div>
+
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        <span className="text-[10px] text-muted-foreground font-medium">Match Strategy:</span>
+                                        <select
+                                          value={c.config?.match_mode || 'proportional'}
+                                          onChange={(e) => {
+                                            const mode = e.target.value;
+                                            setCriteria((prev) => {
+                                              const copy = [...prev];
+                                              copy[idx] = {
+                                                ...copy[idx],
+                                                config: {
+                                                  ...copy[idx].config,
+                                                  match_mode: mode,
+                                                },
+                                              };
+                                              return copy;
+                                            });
+                                          }}
+                                          className="h-6 text-[11px] font-medium rounded border border-purple-300 bg-white px-2 text-purple-950 focus:outline-none focus:ring-1 focus:ring-purple-600"
+                                        >
+                                          <option value="proportional">Proportional Match (k / N, e.g. 2 of 3 = 0.67)</option>
+                                          <option value="any">Any Match (1.0 if at least one matches)</option>
+                                        </select>
+                                      </div>
+                                    </div>
+
+                                    {/* Comma-separated Expected Values Input */}
+                                    <div className="space-y-1.5">
+                                      <div className="flex items-center justify-between">
+                                        <label className="text-[11px] font-semibold text-foreground">
+                                          Expected Values / Keywords:
+                                        </label>
+                                        <span className="text-[10px] text-muted-foreground">
+                                          {(c.config?.expected_values || []).length} keyword(s) entered
+                                        </span>
+                                      </div>
+                                      <Input
+                                        value={expectedValuesText[idx] !== undefined ? expectedValuesText[idx] : (c.config?.expected_values || []).join(', ')}
+                                        onChange={(e) => handleExpectedValuesChange(idx, e.target.value)}
+                                        className={cn(
+                                          "text-xs bg-white focus:ring-purple-600",
+                                          hasSubmitted && (!c.config?.expected_values || c.config.expected_values.length === 0)
+                                            ? "border-red-500 bg-red-50/20 focus:ring-red-500"
+                                            : "border-purple-300"
+                                        )}
+                                        placeholder="e.g. Python, JavaScript, C++  (or Bangalore, Mumbai, Delhi)"
+                                      />
+                                      {hasSubmitted && (!c.config?.expected_values || c.config.expected_values.length === 0) && (
+                                        <p className="text-[10px] text-red-600 font-medium mt-0.5">
+                                          Please enter at least one expected value / keyword to match.
+                                        </p>
+                                      )}
+
+                                      {/* Tags/Chips */}
+                                      {(c.config?.expected_values || []).length > 0 && (
+                                        <div className="flex flex-wrap items-center gap-1.5 pt-1.5">
+                                          {(c.config?.expected_values || []).map((val: string, vIdx: number) => (
+                                            <span
+                                              key={vIdx}
+                                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-purple-100 text-purple-900 border border-purple-300"
+                                            >
+                                              <span>{val}</span>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleRemoveExpectedValue(idx, val)}
+                                                className="hover:text-red-700 ml-0.5 text-purple-700 cursor-pointer font-bold"
+                                                title={`Remove ${val}`}
+                                              >
+                                                ×
+                                              </button>
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="bg-card p-3 rounded-lg border border-border space-y-3">
                                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 pb-2">
                                     <div className="flex items-center gap-2">
                                       <Badge variant="forest" className="font-mono text-[9px]">
@@ -1442,6 +1666,7 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                     </Button>
                                   </div>
                                 </div>
+                                )}
                               </td>
                             </tr>
                           )}
