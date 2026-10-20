@@ -13,6 +13,7 @@ declare global {
           initialize: (config: {
             client_id: string;
             callback: (response: { credential: string }) => void;
+            error_callback?: (err: any) => void;
             auto_select?: boolean;
           }) => void;
           renderButton: (
@@ -79,6 +80,15 @@ export const LoginPage: React.FC = () => {
         window.google.accounts.id.initialize({
           client_id: clientId,
           callback: handleGoogleCallback,
+          error_callback: (errorInfo: any) => {
+            console.error('Google Sign-In error:', errorInfo);
+            if (errorInfo?.type && errorInfo.type !== 'popup_closed_by_user') {
+              setLocalError(
+                `Google Sign-In error (${errorInfo.type}). Ensure http://localhost:5173 is in 'Authorized JavaScript origins' in Google Cloud Console.`
+              );
+            }
+          },
+          auto_select: false,
         });
 
         googleBtnRef.current.innerHTML = '';
@@ -99,6 +109,9 @@ export const LoginPage: React.FC = () => {
       script.async = true;
       script.defer = true;
       script.onload = initializeGis;
+      script.onerror = () => {
+        setLocalError('Failed to load Google Identity Services. Check your internet connection or ad-blocker settings.');
+      };
       document.body.appendChild(script);
     } else {
       initializeGis();
@@ -174,6 +187,9 @@ export const LoginPage: React.FC = () => {
                     <span>Verifying Google token...</span>
                   </div>
                 )}
+                <p className="mt-2 text-[10px] text-muted-foreground text-center">
+                  Origin: <code className="font-mono bg-muted/70 px-1 py-0.5 rounded border border-border/50">http://localhost:5173</code> (must be authorized in Google Console)
+                </p>
               </div>
             ) : (
               <div className="rounded-lg border border-border/80 bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">

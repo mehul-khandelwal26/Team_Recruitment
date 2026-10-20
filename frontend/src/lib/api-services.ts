@@ -382,7 +382,10 @@ export const apiService = {
    * Exchange Google ID Token (from Google Identity Services) for an access JWT.
    */
   loginWithGoogle(idToken: string): Promise<AuthTokenResponse> {
-    return apiClient.post<AuthTokenResponse>('/api/auth/google', { id_token: idToken });
+    return apiClient.post<AuthTokenResponse>('/api/auth/google', {
+      credential: idToken,
+      id_token: idToken,
+    });
   },
 
   /**

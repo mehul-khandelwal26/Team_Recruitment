@@ -147,6 +147,7 @@ def test_google_auth_email_whitelist_rejection(client, monkeypatch):
     """Verify access is rejected if user email is not in ALLOWED_EMAILS."""
     import httpx
     monkeypatch.setattr("app.auth.google.ALLOWED_EMAILS", ["organizer@allowed.com"])
+    monkeypatch.setattr("app.auth.google.GOOGLE_CLIENT_ID", "")
 
     class MockResponse:
         status_code = 200

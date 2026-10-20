@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 from typing import Optional
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 
 class UserSchema(BaseModel):
@@ -33,7 +33,16 @@ class UserSchema(BaseModel):
 
 class GoogleAuthRequest(BaseModel):
     """Request payload containing Google Identity Services credential."""
-    credential: str = Field(..., description="Google ID Token issued by Google Identity Services")
+    credential: Optional[str] = Field(None, description="Google ID Token issued by Google Identity Services")
+    id_token: Optional[str] = Field(None, description="Alternative alias for Google ID Token")
+
+    @model_validator(mode="after")
+    def resolve_token(self) -> "GoogleAuthRequest":
+        token = self.credential or self.id_token
+        if not token or not str(token).strip():
+            raise ValueError("Either 'credential' or 'id_token' must be provided.")
+        self.credential = str(token).strip()
+        return self
 
 
 class DevLoginRequest(BaseModel):
