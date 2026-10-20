@@ -1,9 +1,8 @@
 import React from 'react';
 import { useLocation } from 'react-router-dom';
-import { Menu, Activity, Database, AlertCircle, RefreshCw } from 'lucide-react';
+import { Menu, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { API_BASE_URL } from '@/lib/api-client';
 import { useBackendHealth } from '@/hooks/useDashboard';
 import { cn } from '@/lib/utils';
 
@@ -71,13 +70,6 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
 
       {/* Right Environment Context & Badges */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-        <div className="hidden lg:flex items-center gap-2 text-xs text-muted-foreground bg-secondary/50 px-2.5 py-1 rounded border border-border/80">
-          <Database className="h-3.5 w-3.5 text-forest-700" />
-          <span className="font-mono text-[11px] truncate max-w-[200px]" title={API_BASE_URL || 'http://localhost:8000'}>
-            {API_BASE_URL || 'http://localhost:8000'}
-          </span>
-        </div>
-
         {/* Live Health Status from /api/health */}
         {isHealthLoading ? (
           <Badge variant="outline" className="gap-1.5 font-mono text-[11px] py-0.5 text-muted-foreground">
@@ -102,19 +94,16 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
             </Button>
           </div>
         ) : (
-          <Badge
-            variant="success"
-            className="gap-1.5 font-mono text-[11px] py-0.5 cursor-help"
+          <div
+            className="flex items-center gap-2 px-2.5 py-1 rounded-full border border-border/80 bg-secondary/40 text-xs font-medium text-muted-foreground cursor-help hover:text-foreground transition-colors"
             title={`Backend v${health?.version || '1.0.0'} (${health?.environment || 'development'}) | Storage: ${health?.storage_backend || 'memory'}`}
           >
-            <Activity className="h-3 w-3 animate-pulse text-emerald-600" />
-            <span className="hidden sm:inline">Backend</span> Live
-            {health?.storage_backend && (
-              <span className="text-[10px] opacity-80 font-mono pl-1 ml-0.5 border-l border-emerald-300">
-                {health.storage_backend}
-              </span>
-            )}
-          </Badge>
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span className="text-[11px] font-medium text-foreground/80">System Operational</span>
+          </div>
         )}
       </div>
     </header>

@@ -65,7 +65,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Sidebar Container */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-sidebar-border bg-sidebar transition-transform duration-200 ease-in-out md:static md:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-sidebar-border bg-sidebar transition-transform duration-200 ease-in-out md:sticky md:top-0 md:h-screen md:shrink-0 md:translate-x-0',
           isOpen ? 'translate-x-0 shadow-lg md:shadow-none' : '-translate-x-full',
           className
         )}
@@ -86,12 +86,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Section Title */}
-        <div className="px-5 pt-5 pb-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+        <div className="px-5 pt-5 pb-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase shrink-0">
           Workspace Navigation
         </div>
 
         {/* Navigation Links */}
-        <nav className="flex-1 space-y-1 px-3 py-1">
+        <nav className="flex-1 space-y-1 px-3 py-1 overflow-y-auto">
           {navigationItems.map((item) => {
             const Icon = item.icon;
             return (
@@ -138,7 +138,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
 
         {/* Footer / System Context */}
-        <div className="border-t border-sidebar-border p-4 space-y-2 bg-sidebar">
+        <div className="shrink-0 border-t border-sidebar-border p-4 space-y-2 bg-sidebar">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5 font-medium">
               <Server className="h-3.5 w-3.5 text-emerald-600" />
