@@ -743,7 +743,13 @@ def parse_csv(
                     orig_name = original_columns[i]
                     raw_val = row.iloc[i]
                     val = str(raw_val).strip() if raw_val is not None else ""
-                    custom_fields[orig_name] = val if val else None
+                    stored_val = val if val else None
+                    custom_fields[orig_name] = stored_val
+                    custom_fields[col] = stored_val
+                    if col.startswith("custom:"):
+                        custom_fields[col.split(":", 1)[1]] = stored_val
+                    elif col.startswith("custom_"):
+                        custom_fields[col[7:]] = stored_val
                     if val:
                         field_statuses[orig_name] = FieldPresenceStatus.PRESENT
                     else:

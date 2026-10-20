@@ -955,12 +955,19 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
                                           'w-full h-8 px-2.5 text-xs rounded-md border bg-background text-foreground transition-colors focus:outline-none focus:ring-1',
                                           isDuplicate
                                             ? 'border-destructive focus:ring-destructive text-destructive'
+                                            : currentTarget?.startsWith('custom:')
+                                            ? 'border-purple-600 focus:ring-purple-600 text-purple-900 font-medium'
                                             : currentTarget
                                             ? 'border-forest-600 focus:ring-forest-600'
                                             : 'border-input focus:ring-ring text-muted-foreground'
                                         )}
                                       >
-                                        <option value="">-- Do not map (Keep as custom field) --</option>
+                                        <option value="">-- Do not map (Ignore / Discard) --</option>
+                                        <optgroup label="✨ Custom Recruitment Signals">
+                                          <option value={`custom:${df.original_name.toLowerCase().replace(/[^a-z0-9_]/g, '_')}`}>
+                                            ⭐ Map as Custom Signal (custom:{df.original_name.toLowerCase().replace(/[^a-z0-9_]/g, '_')})
+                                          </option>
+                                        </optgroup>
                                         {Object.entries(groupedCanonicalFields).map(([cat, fields]) => (
                                           <optgroup key={cat} label={cat}>
                                             {fields.map((f) => (
@@ -985,6 +992,10 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
                                       <Badge variant="destructive" className="text-[10px]">
                                         Conflict
                                       </Badge>
+                                    ) : currentTarget?.startsWith('custom:') ? (
+                                      <Badge variant="forest" className="text-[10px] bg-purple-50 text-purple-900 border-purple-300">
+                                        Custom Signal
+                                      </Badge>
                                     ) : isDirect ? (
                                       <Badge variant="success" className="text-[10px]">
                                         Direct Match
@@ -999,7 +1010,7 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
                                       </Badge>
                                     ) : (
                                       <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                                        Custom
+                                        Ignored
                                       </Badge>
                                     )}
                                   </TableCell>

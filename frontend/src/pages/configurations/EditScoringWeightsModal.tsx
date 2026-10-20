@@ -23,6 +23,7 @@ import {
   ChevronUp,
   Sliders,
   UserCheck,
+  Sparkles,
 } from 'lucide-react';
 import type { ScoringConfiguration, EvaluationCriterionInput } from '@/types';
 import { useUpdateScoringConfigMutation } from '@/hooks/useConfigurations';
@@ -231,7 +232,8 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
   }, [open, config]);
 
   // Handle weight change for a specific criterion
-  const handleWeightChange = (index: number, rawVal: string) => {
+  const handleWeightChange = (index: number, eOrVal: React.ChangeEvent<HTMLInputElement> | string) => {
+    const rawVal = typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value;
     if (rawVal === '') {
       setCriteria((prev) => {
         const copy = [...prev];
@@ -244,6 +246,9 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
       return;
     }
     const clean = rawVal.replace(/^0+(?=\d)/, '');
+    if (typeof eOrVal !== 'string' && clean !== rawVal) {
+      eOrVal.target.value = clean;
+    }
     setCriteria((prev) => {
       const copy = [...prev];
       copy[index] = {
@@ -733,6 +738,9 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                       return;
                     }
                     const clean = raw.replace(/^0+(?=\d)/, '');
+                    if (clean !== raw) {
+                      e.target.value = clean;
+                    }
                     setScaleMax(clean);
                   }}
                   onBlur={() => {
@@ -864,6 +872,53 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                   {/* Add Criterion Catalog Dropdown */}
                   {isAddMenuOpen && (
                     <div className="absolute right-0 top-8 z-50 w-84 max-h-80 overflow-y-auto bg-card border border-border rounded-lg shadow-lg p-1.5 space-y-1 animate-in fade-in zoom-in-95">
+                      {/* Custom Signal / Miscellaneous Option */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newId = `crit_custom_${Date.now().toString(36).slice(-4)}`;
+                          const newCrit: EvaluationCriterionInput = {
+                            criterion_id: newId,
+                            name: 'Custom Recruitment Field',
+                            description: 'Scores custom or miscellaneous candidate fields (e.g. skills, track, experience).',
+                            target_signal_key: 'custom:skills',
+                            criterion_type: 'categorical',
+                            weight: 1.0,
+                            is_enabled: true,
+                            normalization: {
+                              categorical_mapping: {
+                                category_scores: {
+                                  Python: 1.0,
+                                  JavaScript: 0.8,
+                                  'C++': 0.9,
+                                },
+                                default_score: 0.5,
+                                case_sensitive: false,
+                              },
+                            },
+                            aggregation: 'mean',
+                            missing_data_policy: 'exclude_and_renormalize',
+                            config: {},
+                          };
+                          setCriteria((prev) => [...prev, newCrit]);
+                          setIsAddMenuOpen(false);
+                        }}
+                        className="w-full text-left p-2 rounded-md bg-purple-50/80 hover:bg-purple-100/90 border border-purple-200 transition-colors group flex flex-col cursor-pointer mb-1"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-purple-900 group-hover:text-purple-950 flex items-center gap-1.5">
+                            <Sparkles className="h-3.5 w-3.5 text-purple-700" />
+                            Custom Signal / Misc Field
+                          </span>
+                          <Badge variant="outline" className="text-[9px] font-mono py-0 px-1 border-purple-300 text-purple-800">
+                            custom
+                          </Badge>
+                        </div>
+                        <span className="text-[10px] text-purple-700/80 line-clamp-1 mt-0.5">
+                          Score custom CSV columns (skills, track, domain) with categorical weights.
+                        </span>
+                      </button>
+
                       <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border/60">
                         Registered Signals ({AVAILABLE_SIGNALS.length})
                       </div>
@@ -954,16 +1009,53 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                             </td>
                             <td className="py-2.5 px-3">
                               <div className="flex items-center gap-1.5">
-                                <span className="font-semibold text-foreground">{c.name}</span>
+                                {c.target_signal_key.startsWith('custom:') ? (
+                                  <input
+                                    value={c.name}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setCriteria((prev) => {
+                                        const copy = [...prev];
+                                        copy[idx] = { ...copy[idx], name: val };
+                                        return copy;
+                                      });
+                                    }}
+                                    className="font-semibold text-foreground text-xs px-1.5 py-0.5 border border-purple-300 rounded bg-purple-50/50 w-48 focus:outline-none focus:ring-1 focus:ring-purple-600"
+                                    placeholder="Criterion Display Name"
+                                  />
+                                ) : (
+                                  <span className="font-semibold text-foreground">{c.name}</span>
+                                )}
                                 <Badge variant="forest" className="font-mono text-[9px] py-0 px-1">
                                   {c.criterion_type}
                                 </Badge>
+                                {c.target_signal_key.startsWith('custom:') && (
+                                  <Badge variant="outline" className="text-[8px] font-mono py-0 px-1 border-purple-300 text-purple-800">
+                                    custom
+                                  </Badge>
+                                )}
                               </div>
                               <div className="text-[10px] font-mono text-muted-foreground flex items-center gap-1 mt-0.5">
                                 <span>signal:</span>
-                                <span className="text-forest-700 bg-forest-50 px-1 rounded">
-                                  {c.target_signal_key}
-                                </span>
+                                {c.target_signal_key.startsWith('custom:') ? (
+                                  <input
+                                    value={c.target_signal_key}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setCriteria((prev) => {
+                                        const copy = [...prev];
+                                        copy[idx] = { ...copy[idx], target_signal_key: val };
+                                        return copy;
+                                      });
+                                    }}
+                                    className="text-purple-800 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-300 text-[10px] font-mono focus:outline-none focus:ring-1 focus:ring-purple-600"
+                                    placeholder="custom:skills"
+                                  />
+                                ) : (
+                                  <span className="text-forest-700 bg-forest-50 px-1 rounded">
+                                    {c.target_signal_key}
+                                  </span>
+                                )}
                               </div>
                               {c.description && (
                                 <div
@@ -1063,7 +1155,7 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                 step="0.5"
                                 disabled={!c.is_enabled}
                                 value={c.weight}
-                                onChange={(e) => handleWeightChange(idx, e.target.value)}
+                                onChange={(e) => handleWeightChange(idx, e)}
                                 onBlur={() => {
                                   setCriteria((prev) => {
                                     const copy = [...prev];

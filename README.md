@@ -11,7 +11,11 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 ## ✨ Key Features
 
 - **CSV / JSON ingestion** – upload registration data in common formats (JSON root must be an array of team objects: `[{"team_name": ..., "members": [...]}]`, not a bare object) with dynamic form discovery.
-- **Dynamic schema mapping** – map custom organizer column names to canonical target fields without code changes.
+- **Dynamic schema mapping & custom signals** – map organizer column names to canonical target fields or custom signal identifiers (`custom:<signal_name>`) with zero code changes.
+- **Smart multi-candidate discovery & alias confidence ranking** – two-pass confidence-ranked column discovery disambiguates competing candidates (e.g., `github_url` vs `github_id`), prioritizing exact link targets (1.0 confidence) over handles (0.8 confidence) and supporting aliases (`github_link`, `cv_link`) at 0.9 confidence with zero false conflicts.
+- **Custom mapping & miscellaneous signals engine** – lifts custom CSV fields (e.g. `skills`, `track`, `certifications`) into first-class `ExtractedSignal` objects, enabling direct rule evaluation (`signal_contains`, `signal_threshold`, `required_signal_present`) and multi-criteria scoring rubrics (categorical mappings, weights, and shares).
+- **Context-aware ingestion warnings filter** – suppresses false-alarm warnings for uncollected optional profile fields (e.g., `portfolio_url` when no portfolio column was provided) while surfacing true format anomalies with a collapsible "Show all (X)" viewer.
+- **Enterprise numeric input UX** – all numeric form fields (rules parameters, scoring weights, scale max, and shortlist cutoffs) support seamless backspacing without snapping to 1, and automatically strip leading zeros (`09` -> `9`).
 - **Missing ID generation & duplicate team handling** – autogenerates missing member/team IDs, detects ambiguous duplicate team names, assigns non-merging temporary IDs (`temp_team_...`), disambiguates colliding cross-team member IDs, and surfaces actionable organizer warnings.
 - **Arbitrary field preservation** – unmapped form fields and raw records are safely preserved in `custom_fields` and `raw_data`.
 - **Extensible signal extraction** – pluggable analyzers for GitHub activity, academics, resume documents, and future data sources.
@@ -71,6 +75,9 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 | Missing ID generation | ✅ Done | Generates missing Team/Member IDs without overwriting explicit IDs |
 | Duplicate team detection | ✅ Done | Detects same-name teams, assigns temporary IDs (`temp_team_...`), preserves separation |
 | Dynamic form mapping | ✅ Done | Preserves arbitrary custom fields, tracks missing states |
+| **Custom Signals & Misc Engine** | ✅ Implemented | `custom:*` prefix mapping, dynamic extraction to `ExtractedSignal`, rule validation, and scoring integration |
+| **Confidence-Ranked Discovery** | ✅ Implemented | Two-pass candidate disambiguation (`github_url` vs `github_id`), alias support (`github_link`), 0 false conflicts |
+| **Warning Filter & Viewer** | ✅ Implemented | Suppresses phantom warnings for uncollected profile links; collapsible "Show all (X)" review toggle |
 | Signal Extraction Framework | ✅ Implemented | Extensible registry, selective signals, catalog APIs |
 | GitHub Analyzer | ✅ Implemented | Public repo count, repo metadata, recent activity, profile verification |
 | Academic Analyzer | ✅ Implemented | CGPA/CPI normalization, academic year/batch, scale checks |
@@ -225,6 +232,40 @@ default_signal_registry.register(MyCustomAnalyzer())
 | `POST` | `/api/signals/flatten` | Flatten an `ExtractionRunResponse` into a list of member-signals dictionaries (`list[MemberSignals]`) for direct input to rules or scoring |
 | `POST` | `/api/signals/extract-file` | Upload CSV/JSON and run selective signal extraction in one step |
 | `POST` | `/api/signals/extract-resume` | Direct upload of a candidate's PDF or DOCX resume document |
+
+---
+
+### Custom Signals & Miscellaneous Field Ingestion (`custom:*`)
+
+Hackathon and recruitment registration forms frequently contain non-standard or event-specific columns—such as `candidate_skills`, `track_preference`, `certifications`, or `work_domain`—that do not map directly to built-in system fields.
+
+The Recruitment Engine natively supports **arbitrary custom signal mapping**:
+
+1. **Dataset Discovery & Mapping**:
+   - In Step 1 of the Evaluation Wizard or via the `/api/ingestion/upload` API, select `⭐ Map as Custom Signal (custom:<column>)`.
+   - The ingestion parser preserves the values in each candidate's `custom_fields` dictionary under both `custom:<key>` and `<key>`.
+2. **First-Class Signal Lift**:
+   - During signal extraction, the engine dynamically synthesizes an `ExtractedSignal` for each requested `custom:*` key directly from `custom_fields`, assigning a default confidence of `0.85` and tracking provenance to the uploaded CSV file.
+3. **Deterministic Eligibility Rules**:
+   - Evaluator rules (`signal_contains`, `signal_threshold`, `required_signal_present`, `allowed_values`) accept any `custom:*` signal identifier.
+   - Example: Require at least one team member to possess `Python` in `custom:skills`:
+     ```json
+     {
+       "rule_id": "r_custom_python",
+       "name": "Has Python Skill",
+       "rule_type": "signal_contains",
+       "severity": "hard",
+       "scope": "member",
+       "member_selection": "any_member",
+       "parameters": {
+         "signal_key": "custom:skills",
+         "expected_value": "Python"
+       }
+     }
+     ```
+4. **Multi-Criteria Scoring Rubrics**:
+   - Custom signals can be added directly to any Scoring Model configuration using the `✨ Custom Signal / Misc Field` builder in the frontend or via `/api/scoring/configs`.
+   - Supports categorical scoring mappings (e.g., `Python: 1.0`, `JavaScript: 0.8`, `C++: 0.9`), relative weights, member aggregations (`mean`, `max`, `lead_only`), and explicit missing-data policies.
 
 ---
 
@@ -682,7 +723,7 @@ Run the complete automated test suite locally:
 pytest -v
 ```
 
-The test suite includes **412 automated tests** with a 100% pass rate across 17 test suites:
+The test suite includes **440+ automated tests** with a 100% pass rate across 19 test suites:
 - **`backend/tests/test_audit_fixes_regression.py`** (22 tests): Regression tests for dynamic forms, team lead resolution, and scoring edge cases.
 - **`backend/tests/test_audit_phase2_fixes.py`** (11 tests): Provenance cross-dataset validation, inactive configuration rejection, explicit dataset_id conflict checks, upload file size limits, and duplicate mapping validation across all fields.
 - **`backend/tests/test_database_phase.py`** (28 tests): URL normalization, safety checks, startup configuration validation, typed column derivations, and schema integrity.
@@ -700,6 +741,8 @@ The test suite includes **412 automated tests** with a 100% pass rate across 17 
 - **`backend/tests/test_resume_analyzer.py`** (45 tests): PDF & DOCX text parsing, all 12 resume signals, SSRF security defenses, size limits, direct file upload endpoint, and multi-analyzer compatibility.
 - **`backend/tests/test_scoring.py`** (36 tests): Configurable scoring criteria, relative weight normalization, min-max/boolean/categorical normalization, 6 member-to-team aggregations, missing data policies (exclude and renormalize, zero score), confidence adjustment, eligibility integration, and API endpoints.
 - **`backend/tests/test_signals.py`** (23 tests): Extensible signal registry, catalog discovery, GitHub API analysis, Academic CGPA/batch normalization, and cross-analyzer fault isolation.
+- **`backend/tests/test_custom_signals_e2e.py`** (1 test): Custom signal (`custom:*`) mapping, dynamic extraction to `ExtractedSignal`, rule validation (`signal_contains`), and multi-criteria scoring rubrics.
+- **`backend/tests/test_user_dataset_e2e.py`** (3 tests): Full end-to-end multi-signal evaluation pipeline, column discovery conflict resolution, and ingestion warning filtering against real organizer CSV and companion resume ZIP.
 
 #### Test Execution & Isolation Architecture
 

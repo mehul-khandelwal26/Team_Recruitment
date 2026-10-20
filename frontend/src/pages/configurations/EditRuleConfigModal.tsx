@@ -683,12 +683,19 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                               return;
                                             }
                                             const clean = raw.length > 1 && raw.startsWith('0') ? raw.replace(/^0+/, '') || '0' : raw;
+                                            if (clean !== raw) {
+                                              e.target.value = clean;
+                                            }
                                             const parsed = parseInt(clean, 10);
                                             handleParameterChange(idx, 'min_size', isNaN(parsed) ? '' : parsed);
                                           }}
-                                          onBlur={() => {
+                                          onBlur={(e) => {
+                                            const clean = e.target.value.length > 1 && e.target.value.startsWith('0') ? e.target.value.replace(/^0+/, '') || '0' : e.target.value;
+                                            e.target.value = clean;
                                             if (params.min_size === '' || params.min_size === undefined || isNaN(Number(params.min_size))) {
                                               handleParameterChange(idx, 'min_size', 2);
+                                            } else {
+                                              handleParameterChange(idx, 'min_size', parseInt(clean, 10));
                                             }
                                           }}
                                           className="h-7 text-xs font-mono"
@@ -712,12 +719,19 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                               return;
                                             }
                                             const clean = raw.length > 1 && raw.startsWith('0') ? raw.replace(/^0+/, '') || '1' : raw;
+                                            if (clean !== raw) {
+                                              e.target.value = clean;
+                                            }
                                             const parsed = parseInt(clean, 10);
                                             handleParameterChange(idx, 'max_size', isNaN(parsed) ? '' : parsed);
                                           }}
-                                          onBlur={() => {
+                                          onBlur={(e) => {
+                                            const clean = e.target.value.length > 1 && e.target.value.startsWith('0') ? e.target.value.replace(/^0+/, '') || '1' : e.target.value;
+                                            e.target.value = clean;
                                             if (params.max_size === '' || params.max_size === undefined || isNaN(Number(params.max_size))) {
                                               handleParameterChange(idx, 'max_size', 5);
+                                            } else {
+                                              handleParameterChange(idx, 'max_size', parseInt(clean, 10));
                                             }
                                           }}
                                           className="h-7 text-xs font-mono"
@@ -855,12 +869,22 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                               if (clean.length > 1 && clean.startsWith('0') && !clean.startsWith('0.')) {
                                                 clean = clean.replace(/^0+/, '') || '0';
                                               }
+                                              if (clean !== raw) {
+                                                e.target.value = clean;
+                                              }
                                               const parsed = parseFloat(clean);
                                               handleParameterChange(idx, 'threshold', isNaN(parsed) ? '' : parsed);
                                             }}
-                                            onBlur={() => {
+                                            onBlur={(e) => {
+                                              let clean = e.target.value;
+                                              if (clean.length > 1 && clean.startsWith('0') && !clean.startsWith('0.')) {
+                                                clean = clean.replace(/^0+/, '') || '0';
+                                              }
+                                              e.target.value = clean;
                                               if (params.threshold === '' || params.threshold === undefined || isNaN(Number(params.threshold))) {
                                                 handleParameterChange(idx, 'threshold', 7.0);
+                                              } else {
+                                                handleParameterChange(idx, 'threshold', parseFloat(clean));
                                               }
                                             }}
                                             className="h-7 text-xs font-mono"
@@ -919,7 +943,7 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                             onChange={(e) =>
                                               handleParameterChange(idx, 'signal_key', e.target.value)
                                             }
-                                            placeholder="e.g. resume_extracted_skills"
+                                            placeholder="e.g. resume_programming_languages or custom:skills"
                                             className={`h-7 text-xs font-mono ${
                                               params.signal_key !== undefined && !params.signal_key.trim()
                                                 ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
@@ -1100,12 +1124,19 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                                 return;
                                               }
                                               const clean = raw.length > 1 && raw.startsWith('0') ? raw.replace(/^0+/, '') || '1' : raw;
+                                              if (clean !== raw) {
+                                                e.target.value = clean;
+                                              }
                                               const parsed = parseInt(clean, 10);
                                               handleParameterChange(idx, 'limit', isNaN(parsed) ? '' : parsed);
                                             }}
-                                            onBlur={() => {
+                                            onBlur={(e) => {
+                                              const clean = e.target.value.length > 1 && e.target.value.startsWith('0') ? e.target.value.replace(/^0+/, '') || '1' : e.target.value;
+                                              e.target.value = clean;
                                               if (params.limit === '' || params.limit === undefined || isNaN(Number(params.limit))) {
                                                 handleParameterChange(idx, 'limit', 10);
+                                              } else {
+                                                handleParameterChange(idx, 'limit', parseInt(clean, 10));
                                               }
                                             }}
                                             className="h-7 text-xs font-mono"

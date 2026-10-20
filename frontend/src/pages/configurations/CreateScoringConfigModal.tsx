@@ -204,6 +204,9 @@ export const CreateScoringConfigModal: React.FC<CreateScoringConfigModalProps> =
                       return;
                     }
                     const clean = raw.replace(/^0+(?=\d)/, '');
+                    if (clean !== raw) {
+                      e.target.value = clean;
+                    }
                     setScaleMax(clean);
                   }}
                   onBlur={() => {

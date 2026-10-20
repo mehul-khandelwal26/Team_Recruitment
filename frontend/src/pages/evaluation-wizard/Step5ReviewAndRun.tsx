@@ -90,7 +90,9 @@ export const Step5ReviewAndRun: React.FC<Step5ReviewAndRunProps> = ({
   const [localTopX, setLocalTopX] = useState<number | string>(topX);
 
   useEffect(() => {
-    setLocalTopX(topX);
+    if (topX > 0) {
+      setLocalTopX(topX);
+    }
   }, [topX]);
 
   // Pipeline Execution Routine
@@ -502,6 +504,9 @@ export const Step5ReviewAndRun: React.FC<Step5ReviewAndRunProps> = ({
                         return;
                       }
                       const clean = raw.replace(/^0+(?=\d)/, '');
+                      if (clean !== raw) {
+                        e.target.value = clean;
+                      }
                       setLocalTopX(clean);
                       const parsed = parseInt(clean, 10);
                       onTopXChange(isNaN(parsed) ? 0 : parsed);

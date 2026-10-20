@@ -20,6 +20,7 @@ from app.signals.schemas import (
     MemberExtractionResult,
     SignalCatalogResponse,
     SignalDefinition,
+    SignalEvidence,
     SignalStatus,
     TeamExtractionResult,
 )
@@ -224,6 +225,9 @@ class SignalExtractorRegistry:
             ext = self.get_extractor_for_signal(sig_key)
             if ext:
                 extractor_to_signals.setdefault(ext, set()).add(sig_key)
+            elif sig_key.startswith("custom:") or sig_key.startswith("custom_"):
+                # Dynamically resolved custom recruitment signal from registration data
+                pass
             else:
                 unsupported_signals.append(sig_key)
 
@@ -232,6 +236,8 @@ class SignalExtractorRegistry:
             warnings.append(warning_msg)
 
         analyzers_executed = [ext.descriptor.extractor_id for ext in extractor_to_signals.keys()]
+        if any(s.startswith("custom:") or s.startswith("custom_") for s in active_signals):
+            analyzers_executed.append("custom_field_extractor")
 
         team_results: list[TeamExtractionResult] = []
         total_members = 0
@@ -264,6 +270,47 @@ class SignalExtractorRegistry:
                                     error_message=f"Analyzer internal error: {exc}",
                                 )
                             )
+
+                # Extract requested custom signals and mapped custom fields from member data
+                custom_keys_to_extract = set(
+                    [s for s in active_signals if s.startswith("custom:") or s.startswith("custom_")]
+                )
+                for k in member.custom_fields.keys():
+                    if k.startswith("custom:"):
+                        custom_keys_to_extract.add(k)
+
+                for sig_key in custom_keys_to_extract:
+                    raw_k = sig_key.split(":", 1)[1] if ":" in sig_key else sig_key[7:]
+                    val = (
+                        member.custom_fields.get(sig_key)
+                        or member.custom_fields.get(raw_k)
+                        or member.raw_data.get(raw_k)
+                        or member.raw_data.get(sig_key)
+                    )
+                    if val is not None and not (isinstance(val, str) and not val.strip()):
+                        member_signals.append(
+                            ExtractedSignal(
+                                signal_key=sig_key,
+                                category="custom",
+                                status=SignalStatus.EXTRACTED,
+                                value=val,
+                                evidence=SignalEvidence(
+                                    source="registration_custom_field", confidence=0.85
+                                ),
+                            )
+                        )
+                    else:
+                        member_signals.append(
+                            ExtractedSignal(
+                                signal_key=sig_key,
+                                category="custom",
+                                status=SignalStatus.NOT_APPLICABLE,
+                                value=None,
+                                evidence=SignalEvidence(
+                                    source="registration_custom_field", confidence=0.0
+                                ),
+                            )
+                        )
 
                 # Append results for unsupported signals
                 for unsupp in unsupported_signals:

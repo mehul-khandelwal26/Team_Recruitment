@@ -150,28 +150,31 @@ def validate_rule_definition(rule: RuleDefinition) -> None:
         sig_key = params.get("signal_key")
         if not sig_key or not isinstance(sig_key, str) or not sig_key.strip():
             raise HTTPException(status_code=422, detail="Missing required parameter 'signal_key' for required_signal_present.")
-        if sig_key not in all_registered_signals:
+        is_custom = sig_key.startswith("custom:") or sig_key.startswith("custom_")
+        if not is_custom and sig_key not in all_registered_signals:
             raise HTTPException(
                 status_code=422,
-                detail=f"Unknown signal key '{sig_key}'. Signal must be registered in default_signal_registry.",
+                detail=f"Unknown signal key '{sig_key}'. Signal must be registered in default_signal_registry or prefixed with 'custom:'.",
             )
 
     elif r_type == "signal_threshold":
         sig_key = params.get("signal_key")
         if not sig_key or not isinstance(sig_key, str) or not sig_key.strip():
             raise HTTPException(status_code=422, detail="Missing required parameter 'signal_key' for signal_threshold.")
-        if sig_key not in all_registered_signals:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Unknown signal key '{sig_key}'. Signal must be registered in default_signal_registry.",
-            )
+        is_custom = sig_key.startswith("custom:") or sig_key.startswith("custom_")
+        if not is_custom:
+            if sig_key not in all_registered_signals:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Unknown signal key '{sig_key}'. Signal must be registered in default_signal_registry or prefixed with 'custom:'.",
+                )
 
-        sig_def = all_registered_signals[sig_key]
-        if sig_def.value_type not in NUMERIC_SIGNAL_TYPES:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Signal '{sig_key}' has value_type '{sig_def.value_type}', which is incompatible with numeric signal_threshold.",
-            )
+            sig_def = all_registered_signals[sig_key]
+            if sig_def.value_type not in NUMERIC_SIGNAL_TYPES:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Signal '{sig_key}' has value_type '{sig_def.value_type}', which is incompatible with numeric signal_threshold.",
+                )
 
         op = params.get("operator")
         if not op or op not in VALID_OPERATORS:
@@ -191,18 +194,20 @@ def validate_rule_definition(rule: RuleDefinition) -> None:
         sig_key = params.get("signal_key")
         if not sig_key or not isinstance(sig_key, str) or not sig_key.strip():
             raise HTTPException(status_code=422, detail="Missing required parameter 'signal_key' for signal_contains.")
-        if sig_key not in all_registered_signals:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Unknown signal key '{sig_key}'. Signal must be registered in default_signal_registry.",
-            )
+        is_custom = sig_key.startswith("custom:") or sig_key.startswith("custom_")
+        if not is_custom:
+            if sig_key not in all_registered_signals:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Unknown signal key '{sig_key}'. Signal must be registered in default_signal_registry or prefixed with 'custom:'.",
+                )
 
-        sig_def = all_registered_signals[sig_key]
-        if sig_def.value_type not in CONTAINER_SIGNAL_TYPES:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Signal '{sig_key}' has value_type '{sig_def.value_type}', which is incompatible with signal_contains (must be 'list' or 'dict').",
-            )
+            sig_def = all_registered_signals[sig_key]
+            if sig_def.value_type not in CONTAINER_SIGNAL_TYPES:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Signal '{sig_key}' has value_type '{sig_def.value_type}', which is incompatible with signal_contains (must be 'list' or 'dict').",
+                )
 
         exp_val = params.get("expected_value")
         if exp_val is None or (isinstance(exp_val, str) and not exp_val.strip()):
@@ -218,8 +223,10 @@ def validate_rule_definition(rule: RuleDefinition) -> None:
         if not f_key and not s_key:
             raise HTTPException(status_code=422, detail="allowed_values rule requires either 'field_key' or 'signal_key'.")
 
-        if s_key and s_key not in all_registered_signals:
-            raise HTTPException(status_code=422, detail=f"Unknown signal key '{s_key}' in allowed_values rule.")
+        if s_key:
+            is_custom = s_key.startswith("custom:") or s_key.startswith("custom_")
+            if not is_custom and s_key not in all_registered_signals:
+                raise HTTPException(status_code=422, detail=f"Unknown signal key '{s_key}' in allowed_values rule.")
 
     elif r_type == "track_limit":
         f_key = params.get("field_key")

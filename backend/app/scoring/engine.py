@@ -94,36 +94,42 @@ def resolve_member_signal_or_field(
     """
     # 1. Check pre-extracted signals payload
     m_signals = signals_by_member.get(member.member_id, {})
-    if signal_key in m_signals:
-        sig = m_signals[signal_key]
-        provenance = sig.evidence.source if sig.evidence else None
-        confidence = sig.evidence.confidence if sig.evidence else None
+    raw_k = signal_key.split(":", 1)[1] if ":" in signal_key else signal_key
+    target_keys = (signal_key, raw_k, f"custom:{raw_k}", f"custom_{raw_k}")
 
-        if sig.status == SignalStatus.EXTRACTED:
-            return sig.value, "extracted", provenance, confidence
-        elif sig.status == SignalStatus.NOT_APPLICABLE:
-            return None, "not_applicable", provenance, confidence
-        elif sig.status == SignalStatus.FAILED:
-            return None, "failed", provenance, confidence
-        elif sig.status == SignalStatus.PENDING:
-            return None, "pending", provenance, confidence
-        elif sig.status == SignalStatus.SKIPPED:
-            return None, "skipped", provenance, confidence
-        return sig.value, sig.status.value, provenance, confidence
+    for k in target_keys:
+        if k in m_signals:
+            sig = m_signals[k]
+            provenance = sig.evidence.source if sig.evidence else None
+            confidence = sig.evidence.confidence if sig.evidence else None
+
+            if sig.status == SignalStatus.EXTRACTED:
+                return sig.value, "extracted", provenance, confidence
+            elif sig.status == SignalStatus.NOT_APPLICABLE:
+                return None, "not_applicable", provenance, confidence
+            elif sig.status == SignalStatus.FAILED:
+                return None, "failed", provenance, confidence
+            elif sig.status == SignalStatus.PENDING:
+                return None, "pending", provenance, confidence
+            elif sig.status == SignalStatus.SKIPPED:
+                return None, "skipped", provenance, confidence
+            return sig.value, sig.status.value, provenance, confidence
 
     # 2. Fallback: Check custom_fields
-    if signal_key in member.custom_fields:
-        val = member.custom_fields[signal_key]
-        if val is not None and not (isinstance(val, str) and not val.strip()):
-            return val, "extracted", "registration_custom_fields", 1.0
-        return None, "not_applicable", "registration_custom_fields", 1.0
+    for k in target_keys:
+        if k in member.custom_fields:
+            val = member.custom_fields[k]
+            if val is not None and not (isinstance(val, str) and not val.strip()):
+                return val, "extracted", "registration_custom_fields", 0.85
+            return None, "not_applicable", "registration_custom_fields", 0.85
 
     # 3. Fallback: Check raw_data
-    if signal_key in member.raw_data:
-        val = member.raw_data[signal_key]
-        if val is not None and not (isinstance(val, str) and not val.strip()):
-            return val, "extracted", "registration_raw_data", 1.0
-        return None, "not_applicable", "registration_raw_data", 1.0
+    for k in target_keys:
+        if k in member.raw_data:
+            val = member.raw_data[k]
+            if val is not None and not (isinstance(val, str) and not val.strip()):
+                return val, "extracted", "registration_raw_data", 0.85
+            return None, "not_applicable", "registration_raw_data", 0.85
 
     # 4. Fallback: Check canonical MemberSchema attribute
     if signal_key in KNOWN_MEMBER_FIELDS:

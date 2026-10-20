@@ -133,10 +133,13 @@ class RuleEvaluatorBase(ABC):
             return None, "unavailable"
 
         member_sigs = signals_by_member[member_id]
-        if signal_key not in member_sigs:
+        sig = member_sigs.get(signal_key)
+        if sig is None:
+            alt_key = signal_key.split(":", 1)[1] if ":" in signal_key else f"custom:{signal_key}"
+            sig = member_sigs.get(alt_key)
+        if sig is None:
             return None, "unavailable"
 
-        sig = member_sigs[signal_key]
         if sig.status == SignalStatus.EXTRACTED:
             return sig, "present"
         if sig.status == SignalStatus.NOT_APPLICABLE:

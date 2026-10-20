@@ -48,6 +48,8 @@ export const DialogContent: React.FC<
 > = ({ className, children, onClose, ...props }) => {
   return (
     <div
+      role="dialog"
+      aria-modal="true"
       className={cn(
         'relative bg-card rounded-xl border border-border shadow-xl p-6 overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col',
         className

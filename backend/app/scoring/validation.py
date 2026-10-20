@@ -39,20 +39,22 @@ def validate_scoring_criterion(criterion: EvaluationCriterion) -> list[str]:
     elif criterion.weight < 0.0:
         errors.append(f"Criterion '{criterion.criterion_id}': weight must be non-negative; got {criterion.weight}")
 
-    # 2. Signal key validation against default_signal_registry
+    # 2. Signal key validation against default_signal_registry or custom signal prefix
     all_defs = {sig.signal_key: sig for sig in default_signal_registry.list_signals()}
-    if criterion.target_signal_key not in all_defs:
+    is_custom = criterion.target_signal_key.startswith("custom:") or criterion.target_signal_key.startswith("custom_")
+
+    if not is_custom and criterion.target_signal_key not in all_defs:
         errors.append(
             f"Criterion '{criterion.criterion_id}': unknown target_signal_key '{criterion.target_signal_key}'. "
-            f"Must be a registered signal in the signal catalog."
+            f"Must be a registered signal in the signal catalog or prefixed with 'custom:'."
         )
     else:
-        sig_def = all_defs[criterion.target_signal_key]
-        val_type = sig_def.value_type
+        sig_def = all_defs.get(criterion.target_signal_key)
+        val_type = sig_def.value_type if sig_def else "string"
 
         # 3. Type compatibility
         if criterion.criterion_type in (CriterionType.NUMERIC_RANGE, CriterionType.NUMERIC_WEIGHT):
-            if val_type not in _NUMERIC_SIGNAL_TYPES:
+            if not is_custom and val_type not in _NUMERIC_SIGNAL_TYPES:
                 errors.append(
                     f"Criterion '{criterion.criterion_id}': criterion_type '{criterion.criterion_type.value}' "
                     f"is incompatible with signal '{criterion.target_signal_key}' of type '{val_type}'. "
@@ -76,14 +78,14 @@ def validate_scoring_criterion(criterion: EvaluationCriterion) -> list[str]:
                     )
 
         elif criterion.criterion_type in (CriterionType.BOOLEAN, CriterionType.BOOLEAN_BONUS):
-            if val_type not in _BOOLEAN_SIGNAL_TYPES:
+            if not is_custom and val_type not in _BOOLEAN_SIGNAL_TYPES:
                 errors.append(
                     f"Criterion '{criterion.criterion_id}': criterion_type 'boolean' is incompatible "
                     f"with signal '{criterion.target_signal_key}' of type '{val_type}'. Expected boolean."
                 )
 
         elif criterion.criterion_type in (CriterionType.CATEGORICAL, CriterionType.CATEGORY_MATCH):
-            if val_type not in _CATEGORICAL_SIGNAL_TYPES:
+            if not is_custom and val_type not in _CATEGORICAL_SIGNAL_TYPES:
                 errors.append(
                     f"Criterion '{criterion.criterion_id}': criterion_type 'categorical' is incompatible "
                     f"with signal '{criterion.target_signal_key}' of type '{val_type}'. Expected string."
