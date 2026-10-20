@@ -1363,7 +1363,7 @@ export interface components {
              * Config
              * @description Arbitrary extra parameters
              */
-            config?: Record<string, never>;
+            config?: Record<string, any>;
         };
         /**
          * EvaluationCriterion
@@ -1427,7 +1427,7 @@ export interface components {
              * Config
              * @description Arbitrary extra parameters
              */
-            config?: Record<string, never>;
+            config?: Record<string, any>;
         };
         /**
          * ExcludedTeamResult
@@ -1539,7 +1539,7 @@ export interface components {
              * Config
              * @description Optional organizer-provided configuration (e.g. scale settings, column overrides)
              */
-            config?: Record<string, never>;
+            config?: Record<string, any>;
         };
         /**
          * ExtractionRunResponse

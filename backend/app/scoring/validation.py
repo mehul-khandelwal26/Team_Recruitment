@@ -91,10 +91,11 @@ def validate_scoring_criterion(criterion: EvaluationCriterion) -> list[str]:
                     f"with signal '{criterion.target_signal_key}' of type '{val_type}'. Expected string."
                 )
             cm = criterion.normalization.categorical_mapping
-            if cm is None or not cm.category_scores:
+            has_exp = bool(criterion.config and criterion.config.get("expected_values"))
+            if (cm is None or not cm.category_scores) and not has_exp:
                 errors.append(
                     f"Criterion '{criterion.criterion_id}': categorical_mapping with non-empty category_scores "
-                    f"is required for categorical criterion."
+                    f"or expected_values is required for categorical criterion."
                 )
 
     # 4. Aggregation validation
