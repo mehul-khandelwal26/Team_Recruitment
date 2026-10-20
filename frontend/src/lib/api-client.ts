@@ -11,6 +11,22 @@ export const API_BASE_URL = (
       : 'http://localhost:8000'
 ).replace(/\/+$/, '');
 
+export const AUTH_TOKEN_KEY = 'auth_token';
+
+export function getStoredAuthToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(AUTH_TOKEN_KEY);
+}
+
+export function setStoredAuthToken(token: string | null): void {
+  if (typeof window === 'undefined') return;
+  if (token) {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+  } else {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+  }
+}
+
 export class ApiError extends Error {
   status: number;
   data: unknown;
@@ -50,6 +66,11 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
     defaultHeaders['Content-Type'] = 'application/json';
   }
 
+  const token = getStoredAuthToken();
+  if (token) {
+    defaultHeaders['Authorization'] = `Bearer ${token}`;
+  }
+
   let response: Response;
   try {
     response = await fetch(url, {
@@ -79,6 +100,11 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   }
 
   if (!response.ok) {
+    if (response.status === 401 && typeof window !== 'undefined') {
+      setStoredAuthToken(null);
+      window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+    }
+
     let errorMessage = `HTTP Error ${response.status}: ${response.statusText}`;
     if (data && typeof data === 'object') {
       const errObj = data as Record<string, unknown>;
@@ -160,9 +186,15 @@ export const apiClient = {
       if (qs) url += (url.includes('?') ? '&' : '?') + qs;
     }
 
+    const token = getStoredAuthToken();
+    const downloadHeaders: Record<string, string> = {};
+    if (token) {
+      downloadHeaders['Authorization'] = `Bearer ${token}`;
+    }
+
     let res: Response;
     try {
-      res = await fetch(url);
+      res = await fetch(url, { headers: downloadHeaders });
     } catch {
       throw new ApiError(
         0,
@@ -170,7 +202,13 @@ export const apiClient = {
       );
     }
 
-    if (!res.ok) throw new ApiError(res.status, `Download failed: ${res.statusText}`);
+    if (!res.ok) {
+      if (res.status === 401 && typeof window !== 'undefined') {
+        setStoredAuthToken(null);
+        window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+      }
+      throw new ApiError(res.status, `Download failed: ${res.statusText}`);
+    }
     const disposition = res.headers.get('content-disposition');
     let filename: string | undefined;
     if (disposition && disposition.includes('filename=')) {

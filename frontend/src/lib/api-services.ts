@@ -32,6 +32,9 @@ import type {
   DatasetDependenciesResponse,
   ExtractionRunDependenciesResponse,
   DeleteResponse,
+  User,
+  AuthTokenResponse,
+  AuthStatusResponse,
 } from '@/types';
 
 
@@ -366,6 +369,41 @@ export const apiService = {
     return apiClient.delete<DeleteResponse>(`/api/signals/runs/${runId}`, {
       params: { cascade },
     });
+  },
+
+  /**
+   * Check authentication configuration status (whether auth is required, Google Client ID, etc.).
+   */
+  getAuthStatus(): Promise<AuthStatusResponse> {
+    return apiClient.get<AuthStatusResponse>('/api/auth/status');
+  },
+
+  /**
+   * Exchange Google ID Token (from Google Identity Services) for an access JWT.
+   */
+  loginWithGoogle(idToken: string): Promise<AuthTokenResponse> {
+    return apiClient.post<AuthTokenResponse>('/api/auth/google', { id_token: idToken });
+  },
+
+  /**
+   * Developer login bypass for local testing and demonstration.
+   */
+  devLogin(email?: string, name?: string): Promise<AuthTokenResponse> {
+    return apiClient.post<AuthTokenResponse>('/api/auth/dev-login', { email, name });
+  },
+
+  /**
+   * Fetch currently authenticated user profile.
+   */
+  getMe(): Promise<User> {
+    return apiClient.get<User>('/api/auth/me');
+  },
+
+  /**
+   * Sign out current user session.
+   */
+  logout(): Promise<{ success: boolean; message: string }> {
+    return apiClient.post<{ success: boolean; message: string }>('/api/auth/logout');
   },
 };
 

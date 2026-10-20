@@ -8,14 +8,16 @@ as features are implemented.
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.endpoints.auth import router as auth_router
 from app.api.endpoints.ingestion import router as ingestion_router
 from app.api.endpoints.ranking import router as ranking_router
 from app.api.endpoints.rules import router as rules_router
 from app.api.endpoints.scoring import router as scoring_router
 from app.api.endpoints.signals import router as signals_router
+from app.auth.dependencies import get_current_user
 from app.config import APP_ENV, CORS_ORIGINS, STORAGE_BACKEND, validate_startup_configuration
 from app.db.errors import register_database_error_handlers
 from app.db.seeding import seed_database_presets
@@ -66,11 +68,12 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Routers
 # ---------------------------------------------------------------------------
-app.include_router(ingestion_router)
-app.include_router(signals_router)
-app.include_router(rules_router)
-app.include_router(scoring_router)
-app.include_router(ranking_router)
+app.include_router(auth_router)
+app.include_router(ingestion_router, dependencies=[Depends(get_current_user)])
+app.include_router(signals_router, dependencies=[Depends(get_current_user)])
+app.include_router(rules_router, dependencies=[Depends(get_current_user)])
+app.include_router(scoring_router, dependencies=[Depends(get_current_user)])
+app.include_router(ranking_router, dependencies=[Depends(get_current_user)])
 
 
 # ---------------------------------------------------------------------------

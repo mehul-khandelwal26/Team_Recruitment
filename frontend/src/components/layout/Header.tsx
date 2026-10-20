@@ -1,9 +1,10 @@
 import React from 'react';
 import { useLocation } from 'react-router-dom';
-import { Menu, AlertCircle, RefreshCw } from 'lucide-react';
+import { Menu, AlertCircle, RefreshCw, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useBackendHealth } from '@/hooks/useDashboard';
+import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
 
 interface HeaderProps {
@@ -31,6 +32,7 @@ const PAGE_META: Record<string, { title: string; subtitle: string }> = {
 
 export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
   const location = useLocation();
+  const { user, authStatus, logout } = useAuth();
   const currentMeta = PAGE_META[location.pathname] || {
     title: 'Team Recruitment Automation Tool',
     subtitle: 'Hackathon evaluation and shortlisting platform',
@@ -68,7 +70,7 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
         </div>
       </div>
 
-      {/* Right Environment Context & Badges */}
+      {/* Right Environment Context, Health & User Profile */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         {/* Live Health Status from /api/health */}
         {isHealthLoading ? (
@@ -103,6 +105,48 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
             <span className="text-[11px] font-medium text-foreground/80">System Operational</span>
+          </div>
+        )}
+
+        {/* Authenticated User Profile & Sign Out */}
+        {user && (
+          <div className="flex items-center gap-2 pl-2 border-l border-border/80">
+            <div
+              className="flex items-center gap-2"
+              title={`${user.full_name} (${user.email})`}
+            >
+              {user.avatar_url ? (
+                <img
+                  src={user.avatar_url}
+                  alt={user.full_name}
+                  className="h-7 w-7 rounded-full object-cover border border-border"
+                />
+              ) : (
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-semibold">
+                  {user.full_name ? user.full_name.charAt(0).toUpperCase() : 'U'}
+                </div>
+              )}
+              <div className="hidden lg:flex flex-col text-left">
+                <span className="text-xs font-medium text-foreground leading-tight truncate max-w-[120px]">
+                  {user.full_name}
+                </span>
+                <span className="text-[10px] text-muted-foreground font-mono leading-tight truncate max-w-[120px]">
+                  {user.email}
+                </span>
+              </div>
+            </div>
+
+            {authStatus?.auth_enabled && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                onClick={() => logout()}
+                title="Sign Out"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </Button>
+            )}
           </div>
         )}
       </div>

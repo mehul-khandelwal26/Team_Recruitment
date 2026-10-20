@@ -10,6 +10,7 @@ import os
 
 # Force in-memory storage backend for unit test suite execution
 os.environ["STORAGE_BACKEND"] = "memory"
+os.environ["AUTH_ENABLED"] = "false"
 if "APP_ENV" not in os.environ:
     os.environ["APP_ENV"] = "development"
 
