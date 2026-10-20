@@ -856,3 +856,33 @@ def derive_ranking_run_columns(
         "cutoff_score": cutoff_score,
         "payload": data,
     }
+
+
+# ---------------------------------------------------------------------------
+# 9. Users
+# ---------------------------------------------------------------------------
+
+
+class UserModel(Base):
+    """User account model for authentication."""
+
+    __tablename__ = "users"
+
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    google_sub: Mapped[Optional[str]] = mapped_column(String(128), unique=True, nullable=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    picture_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_login_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_users_email", "email"),
+        Index("ix_users_google_sub", "google_sub"),
+    )
+

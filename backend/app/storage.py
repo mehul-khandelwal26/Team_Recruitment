@@ -179,6 +179,18 @@ class StorageFactory:
                 self._stores[key] = InMemoryExtractionRunStore()
         return self._stores[key]
 
+    def get_user_store(self) -> Any:
+        key = f"user_{self.backend}"
+        if key not in self._stores:
+            if self.backend == "postgres":
+                from app.auth.store import PostgresUserStore
+                self._stores[key] = PostgresUserStore(engine=self._engine)
+            else:
+                from app.auth.store import InMemoryUserStore
+                self._stores[key] = InMemoryUserStore()
+        return self._stores[key]
+
+
 
 # Global singleton factory instance
 default_storage_factory = StorageFactory()
@@ -465,6 +477,38 @@ class DelegatingExtractionRunStore:
         return self._store.reset()
 
 
+class DelegatingUserStore:
+    """Delegates user store operations to the factory-selected active store."""
+
+    def __init__(self, factory: Optional[StorageFactory] = None) -> None:
+        self._factory = factory
+
+    @property
+    def _store(self) -> Any:
+        f = self._factory or default_storage_factory
+        return f.get_user_store()
+
+    def get(self, user_id: str) -> Any:
+        return self._store.get(user_id)
+
+    def get_by_email(self, email: str) -> Any:
+        return self._store.get_by_email(email)
+
+    def get_by_google_sub(self, google_sub: str) -> Any:
+        return self._store.get_by_google_sub(google_sub)
+
+    def save(self, user: Any) -> Any:
+        return self._store.save(user)
+
+    def list_users(self) -> list[Any]:
+        return self._store.list_users()
+
+    def reset(self) -> None:
+        return self._store.reset()
+
+
+default_user_store = DelegatingUserStore()
+
 
 # ---------------------------------------------------------------------------
 # Test Reset Helper (Section 14E)
@@ -476,7 +520,7 @@ def reset_test_database(engine: Engine) -> None:
 
     Strictly verifies that engine URL matches TEST_DATABASE_URL and passes
     assert_safe_test_database before executing. Never called automatically by app.
-    Limited strictly to the 8 existing project tables.
+    Limited strictly to project tables.
     """
     url_str = engine.url.render_as_string(hide_password=False)
     assert_safe_test_database(url_str)
@@ -487,6 +531,7 @@ def reset_test_database(engine: Engine) -> None:
         pass
 
     tables = [
+        "users",
         "ranking_runs",
         "scoring_runs",
         "manual_overrides",

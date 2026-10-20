@@ -140,5 +140,33 @@ export type NavItem = {
   badge?: string;
 };
 
+// Authentication & User models
+export interface User {
+  user_id: string;
+  email: string;
+  name?: string;
+  full_name: string;
+  picture_url?: string | null;
+  avatar_url?: string | null;
+  role?: string;
+  is_active: boolean;
+  created_at: string;
+  last_login_at?: string | null;
+}
+
+export interface AuthTokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  user: User;
+}
+
+export interface AuthStatusResponse {
+  auth_enabled: boolean;
+  google_client_id?: string | null;
+  environment: string;
+  dev_login_available: boolean;
+}
+
 // Re-export paths and components
 export type { paths, components };

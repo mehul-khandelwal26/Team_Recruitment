@@ -6,10 +6,13 @@ or your deployment platform's environment configuration.
 """
 
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load .env file if it exists (no error if missing)
+# Load .env file from backend directory or current working directory
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(_BACKEND_DIR / ".env")
 load_dotenv()
 
 
@@ -186,3 +189,19 @@ MAX_UPLOAD_SIZE_MB: int = int(os.getenv("MAX_UPLOAD_SIZE_MB", "10"))
 GITHUB_TOKEN: str | None = os.getenv("GITHUB_TOKEN", None)
 GITHUB_API_BASE_URL: str = os.getenv("GITHUB_API_BASE_URL", "https://api.github.com").rstrip("/")
 GITHUB_REQUEST_TIMEOUT: float = float(os.getenv("GITHUB_REQUEST_TIMEOUT", "10.0"))
+
+# ---------------------------------------------------------------------------
+# Authentication & Authorization Gateway
+# ---------------------------------------------------------------------------
+AUTH_ENABLED: bool = os.getenv("AUTH_ENABLED", "true").lower() in ("true", "1", "yes")
+JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "super-secret-jwt-signing-key-for-dev-recruitment-tool")
+JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
+GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "").strip().strip('"').strip("'")
+ALLOWED_EMAILS: list[str] = [
+    e.strip().lower() for e in os.getenv("ALLOWED_EMAILS", "").split(",") if e.strip()
+]
+ALLOWED_EMAIL_DOMAINS: list[str] = [
+    d.strip().lower() for d in os.getenv("ALLOWED_EMAIL_DOMAINS", "").split(",") if d.strip()
+]
+
