@@ -318,7 +318,7 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent onClose={() => onOpenChange(false)} className="max-w-3xl max-h-[92vh] flex flex-col">
+      <DialogContent onClose={() => onOpenChange(false)} className="max-w-4xl max-h-[92vh] flex flex-col">
         <DialogHeader className="shrink-0">
           <div className="flex items-center gap-2">
             <Badge variant="forest" className="font-mono text-[10px]">
@@ -537,15 +537,15 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                 </Button>
               </div>
             ) : (
-              <div className="border border-border rounded-lg overflow-hidden">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-muted/60 border-b border-border text-[11px] text-muted-foreground">
+              <div className="border border-border rounded-lg overflow-x-auto">
+                <table className="w-full text-left text-xs min-w-[680px]">
+                  <thead className="bg-muted/80 border-b border-border text-[11px] text-muted-foreground sticky top-0 z-10 backdrop-blur-xs">
                     <tr>
-                      <th className="py-2 px-3 w-10 text-center">Active</th>
-                      <th className="py-2 px-3">Rule Definition</th>
-                      <th className="py-2 px-3 w-28">Severity</th>
-                      <th className="py-2 px-3 w-36">On Missing Data</th>
-                      <th className="py-2 px-2 w-10 text-center">Action</th>
+                      <th className="py-2.5 px-3 w-12 text-center font-medium">Active</th>
+                      <th className="py-2.5 px-3 min-w-[200px] font-medium">Rule Definition</th>
+                      <th className="py-2.5 px-3 w-28 font-medium">Severity</th>
+                      <th className="py-2.5 px-3 w-40 font-medium">On Missing Data</th>
+                      <th className="py-2.5 px-2 w-16 text-center font-medium">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">

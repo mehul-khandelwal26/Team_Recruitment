@@ -778,7 +778,7 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent onClose={() => onOpenChange(false)} className="max-w-4xl max-h-[92vh] flex flex-col">
+      <DialogContent onClose={() => onOpenChange(false)} className="max-w-5xl max-h-[92vh] flex flex-col">
         <DialogHeader className="shrink-0">
           <div className="flex items-center gap-2">
             <Badge variant="forest" className="font-mono text-[10px]">
@@ -1069,17 +1069,17 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                 </Button>
               </div>
             ) : (
-              <div className="border border-border rounded-lg overflow-hidden">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-muted/60 border-b border-border text-[11px] text-muted-foreground">
+              <div className="border border-border rounded-lg overflow-x-auto">
+                <table className="w-full text-left text-xs min-w-[780px]">
+                  <thead className="bg-muted/80 border-b border-border text-[11px] text-muted-foreground sticky top-0 z-10 backdrop-blur-xs">
                     <tr>
-                      <th className="py-2 px-3 w-10 text-center">Active</th>
-                      <th className="py-2 px-3">Criterion & Signal</th>
-                      <th className="py-2 px-3 w-40">Aggregation</th>
-                      <th className="py-2 px-3 w-36">Missing Policy</th>
-                      <th className="py-2 px-3 w-28 text-right">Weight</th>
-                      <th className="py-2 px-3 w-16 text-right">Share</th>
-                      <th className="py-2 px-2 w-10 text-center">Action</th>
+                      <th className="py-2.5 px-3 w-12 text-center font-medium">Active</th>
+                      <th className="py-2.5 px-3 min-w-[200px] font-medium">Criterion & Signal</th>
+                      <th className="py-2.5 px-3 w-32 font-medium">Aggregation</th>
+                      <th className="py-2.5 px-3 w-52 font-medium">Missing Policy</th>
+                      <th className="py-2.5 px-3 w-20 text-right font-medium">Weight</th>
+                      <th className="py-2.5 px-3 w-16 text-right font-medium">Share</th>
+                      <th className="py-2.5 px-2 w-16 text-center font-medium">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -1234,7 +1234,7 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                 disabled={!c.is_enabled}
                                 value={c.aggregation}
                                 onChange={(e) => handleAggregationChange(idx, e.target.value)}
-                                className="h-6 w-full text-[11px] font-mono rounded border border-border bg-card px-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-forest-600 disabled:opacity-50"
+                                className="h-7 w-full text-xs font-mono rounded border border-border bg-card px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-forest-600 disabled:opacity-50 cursor-pointer"
                               >
                                 <option value="mean">mean</option>
                                 <option value="max">max</option>
@@ -1276,11 +1276,11 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                 disabled={!c.is_enabled}
                                 value={c.missing_data_policy || 'exclude_and_renormalize'}
                                 onChange={(e) => handleMissingDataPolicyChange(idx, e.target.value)}
-                                className="h-6 w-full text-[10px] font-mono rounded border border-border bg-card px-1 text-foreground focus:outline-none focus:ring-1 focus:ring-forest-600 disabled:opacity-50"
+                                className="h-7 w-full text-xs font-mono rounded border border-border bg-card px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-forest-600 disabled:opacity-50 cursor-pointer"
                                 title="Missing Data Policy"
                               >
-                                <option value="exclude_and_renormalize">exclude & renormalize</option>
-                                <option value="zero_score">zero score (0.0)</option>
+                                <option value="exclude_and_renormalize">Exclude & Renormalize</option>
+                                <option value="zero_score">Zero Score (0.0)</option>
                               </select>
                             </td>
                             <td className="py-2.5 px-3 text-right align-top pt-2">
@@ -1303,7 +1303,7 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                     return copy;
                                   });
                                 }}
-                                className="h-6 w-20 text-right font-mono text-xs ml-auto"
+                                className="h-7 w-16 text-right font-mono text-xs px-2 ml-auto"
                               />
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono text-[11px] text-muted-foreground align-top pt-2.5">
@@ -1315,10 +1315,10 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => handleRemoveCriterion(idx)}
-                                className="h-6 w-6 text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                                className="h-7 w-7 text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors mx-auto"
                                 title="Remove criterion"
                               >
-                                <Trash2 className="h-3 w-3" />
+                                <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </td>
                           </tr>
@@ -1434,10 +1434,11 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                               return copy;
                                             });
                                           }}
-                                          className="h-6 text-[11px] font-medium rounded border border-purple-300 bg-white px-2 text-purple-950 focus:outline-none focus:ring-1 focus:ring-purple-600"
+                                          className="h-7 text-xs font-medium rounded border border-purple-300 bg-white px-2 text-purple-950 focus:outline-none focus:ring-1 focus:ring-purple-600 cursor-pointer"
+                                          title="Match Strategy: Proportional awards partial credit (k / N), Any Match awards 1.0 if at least one keyword matches"
                                         >
-                                          <option value="proportional">Proportional Match (k / N, e.g. 2 of 3 = 0.67)</option>
-                                          <option value="any">Any Match (1.0 if at least one matches)</option>
+                                          <option value="proportional">Proportional Match (k / N)</option>
+                                          <option value="any">Any Match (1.0)</option>
                                         </select>
                                       </div>
                                     </div>

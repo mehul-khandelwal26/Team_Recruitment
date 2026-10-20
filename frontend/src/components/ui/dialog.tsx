@@ -38,7 +38,7 @@ export const Dialog: React.FC<DialogProps> = ({ open, onOpenChange, children }) 
       />
 
       {/* Modal Container */}
-      <div className="relative z-50 w-full max-w-2xl">{children}</div>
+      <div className="relative z-50 w-full flex justify-center items-center">{children}</div>
     </div>
   );
 };
@@ -51,7 +51,7 @@ export const DialogContent: React.FC<
       role="dialog"
       aria-modal="true"
       className={cn(
-        'relative bg-card rounded-xl border border-border shadow-xl p-6 overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col',
+        'relative w-full max-w-2xl bg-card rounded-xl border border-border shadow-xl p-6 overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col',
         className
       )}
       onClick={(e) => e.stopPropagation()}
