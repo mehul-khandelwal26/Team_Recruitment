@@ -55,6 +55,10 @@ _EXTENSION_MAP = {
 @router.post("/upload", response_model=UploadResponse)
 async def upload_registration_file(
     file: UploadFile = File(..., description="CSV or JSON registration file"),
+    resumes_archive: Optional[UploadFile] = File(
+        None,
+        description="Optional companion ZIP archive containing candidate resume documents (PDF, DOCX)",
+    ),
     mapping: Optional[str] = Form(
         None,
         description="Optional JSON-encoded dictionary of field mappings (original_name -> target_field)",
@@ -89,6 +93,17 @@ async def upload_registration_file(
             ),
         )
 
+    # Parse optional companion resumes archive
+    resumes_zip_bytes: Optional[bytes] = None
+    if resumes_archive is not None:
+        archive_name = (resumes_archive.filename or "").lower()
+        if not archive_name.endswith(".zip"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported companion archive type '{resumes_archive.filename}'. Only .zip archives are supported.",
+            )
+        resumes_zip_bytes = await _read_upload_file_bounded(resumes_archive, max_bytes=50 * 1024 * 1024)
+
     # Parse optional mapping JSON string
     mapping_dict: Optional[dict[str, str]] = None
     if mapping:
@@ -111,7 +126,7 @@ async def upload_registration_file(
                 )
 
     raw_bytes = await _read_upload_file_bounded(file)
-    result = parser(raw_bytes, mapping=mapping_dict)
+    result = parser(raw_bytes, mapping=mapping_dict, resumes_zip_bytes=resumes_zip_bytes)
 
     if result.success:
         ds_id = dataset_id.strip() if dataset_id and dataset_id.strip() else f"ds_{uuid.uuid4().hex[:12]}"

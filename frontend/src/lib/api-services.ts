@@ -77,14 +77,19 @@ export const apiService = {
   },
 
   /**
-   * Upload a candidate registration file (CSV or JSON) with optional column mapping.
+   * Upload a candidate registration file (CSV or JSON) with optional column mapping and optional companion resumes ZIP archive.
    */
-  uploadDataset(file: File, mapping?: Record<string, string>): Promise<UploadResponse> {
+  uploadDataset(
+    file: File,
+    mapping?: Record<string, string>,
+    resumesArchive?: File
+  ): Promise<UploadResponse> {
     const extraFields =
       mapping && Object.keys(mapping).length > 0
         ? { mapping: JSON.stringify(mapping) }
         : undefined;
-    return apiClient.upload<UploadResponse>('/api/ingestion/upload', file, extraFields);
+    const extraFiles = resumesArchive ? { resumes_archive: resumesArchive } : undefined;
+    return apiClient.upload<UploadResponse>('/api/ingestion/upload', file, extraFields, extraFiles);
   },
 
   /**

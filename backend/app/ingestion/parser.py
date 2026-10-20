@@ -10,7 +10,9 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import re
+import zipfile
 from typing import Any, Optional
 
 import pandas as pd
@@ -24,6 +26,7 @@ from app.schemas.ingestion import (
     ValidationError,
     ValidationWarning,
 )
+from app.signals.resume import extract_text_from_document
 
 # Profile-link fields that are optional. Used to generate non-fatal warnings
 # when a member is missing one or more of them.
@@ -162,9 +165,156 @@ class _TeamMeta:
 # ---------------------------------------------------------------------------
 
 
+
+def _process_resumes_archive(
+    archive_bytes: bytes,
+) -> tuple[dict[str, tuple[str, str]], list[ValidationWarning]]:
+    """Unpack companion resumes ZIP archive and extract resume text.
+
+    Returns:
+        (resume_index, warnings):
+        resume_index maps normalized keys (filename, basename, email, member_id, name)
+        to (filename, extracted_text).
+    """
+    resume_index: dict[str, tuple[str, str]] = {}
+    warnings: list[ValidationWarning] = []
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as zf:
+            for info in zf.infolist():
+                if info.is_dir() or info.filename.startswith("__MACOSX/") or "/." in info.filename:
+                    continue
+                clean_name = os.path.basename(info.filename)
+                if not clean_name or clean_name.startswith("."):
+                    continue
+
+                ext = clean_name.lower().split(".")[-1]
+                if ext not in {"pdf", "docx"}:
+                    continue
+
+                if info.file_size > 10 * 1024 * 1024:
+                    warnings.append(
+                        ValidationWarning(
+                            team_id="",
+                            member_id="",
+                            field="resumes_archive",
+                            message=f"Resume file '{clean_name}' exceeds 10MB limit and was skipped.",
+                        )
+                    )
+                    continue
+
+                raw_doc_bytes = zf.read(info)
+                text, err, _ = extract_text_from_document(raw_doc_bytes, clean_name)
+                if err or not text:
+                    warnings.append(
+                        ValidationWarning(
+                            team_id="",
+                            member_id="",
+                            field="resumes_archive",
+                            message=f"Could not extract text from '{clean_name}': {err or 'Empty document'}",
+                        )
+                    )
+                    continue
+
+                entry = (clean_name, text)
+                resume_index[clean_name.lower()] = entry
+                norm_full = info.filename.replace("\\", "/").lower()
+                resume_index[norm_full] = entry
+                base_no_ext = clean_name.rsplit(".", 1)[0].lower()
+                resume_index[base_no_ext] = entry
+                norm_base = re.sub(r"[_\W]+", " ", base_no_ext).strip()
+                if norm_base:
+                    resume_index[norm_base] = entry
+                    resume_index[norm_base.replace(" ", "")] = entry
+
+    except Exception as exc:
+        warnings.append(
+            ValidationWarning(
+                team_id="",
+                member_id="",
+                field="resumes_archive",
+                message=f"Failed to inspect resumes ZIP archive: {exc}",
+            )
+        )
+
+    return resume_index, warnings
+
+
+def _match_member_resume(
+    member_data: dict[str, Any],
+    resume_index: dict[str, tuple[str, str]],
+) -> Optional[tuple[str, str]]:
+    """Match a member record to a resume entry in the companion archive index."""
+    if not resume_index:
+        return None
+
+    # 1. Explicit resume column
+    for r_key in ("resume_url", "resume", "resume_file", "resume_path", "cv"):
+        val = member_data.get(r_key)
+        if not val and isinstance(member_data.get("custom_fields"), dict):
+            val = member_data["custom_fields"].get(r_key)
+        if val and isinstance(val, str):
+            clean_val = val.strip().replace("\\", "/").lower()
+            if clean_val in resume_index:
+                return resume_index[clean_val]
+            base = os.path.basename(clean_val)
+            if base in resume_index:
+                return resume_index[base]
+            base_no_ext = base.rsplit(".", 1)[0]
+            if base_no_ext in resume_index:
+                return resume_index[base_no_ext]
+
+    # 2. Email match
+    email = member_data.get("email")
+    if email and isinstance(email, str):
+        em_clean = email.strip().lower()
+        if em_clean in resume_index:
+            return resume_index[em_clean]
+        for ext in (".pdf", ".docx"):
+            if em_clean + ext in resume_index:
+                return resume_index[em_clean + ext]
+
+    # 3. Member ID / Roll Number match
+    member_id = member_data.get("member_id")
+    if member_id and isinstance(member_id, str):
+        mid_clean = member_id.strip().lower()
+        if mid_clean in resume_index:
+            return resume_index[mid_clean]
+        for ext in (".pdf", ".docx"):
+            if mid_clean + ext in resume_index:
+                return resume_index[mid_clean + ext]
+
+    # 4. Name match
+    name = member_data.get("name")
+    if name and isinstance(name, str):
+        n_clean = name.strip().lower()
+        if n_clean in resume_index:
+            return resume_index[n_clean]
+        for ext in (".pdf", ".docx"):
+            if n_clean + ext in resume_index:
+                return resume_index[n_clean + ext]
+
+        n_under = re.sub(r"\s+", "_", n_clean)
+        if n_under in resume_index:
+            return resume_index[n_under]
+        for ext in (".pdf", ".docx"):
+            if n_under + ext in resume_index:
+                return resume_index[n_under + ext]
+
+        n_condensed = re.sub(r"[\s_]+", "", n_clean)
+        if n_condensed in resume_index:
+            return resume_index[n_condensed]
+        for ext in (".pdf", ".docx"):
+            if n_condensed + ext in resume_index:
+                return resume_index[n_condensed + ext]
+
+    return None
+
+
 def parse_csv(
     raw_bytes: bytes,
     mapping: Optional[dict[str, str]] = None,
+    resumes_zip_bytes: Optional[bytes] = None,
 ) -> UploadResponse:
     """Parse a CSV file (one row per member) into teams with custom field preservation.
 
@@ -174,6 +324,13 @@ def parse_csv(
     """
     errors: list[ValidationError] = []
     warnings: list[ValidationWarning] = []
+
+    # Process optional companion resumes archive
+    resume_index: dict[str, tuple[str, str]] = {}
+    if resumes_zip_bytes:
+        resume_index, zip_warnings = _process_resumes_archive(resumes_zip_bytes)
+        warnings.extend(zip_warnings)
+    matched_filenames: set[str] = set()
 
     text = raw_bytes.decode("utf-8-sig", errors="replace").strip()
     if not text:
@@ -529,6 +686,16 @@ def parse_csv(
                     else:
                         field_statuses[orig_name] = FieldPresenceStatus.COLLECTED_BLANK
 
+            if resume_index:
+                matched_resume = _match_member_resume(member_data, resume_index)
+                if matched_resume:
+                    fname, ftext = matched_resume
+                    custom_fields["resume_text"] = ftext
+                    custom_fields["resume_filename"] = fname
+                    field_statuses["resume_url"] = FieldPresenceStatus.PRESENT
+                    if not member_data.get("resume_url"):
+                        member_data["resume_url"] = f"zip://{fname}"
+                    matched_filenames.add(fname.lower())
             team_rows.setdefault(team_id, []).append(member_data)
 
     # Build & validate teams
@@ -541,6 +708,27 @@ def parse_csv(
 
     disambig_warnings = _disambiguate_cross_team_member_ids(teams, warnings)
     warnings.extend(disambig_warnings)
+    if resume_index:
+        total_unique_resumes = len({fn.lower() for fn, _ in resume_index.values()})
+        unmatched_count = total_unique_resumes - len(matched_filenames)
+        if unmatched_count > 0:
+            warnings.append(
+                ValidationWarning(
+                    team_id="",
+                    member_id="",
+                    field="resumes_archive",
+                    message=f"Companion resumes ZIP contained {total_unique_resumes} resume(s); {len(matched_filenames)} matched candidates, and {unmatched_count} were unmatched.",
+                )
+            )
+        else:
+            warnings.append(
+                ValidationWarning(
+                    team_id="",
+                    member_id="",
+                    field="resumes_archive",
+                    message=f"All {total_unique_resumes} resume(s) in companion ZIP successfully matched candidates.",
+                )
+            )
 
     success = len(teams) > 0 and len(errors) == 0
     members_count = sum(len(t.members) for t in teams)
@@ -559,6 +747,7 @@ def parse_csv(
 def parse_json(
     raw_bytes: bytes,
     mapping: Optional[dict[str, str]] = None,
+    resumes_zip_bytes: Optional[bytes] = None,
 ) -> UploadResponse:
     """Parse a JSON file (array of team objects) into teams with custom field preservation.
 
@@ -629,6 +818,11 @@ def parse_json(
 
     teams: list[TeamSchema] = []
     discovered_unmapped: set[str] = set()
+    resume_index: dict[str, tuple[str, str]] = {}
+    if resumes_zip_bytes:
+        resume_index, zip_warnings = _process_resumes_archive(resumes_zip_bytes)
+        warnings.extend(zip_warnings)
+    matched_filenames: set[str] = set()
 
     # Pass 1: Parse and validate JSON team objects
     team_entries: list[dict[str, Any]] = []
@@ -832,6 +1026,17 @@ def parse_json(
                     field_statuses[field] = FieldPresenceStatus.NOT_COLLECTED
             m_obj["field_statuses"] = field_statuses
 
+            if resume_index:
+                matched_resume = _match_member_resume(m_obj, resume_index)
+                if matched_resume:
+                    fname, ftext = matched_resume
+                    m_obj.setdefault("custom_fields", {})
+                    m_obj["custom_fields"]["resume_text"] = ftext
+                    m_obj["custom_fields"]["resume_filename"] = fname
+                    m_obj["field_statuses"]["resume_url"] = FieldPresenceStatus.PRESENT
+                    if not m_obj.get("resume_url"):
+                        m_obj["resume_url"] = f"zip://{fname}"
+                    matched_filenames.add(fname.lower())
             try:
                 member_model = MemberSchema.model_validate(m_obj)
                 processed_members.append(member_model)
@@ -871,6 +1076,27 @@ def parse_json(
 
     disambig_warnings = _disambiguate_cross_team_member_ids(teams, warnings)
     warnings.extend(disambig_warnings)
+    if resume_index:
+        total_unique_resumes = len({fn.lower() for fn, _ in resume_index.values()})
+        unmatched_count = total_unique_resumes - len(matched_filenames)
+        if unmatched_count > 0:
+            warnings.append(
+                ValidationWarning(
+                    team_id="",
+                    member_id="",
+                    field="resumes_archive",
+                    message=f"Companion resumes ZIP contained {total_unique_resumes} resume(s); {len(matched_filenames)} matched candidates, and {unmatched_count} were unmatched.",
+                )
+            )
+        else:
+            warnings.append(
+                ValidationWarning(
+                    team_id="",
+                    member_id="",
+                    field="resumes_archive",
+                    message=f"All {total_unique_resumes} resume(s) in companion ZIP successfully matched candidates.",
+                )
+            )
 
     success = len(teams) > 0 and len(errors) == 0
     members_count = sum(len(t.members) for t in teams)

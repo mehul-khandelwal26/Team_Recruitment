@@ -149,8 +149,61 @@ TOOLS_TECHNOLOGIES: dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
-# SSRF-Safe Downloader and DNS Rebinding Protection
+# SSRF-Safe Downloader, Cloud URL Normalizer, and DNS Rebinding Protection
 # ---------------------------------------------------------------------------
+
+TRUSTED_CLOUD_DOMAINS: set[str] = {
+    "drive.google.com",
+    "drive.usercontent.google.com",
+    "docs.google.com",
+    "dropbox.com",
+    "www.dropbox.com",
+    "dl.dropboxusercontent.com",
+}
+
+
+def normalize_cloud_resume_url(url: str) -> str:
+    """Transform cloud storage sharing URLs into direct binary download links.
+
+    Supported providers:
+    - Google Drive (file view links, open?id= links, docs.google.com export)
+    - Dropbox (s/... links, scl/fi/... links with dl=0 -> dl=1)
+    """
+    if not url or not isinstance(url, str):
+        return url
+    u = url.strip()
+
+    # Google Docs export: /document/d/{ID}/edit -> /document/d/{ID}/export?format=pdf
+    doc_match = re.search(r"docs\.google\.com/document/d/([a-zA-Z0-9_-]{20,})", u)
+    if doc_match:
+        doc_id = doc_match.group(1)
+        return f"https://docs.google.com/document/d/{doc_id}/export?format=pdf"
+
+    # Google Drive file links
+    if "drive.google.com" in u or "drive.usercontent.google.com" in u:
+        id_match = re.search(r"(?:file/d/|id=)([a-zA-Z0-9_-]{20,})", u)
+        if id_match:
+            file_id = id_match.group(1)
+            return f"https://drive.usercontent.google.com/download?id={file_id}&export=download&authuser=0"
+
+    # Dropbox links: dl=0 -> dl=1
+    if "dropbox.com" in u:
+        if "dl=0" in u:
+            return u.replace("dl=0", "dl=1")
+        if "dl=1" not in u and "raw=1" not in u:
+            return f"{u}&dl=1" if "?" in u else f"{u}?dl=1"
+
+    return u
+
+
+def _is_trusted_cloud_domain(hostname: Optional[str]) -> bool:
+    """Check if hostname belongs to a recognized, trusted cloud storage provider."""
+    if not hostname:
+        return False
+    host = hostname.lower().strip()
+    if host in TRUSTED_CLOUD_DOMAINS:
+        return True
+    return any(host.endswith("." + domain) for domain in TRUSTED_CLOUD_DOMAINS)
 
 
 class SSRFSecurityError(Exception):
@@ -293,34 +346,92 @@ def download_resume_file(
     url: str,
     max_bytes: int = DEFAULT_MAX_RESUME_BYTES,
     timeout: float = DEFAULT_DOWNLOAD_TIMEOUT,
+    max_redirects: int = 3,
 ) -> tuple[Optional[bytes], Optional[str]]:
-    """Safely download a resume file over HTTP/HTTPS with size limit, SSRF protection, and rebinding defense."""
-    is_safe, err_msg = validate_url_security(url)
-    if not is_safe:
-        return None, err_msg
+    """Safely download a resume file over HTTP/HTTPS with size limit, SSRF protection, and rebinding defense.
 
+    Supports secure redirect traversal for trusted cloud domains (e.g. Google Drive, Dropbox)
+    while strictly rejecting redirects on untrusted arbitrary domains to prevent redirect-based SSRF.
+    """
+    normalized_url = normalize_cloud_resume_url(url)
+    current_url = normalized_url
+
+    transport = SSRFSafeTransport()
     try:
-        transport = SSRFSafeTransport()
         with httpx.Client(transport=transport, timeout=timeout, follow_redirects=False) as client:
-            with client.stream("GET", url, headers={"User-Agent": "TeamRecruitmentTool-ResumeAnalyzer/1.0"}) as resp:
-                if 300 <= resp.status_code < 400:
-                    return None, f"HTTP redirects are not permitted for resume downloads (received HTTP {resp.status_code})."
+            for hop in range(max_redirects + 1):
+                is_safe, err_msg = validate_url_security(current_url)
+                if not is_safe:
+                    return None, err_msg
 
-                if resp.status_code >= 400:
-                    return None, f"Failed to download resume: HTTP {resp.status_code}"
+                parsed_current = urllib.parse.urlparse(current_url)
+                is_trusted_cloud = _is_trusted_cloud_domain(parsed_current.hostname)
 
-                content_len = resp.headers.get("content-length")
-                if content_len and int(content_len) > max_bytes:
-                    return None, f"Resume exceeds maximum allowed size of {max_bytes} bytes."
+                with client.stream(
+                    "GET",
+                    current_url,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TeamRecruitmentTool-ResumeAnalyzer/1.0",
+                        "Accept": "application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,*/*",
+                    },
+                ) as resp:
+                    if 300 <= resp.status_code < 400:
+                        if not is_trusted_cloud:
+                            return None, f"HTTP redirects are not permitted for resume downloads (received HTTP {resp.status_code})."
 
-                buf = io.BytesIO()
-                downloaded = 0
-                for chunk in resp.iter_bytes(chunk_size=8192):
-                    downloaded += len(chunk)
-                    if downloaded > max_bytes:
-                        return None, f"Resume download exceeded maximum allowed size of {max_bytes} bytes."
-                    buf.write(chunk)
-                return buf.getvalue(), None
+                        location = resp.headers.get("location")
+                        if not location:
+                            return None, f"HTTP redirect missing Location header (HTTP {resp.status_code})."
+
+                        if hop >= max_redirects:
+                            return None, f"Exceeded maximum allowed redirects ({max_redirects}) while resolving cloud resume link."
+
+                        next_url = urllib.parse.urljoin(current_url, location)
+                        current_url = next_url
+                        continue
+
+                    if resp.status_code in {401, 403}:
+                        if is_trusted_cloud:
+                            return None, "Cloud resume link is private or requires authentication. Please set permissions to 'Anyone with the link can view'."
+                        return None, f"Failed to download resume: HTTP {resp.status_code} (Unauthorized / Access Denied)"
+
+                    if resp.status_code == 404:
+                        if is_trusted_cloud:
+                            return None, "Cloud resume file not found (HTTP 404). Please verify that the link is valid and has not been deleted."
+                        return None, "Resume file not found at the provided URL (HTTP 404)."
+
+                    if resp.status_code >= 400:
+                        return None, f"Failed to download resume: HTTP {resp.status_code}"
+
+                    content_len = resp.headers.get("content-length")
+                    if content_len and int(content_len) > max_bytes:
+                        return None, f"Resume exceeds maximum allowed size of {max_bytes} bytes."
+
+                    buf = io.BytesIO()
+                    downloaded = 0
+                    for chunk in resp.iter_bytes(chunk_size=8192):
+                        downloaded += len(chunk)
+                        if downloaded > max_bytes:
+                            return None, f"Resume download exceeded maximum allowed size of {max_bytes} bytes."
+                        buf.write(chunk)
+
+                    downloaded_bytes = buf.getvalue()
+
+                    # Detect if response is an HTML preview / sign-in page instead of a document
+                    content_type = resp.headers.get("content-type", "").lower()
+                    peek = downloaded_bytes[:512].lower()
+                    if "text/html" in content_type or peek.startswith(b"<!doctype html") or peek.startswith(b"<html"):
+                        if is_trusted_cloud:
+                            return (
+                                None,
+                                "Cloud link returned an HTML preview or sign-in page instead of a downloadable document. "
+                                "Please ensure link sharing is set to 'Anyone with the link can view' and provides direct file access.",
+                            )
+                        return None, "Resume link returned an HTML webpage instead of a PDF or DOCX file."
+
+                    return downloaded_bytes, None
+
+            return None, "Failed to resolve resume download after redirects."
     except SSRFSecurityError as exc:
         return None, f"Security restriction: {exc}"
     except httpx.TimeoutException:
@@ -1371,6 +1482,16 @@ class ResumeSignalExtractor(BaseSignalExtractor):
         achieve_list, achieve_evidence = extract_certifications_achievements_from_text(extracted_text)
         links_dict, links_evidence = extract_external_links_from_text(extracted_text)
 
+        # Cache extracted structured data and plain text on member.custom_fields for downstream analyzer fallbacks
+        member.custom_fields["_resume_extracted"] = True
+        member.custom_fields["resume_text"] = extracted_text
+        member.custom_fields["resume_education"] = edu_dict
+        member.custom_fields["resume_degree_level"] = degree_level
+        member.custom_fields["resume_external_links"] = links_dict
+        member.custom_fields["resume_skills"] = skills_dict
+        # Ensure multi-megabyte binary payload is safely discarded from memory
+        member.custom_fields.pop("resume_bytes", None)
+
         # Dynamic confidence heuristics based on extraction quality and signal evidence
         char_count = len(extracted_text) if extracted_text else 0
         doc_factor = 1.0 if char_count >= 500 else (0.85 if char_count >= 200 else 0.70)
@@ -1738,3 +1859,46 @@ class ResumeSignalExtractor(BaseSignalExtractor):
             return member.custom_fields["resume_text"], "resume_text"
 
         return None, "resume_url"
+
+
+def get_or_extract_resume_signals(
+    member: MemberSchema,
+    config: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Retrieve already extracted resume signals from member or extract them on-demand.
+
+    Used by AcademicMetricsAnalyzer and GitHubAnalyzer for multi-signal fallback resolution.
+    Caches parsed structured data and text on member.custom_fields while discarding raw bytes.
+    """
+    if member.custom_fields.get("_resume_extracted"):
+        return {
+            "resume_education": member.custom_fields.get("resume_education", {}),
+            "resume_degree_level": member.custom_fields.get("resume_degree_level"),
+            "resume_external_links": member.custom_fields.get("resume_external_links", {}),
+            "resume_skills": member.custom_fields.get("resume_skills", {}),
+            "resume_text": member.custom_fields.get("resume_text", ""),
+        }
+
+    # Check if member has any resume input available
+    has_input = bool(
+        member.resume_url
+        or member.custom_fields.get("resume_url")
+        or member.custom_fields.get("resume")
+        or member.custom_fields.get("cv")
+        or member.custom_fields.get("resume_bytes")
+        or member.custom_fields.get("resume_text")
+    )
+    if not has_input:
+        return {}
+
+    # Extract signals using ResumeSignalExtractor
+    extractor = ResumeSignalExtractor()
+    extractor.extract(member=member, config=config)
+
+    return {
+        "resume_education": member.custom_fields.get("resume_education", {}),
+        "resume_degree_level": member.custom_fields.get("resume_degree_level"),
+        "resume_external_links": member.custom_fields.get("resume_external_links", {}),
+        "resume_skills": member.custom_fields.get("resume_skills", {}),
+        "resume_text": member.custom_fields.get("resume_text", ""),
+    }

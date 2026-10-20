@@ -83,11 +83,13 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
 
   // Upload States
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
+  const [resumesZipToUpload, setResumesZipToUpload] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResponse | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const zipInputRef = useRef<HTMLInputElement>(null);
 
   // Column Mapping & Discovery States
   const [isInspecting, setIsInspecting] = useState(false);
@@ -267,6 +269,19 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
     setColumnMappings({});
   };
 
+  const handleZipChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      if (!file.name.toLowerCase().endsWith('.zip')) {
+        setUploadError('Only .zip companion resume archives are supported.');
+        setResumesZipToUpload(null);
+        return;
+      }
+      setResumesZipToUpload(file);
+      setUploadError(null);
+    }
+  };
+
   const handleUploadSubmit = async () => {
     if (!fileToUpload) return;
     if (hasDuplicateMappings) {
@@ -280,7 +295,11 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
     setUploadResult(null);
 
     try {
-      const response = await apiService.uploadDataset(fileToUpload, columnMappings);
+      const response = await apiService.uploadDataset(
+        fileToUpload,
+        columnMappings,
+        resumesZipToUpload || undefined
+      );
       setUploadResult(response);
 
       if (response.success && response.dataset_id) {
@@ -647,6 +666,68 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
                 <p className="text-xs text-muted-foreground mt-1">
                   Supports standardized CSV or JSON registration exports (Max 15MB)
                 </p>
+              </div>
+
+              {/* Optional Companion Resumes Archive Dropzone */}
+              <div className="p-3.5 rounded-lg border border-border bg-card/60 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-6 w-6 rounded bg-emerald-100 flex items-center justify-center text-emerald-800">
+                      <FileCheck className="h-3.5 w-3.5" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-semibold text-foreground">
+                        Attach Resumes Archive (.zip)
+                      </span>
+                      <Badge variant="outline" className="ml-2 text-[9px] py-0 font-normal">
+                        Optional Companion
+                      </Badge>
+                    </div>
+                  </div>
+                  {resumesZipToUpload ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setResumesZipToUpload(null)}
+                      className="text-xs h-6 px-2 text-muted-foreground hover:text-destructive"
+                    >
+                      <X className="h-3 w-3 mr-1" />
+                      Remove ZIP
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => zipInputRef.current?.click()}
+                      className="text-xs h-7 gap-1"
+                    >
+                      Browse ZIP
+                    </Button>
+                  )}
+                </div>
+
+                <input
+                  ref={zipInputRef}
+                  type="file"
+                  accept=".zip"
+                  onChange={handleZipChange}
+                  className="hidden"
+                />
+
+                {resumesZipToUpload ? (
+                  <div className="flex items-center justify-between p-2 rounded bg-forest-50/60 border border-forest-200 text-xs">
+                    <span className="font-medium text-forest-900 truncate">
+                      {resumesZipToUpload.name} ({formatFileSize(resumesZipToUpload.size)})
+                    </span>
+                    <Badge variant="forest" className="text-[10px]">
+                      Attached
+                    </Badge>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Upload a companion .zip of candidate PDF or DOCX resumes. Candidate names, emails, roll numbers, or CSV resume paths will automatically be matched and extracted without downloading from cloud links.
+                  </p>
+                )}
               </div>
 
               {/* Selected File Details & Interactive Column Mapping */}

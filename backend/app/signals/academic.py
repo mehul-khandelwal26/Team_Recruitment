@@ -165,11 +165,19 @@ def resolve_degree_info(
 
 
 def _find_degree_name(member: MemberSchema) -> Optional[str]:
-    """Look up degree name in candidate custom fields or raw data."""
+    """Look up degree name in candidate custom fields or raw data, falling back to resume education."""
     for key in ("degree", "degree_name", "program", "course", "branch", "qualification"):
         val = member.custom_fields.get(key) or member.raw_data.get(key)
         if val is not None and str(val).strip():
             return str(val).strip()
+
+    # Fallback to resume education if available
+    edu = member.custom_fields.get("resume_education")
+    if isinstance(edu, dict):
+        deg = edu.get("degree_short") or edu.get("degree")
+        if deg and str(deg).strip():
+            return str(deg).strip()
+
     return None
 
 
@@ -432,9 +440,63 @@ class AcademicMetricsAnalyzer(BaseSignalExtractor):
 
         # Resolve raw CGPA / CPI value and source field name
         cgpa_val, cgpa_field_name = self._resolve_cgpa_value(member, cfg)
+        cgpa_source = "registration_data"
 
         # Resolve raw Academic Year value and source field name
         year_val, year_field_name = self._resolve_year_value(member, cfg)
+        year_source = "registration_data"
+
+        # Fallback to resume parser if academic metrics are missing from registration CSV
+        from app.signals.resume import get_or_extract_resume_signals
+
+        resume_data: Optional[dict[str, Any]] = None
+        if (
+            (cgpa_val is None or (isinstance(cgpa_val, str) and not cgpa_val.strip()))
+            or (year_val is None or (isinstance(year_val, str) and not year_val.strip()))
+            or not degree_name
+        ):
+            resume_data = get_or_extract_resume_signals(member, cfg)
+
+        if resume_data:
+            edu_info = resume_data.get("resume_education") or {}
+
+            # Resume fallback for CGPA / CPI
+            if (cgpa_val is None or (isinstance(cgpa_val, str) and not cgpa_val.strip())) and edu_info.get("gpa"):
+                cgpa_val = edu_info["gpa"]
+                cgpa_field_name = "resume_education.gpa"
+                cgpa_source = "resume_parser"
+
+            # Resume fallback for Academic Year
+            if year_val is None or (isinstance(year_val, str) and not year_val.strip()):
+                if edu_info.get("graduation_year"):
+                    year_val = str(edu_info["graduation_year"])
+                    year_field_name = "resume_education.graduation_year"
+                    year_source = "resume_parser"
+                else:
+                    # Check plain resume text for explicit year patterns
+                    r_text = resume_data.get("resume_text", "")
+                    if r_text:
+                        for pat, yr_num in _NUMERIC_YEAR_PATTERNS:
+                            if pat.search(r_text):
+                                year_val = f"{_ordinal(yr_num)} year"
+                                year_field_name = "resume_text.year"
+                                year_source = "resume_parser"
+                                break
+                        if not year_val:
+                            if _FINAL_YEAR_REGEX.search(r_text):
+                                year_val = "Final Year"
+                                year_field_name = "resume_text.year"
+                                year_source = "resume_parser"
+                            elif _PRE_FINAL_YEAR_REGEX.search(r_text):
+                                year_val = "Pre-Final Year"
+                                year_field_name = "resume_text.year"
+                                year_source = "resume_parser"
+
+            # Resume fallback for Degree info
+            if not degree_name and (edu_info.get("degree_short") or edu_info.get("degree")):
+                degree_name = edu_info.get("degree_short") or edu_info.get("degree")
+                if not degree_duration:
+                    degree_duration = infer_degree_duration(degree_name)
 
         # Parse CGPA
         configured_scale = None
@@ -457,7 +519,7 @@ class AcademicMetricsAnalyzer(BaseSignalExtractor):
                         category="academic",
                         value=None,
                         status=SignalStatus.NOT_APPLICABLE,
-                        error_message="Academic score (CGPA/CPI) was not provided.",
+                        error_message="Academic score (CGPA/CPI) was not provided in CSV or candidate resume.",
                         evidence=SignalEvidence(
                             source="registration_data",
                             raw_input=None,
@@ -474,13 +536,14 @@ class AcademicMetricsAnalyzer(BaseSignalExtractor):
                         status=SignalStatus.FAILED,
                         error_message=score_err or "Invalid academic score.",
                         evidence=SignalEvidence(
-                            source="registration_data",
+                            source=cgpa_source,
                             raw_input=str(cgpa_val),
                             metadata={"source_field": cgpa_field_name, "error": score_err},
                         ),
                     )
                 )
             else:
+                cgpa_conf = 1.0 if cgpa_source == "registration_data" else 0.85
                 results.append(
                     ExtractedSignal(
                         signal_key="academic_cgpa",
@@ -488,16 +551,17 @@ class AcademicMetricsAnalyzer(BaseSignalExtractor):
                         value=score,
                         status=SignalStatus.EXTRACTED,
                         evidence=SignalEvidence(
-                            source="registration_data",
+                            source=cgpa_source,
                             raw_input=str(cgpa_val),
                             extracted_at=timestamp,
-                            confidence=1.0,
+                            confidence=cgpa_conf,
                             metadata={
                                 "raw_value": str(cgpa_val),
                                 "numeric_score": score,
                                 "scale": scale,
                                 "system": system,
                                 "source_field": cgpa_field_name,
+                                **({"inferred_from_resume": True} if cgpa_source == "resume_parser" else {}),
                             },
                         ),
                     )
@@ -531,13 +595,14 @@ class AcademicMetricsAnalyzer(BaseSignalExtractor):
                         status=SignalStatus.FAILED,
                         error_message=score_err or "Invalid academic score.",
                         evidence=SignalEvidence(
-                            source="registration_data",
+                            source=cgpa_source,
                             raw_input=str(cgpa_val),
                             metadata={"source_field": cgpa_field_name, "error": score_err},
                         ),
                     )
                 )
             elif scale == 10.0:
+                norm_conf = 1.0 if cgpa_source == "registration_data" else 0.85
                 results.append(
                     ExtractedSignal(
                         signal_key="normalized_cgpa_10_scale",
@@ -545,16 +610,17 @@ class AcademicMetricsAnalyzer(BaseSignalExtractor):
                         value=score,
                         status=SignalStatus.EXTRACTED,
                         evidence=SignalEvidence(
-                            source="registration_data",
+                            source=cgpa_source,
                             raw_input=str(cgpa_val),
                             extracted_at=timestamp,
-                            confidence=1.0,
+                            confidence=norm_conf,
                             metadata={
                                 "raw_value": str(cgpa_val),
                                 "normalized_score": score,
                                 "original_scale": 10.0,
                                 "target_scale": 10.0,
                                 "source_field": cgpa_field_name,
+                                **({"inferred_from_resume": True} if cgpa_source == "resume_parser" else {}),
                             },
                         ),
                     )
@@ -574,7 +640,7 @@ class AcademicMetricsAnalyzer(BaseSignalExtractor):
                                 "requires explicit configuration ('allow_scale_conversion': True)."
                             ),
                             evidence=SignalEvidence(
-                                source="registration_data",
+                                source=cgpa_source,
                                 raw_input=str(cgpa_val),
                                 metadata={
                                     "original_scale": scale,
@@ -586,6 +652,7 @@ class AcademicMetricsAnalyzer(BaseSignalExtractor):
                     )
                 else:
                     normalized_score = round((score / scale) * 10.0, 2)
+                    norm_conv_conf = 0.9 if cgpa_source == "registration_data" else 0.80
                     results.append(
                         ExtractedSignal(
                             signal_key="normalized_cgpa_10_scale",
@@ -593,10 +660,10 @@ class AcademicMetricsAnalyzer(BaseSignalExtractor):
                             value=normalized_score,
                             status=SignalStatus.EXTRACTED,
                             evidence=SignalEvidence(
-                                source="registration_data",
+                                source=cgpa_source,
                                 raw_input=str(cgpa_val),
                                 extracted_at=timestamp,
-                                confidence=0.9,
+                                confidence=norm_conv_conf,
                                 metadata={
                                     "raw_value": str(cgpa_val),
                                     "original_score": score,
@@ -604,6 +671,7 @@ class AcademicMetricsAnalyzer(BaseSignalExtractor):
                                     "normalized_score": normalized_score,
                                     "target_scale": 10.0,
                                     "source_field": cgpa_field_name,
+                                    **({"inferred_from_resume": True} if cgpa_source == "resume_parser" else {}),
                                 },
                             ),
                         )
@@ -620,7 +688,7 @@ class AcademicMetricsAnalyzer(BaseSignalExtractor):
                         category="academic",
                         value=None,
                         status=SignalStatus.NOT_APPLICABLE,
-                        error_message="Academic year was not provided.",
+                        error_message="Academic year was not provided in CSV or candidate resume.",
                         evidence=SignalEvidence(
                             source="registration_data",
                             raw_input=None,
@@ -641,7 +709,7 @@ class AcademicMetricsAnalyzer(BaseSignalExtractor):
                             status=SignalStatus.FAILED,
                             error_message=yr_err or "Invalid academic year format.",
                             evidence=SignalEvidence(
-                                source="registration_data",
+                                source=year_source,
                                 raw_input=str(year_val),
                                 metadata={
                                     "source_field": year_field_name,
@@ -657,8 +725,10 @@ class AcademicMetricsAnalyzer(BaseSignalExtractor):
                         "normalized_year": norm_label,
                         "year_number": yr_num,
                         "source_field": year_field_name,
+                        **({"inferred_from_resume": True} if year_source == "resume_parser" else {}),
                         **yr_meta,
                     }
+                    year_conf = 1.0 if year_source == "registration_data" else 0.85
                     results.append(
                         ExtractedSignal(
                             signal_key="academic_year",
@@ -666,10 +736,10 @@ class AcademicMetricsAnalyzer(BaseSignalExtractor):
                             value=norm_label,
                             status=SignalStatus.EXTRACTED,
                             evidence=SignalEvidence(
-                                source="registration_data",
+                                source=year_source,
                                 raw_input=str(year_val),
                                 extracted_at=timestamp,
-                                confidence=1.0,
+                                confidence=year_conf,
                                 metadata=ev_metadata,
                             ),
                         )

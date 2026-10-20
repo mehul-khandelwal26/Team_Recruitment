@@ -123,9 +123,21 @@ export const apiClient = {
     return request<T>(endpoint, { ...options, method: 'DELETE' });
   },
 
-  async upload<T>(endpoint: string, file: File, extraFields?: Record<string, string>): Promise<T> {
+  async upload<T>(
+    endpoint: string,
+    file: File,
+    extraFields?: Record<string, string>,
+    extraFiles?: Record<string, File>
+  ): Promise<T> {
     const formData = new FormData();
     formData.append('file', file);
+    if (extraFiles) {
+      for (const [key, f] of Object.entries(extraFiles)) {
+        if (f) {
+          formData.append(key, f);
+        }
+      }
+    }
     if (extraFields) {
       for (const [key, value] of Object.entries(extraFields)) {
         formData.append(key, value);

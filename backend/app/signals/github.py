@@ -251,6 +251,18 @@ class GitHubAnalyzer(BaseSignalExtractor):
         if raw_input is None:
             raw_input = member.custom_fields.get("github_url") or member.custom_fields.get("github")
 
+        # Fallback to resume parser if candidate GitHub profile is missing from registration CSV
+        github_source = "github"
+        if raw_input is None or (isinstance(raw_input, str) and not raw_input.strip()):
+            from app.signals.resume import get_or_extract_resume_signals
+
+            resume_data = get_or_extract_resume_signals(member, cfg)
+            links = resume_data.get("resume_external_links") or {}
+            gh_links = links.get("github_urls") or []
+            if gh_links:
+                raw_input = gh_links[0]
+                github_source = "resume_parser"
+
         # 1. Check for missing input -> NOT_APPLICABLE
         username, parse_error = extract_and_validate_github_username(raw_input)
         if raw_input is None or (isinstance(raw_input, str) and not raw_input.strip()):
@@ -322,6 +334,8 @@ class GitHubAnalyzer(BaseSignalExtractor):
             # We have valid user profile
             timestamp = datetime.timezone.utc
             iso_now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            gh_conf = 0.95 if github_source == "resume_parser" else 1.0
+            gh_extra_meta = {"inferred_from_resume": True} if github_source == "resume_parser" else {}
 
             # Signal: github_profile_verified
             if "github_profile_verified" in target_signals:
@@ -335,13 +349,14 @@ class GitHubAnalyzer(BaseSignalExtractor):
                             source="github_api",
                             raw_input=str(raw_input),
                             extracted_at=iso_now,
-                            confidence=1.0,
+                            confidence=gh_conf,
                             metadata={
                                 "username": username,
                                 "html_url": user_data.get("html_url"),
                                 "name": user_data.get("name"),
                                 "bio": user_data.get("bio"),
                                 "created_at": user_data.get("created_at"),
+                                **gh_extra_meta,
                             },
                         ),
                     )
@@ -360,11 +375,12 @@ class GitHubAnalyzer(BaseSignalExtractor):
                             source="github_api",
                             raw_input=str(raw_input),
                             extracted_at=iso_now,
-                            confidence=1.0,
+                            confidence=gh_conf,
                             metadata={
                                 "username": username,
                                 "public_repos": public_repos,
                                 "profile_url": user_data.get("html_url"),
+                                **gh_extra_meta,
                             },
                         ),
                     )
@@ -384,7 +400,7 @@ class GitHubAnalyzer(BaseSignalExtractor):
                             evidence=SignalEvidence(
                                 source="github_api",
                                 raw_input=str(raw_input),
-                                metadata={"username": username, "error": repos_err},
+                                metadata={"username": username, "error": repos_err, **gh_extra_meta},
                             ),
                         )
                     )
@@ -402,7 +418,7 @@ class GitHubAnalyzer(BaseSignalExtractor):
                                 source="github_api",
                                 raw_input=str(raw_input),
                                 extracted_at=iso_now,
-                                confidence=1.0,
+                                confidence=gh_conf,
                                 metadata={
                                     "username": username,
                                     "repos_inspected": len(repos_data),
@@ -410,6 +426,7 @@ class GitHubAnalyzer(BaseSignalExtractor):
                                     "languages_count": len(repo_summary["primary_languages"]),
                                     "include_forks": include_forks,
                                     "forks_excluded": repo_summary.get("forks_excluded", 0),
+                                    **gh_extra_meta,
                                 },
                             ),
                         )
@@ -429,7 +446,7 @@ class GitHubAnalyzer(BaseSignalExtractor):
                             evidence=SignalEvidence(
                                 source="github_api",
                                 raw_input=str(raw_input),
-                                metadata={"username": username, "error": events_err},
+                                metadata={"username": username, "error": events_err, **gh_extra_meta},
                             ),
                         )
                     )
@@ -445,13 +462,15 @@ class GitHubAnalyzer(BaseSignalExtractor):
                                 source="github_api",
                                 raw_input=str(raw_input),
                                 extracted_at=iso_now,
-                                confidence=1.0,
+                                confidence=gh_conf,
                                 metadata={
                                     "username": username,
                                     "events_inspected": len(events_data),
                                     "has_recent_activity": activity_summary["has_recent_activity"],
                                     "is_public_sample_only": True,
                                     "private_activity_omitted": True,
+                                    **activity_summary,
+                                    **gh_extra_meta,
                                 },
                             ),
                         )

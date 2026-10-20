@@ -4,6 +4,7 @@ import {
   Cpu,
   GraduationCap,
   Github,
+  FileText,
   CheckCircle2,
   ArrowRight,
   ArrowLeft,
@@ -27,7 +28,7 @@ import { cn } from '@/lib/utils';
 export interface SignalOption {
   key: string;
   name: string;
-  category: 'academic' | 'github';
+  category: 'academic' | 'github' | 'resume';
   description: string;
   isRecommended?: boolean;
 }
@@ -79,6 +80,75 @@ export const SUPPORTED_SIGNALS: SignalOption[] = [
     name: 'Profile Authenticity & Verification',
     category: 'github',
     description: 'Validates GitHub username existence, public biography, and account longevity.',
+  },
+  // Experience & Resume Signals
+  {
+    key: 'resume_extracted_skills',
+    name: 'Resume Skills & Technologies (All)',
+    category: 'resume',
+    description: 'Extracts comprehensive tech catalog covering languages, frameworks, databases, and tooling.',
+    isRecommended: true,
+  },
+  {
+    key: 'resume_programming_languages',
+    name: 'Programming Languages',
+    category: 'resume',
+    description: 'Identifies core programming languages (Python, C++, Java, TypeScript, Rust, Go, SQL, etc.).',
+    isRecommended: true,
+  },
+  {
+    key: 'resume_frameworks_libraries',
+    name: 'Frameworks & Libraries',
+    category: 'resume',
+    description: 'Extracts web, mobile, and ML frameworks (React, Django, Spring Boot, FastAPI, PyTorch, etc.).',
+  },
+  {
+    key: 'resume_databases',
+    name: 'Databases & Storage',
+    category: 'resume',
+    description: 'Detects database technologies (PostgreSQL, MongoDB, MySQL, Redis, DynamoDB, SQLite).',
+  },
+  {
+    key: 'resume_tools_technologies',
+    name: 'Developer Tools & Platforms',
+    category: 'resume',
+    description: 'Identifies developer tooling and cloud platforms (Docker, Kubernetes, AWS, Git, CI/CD, Linux).',
+  },
+  {
+    key: 'resume_projects',
+    name: 'Resume Projects',
+    category: 'resume',
+    description: 'Extracts project titles, descriptions, and associated technologies from project portfolios.',
+  },
+  {
+    key: 'resume_experience_years',
+    name: 'Years of Experience',
+    category: 'resume',
+    description: 'Computes total professional, internship, or employment duration from dated positions.',
+  },
+  {
+    key: 'resume_education',
+    name: 'Education & Degree Information',
+    category: 'resume',
+    description: 'Identifies candidate academic degree, university/college institution, and graduation year.',
+  },
+  {
+    key: 'resume_degree_level',
+    name: 'Degree Level Classification',
+    category: 'resume',
+    description: 'Classifies degree level into Bachelor, Master, PhD, or Associate program categories.',
+  },
+  {
+    key: 'resume_certifications_achievements',
+    name: 'Certifications & Honors',
+    category: 'resume',
+    description: 'Extracts verified certifications, competitive hackathon placements, and academic honors.',
+  },
+  {
+    key: 'resume_external_links',
+    name: 'Extracted Portfolio & Profile Links',
+    category: 'resume',
+    description: 'Discovers verified GitHub, LinkedIn, portfolio website, and competitive coding URLs.',
   },
 ];
 
@@ -136,6 +206,12 @@ export const Step2Signals: React.FC<Step2SignalsProps> = ({
     );
   }, [activeMapping]);
 
+  const mappedResumeCols = React.useMemo(() => {
+    return Object.entries(activeMapping).filter(([_, tgt]) =>
+      ['resume_url', 'resume', 'cv'].includes(tgt.toLowerCase())
+    );
+  }, [activeMapping]);
+
   const toggleSignal = (key: string) => {
     if (selectedSignals.includes(key)) {
       onSelectedSignalsChange(selectedSignals.filter((k) => k !== key));
@@ -161,8 +237,20 @@ export const Step2Signals: React.FC<Step2SignalsProps> = ({
     onSelectedSignalsChange(selectedSignals.filter((k) => !githubKeys.includes(k)));
   };
 
+  const selectAllResume = () => {
+    const resumeKeys = SUPPORTED_SIGNALS.filter((s) => s.category === 'resume').map((s) => s.key);
+    const nonResume = selectedSignals.filter((k) => !resumeKeys.includes(k));
+    onSelectedSignalsChange([...nonResume, ...resumeKeys]);
+  };
+
+  const clearResume = () => {
+    const resumeKeys = SUPPORTED_SIGNALS.filter((s) => s.category === 'resume').map((s) => s.key);
+    onSelectedSignalsChange(selectedSignals.filter((k) => !resumeKeys.includes(k)));
+  };
+
   const academicSignals = SUPPORTED_SIGNALS.filter((s) => s.category === 'academic');
   const githubSignals = SUPPORTED_SIGNALS.filter((s) => s.category === 'github');
+  const resumeSignals = SUPPORTED_SIGNALS.filter((s) => s.category === 'resume');
 
   const isValid =
     signalMode === 'reuse'
@@ -321,6 +409,106 @@ export const Step2Signals: React.FC<Step2SignalsProps> = ({
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {academicSignals.map((signal) => {
+                const isSelected = selectedSignals.includes(signal.key);
+                return (
+                  <Card
+                    key={signal.key}
+                    onClick={() => toggleSignal(signal.key)}
+                    className={cn(
+                      'cursor-pointer transition-all border',
+                      isSelected
+                        ? 'border-forest-600 bg-forest-50/40 shadow-sm ring-1 ring-forest-500/20'
+                        : 'border-border/80 hover:border-forest-300 hover:bg-muted/20'
+                    )}
+                  >
+                    <CardHeader className="p-3.5 space-y-1.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSignal(signal.key)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="h-4 w-4 rounded text-forest-700 focus:ring-forest-600 border-border"
+                          />
+                          <CardTitle className="text-xs font-semibold">
+                            {signal.name}
+                          </CardTitle>
+                        </div>
+                        {signal.isRecommended && (
+                          <Badge variant="forest" className="text-[9px] px-1 py-0 font-mono">
+                            Recommended
+                          </Badge>
+                        )}
+                      </div>
+                      <CardDescription className="text-[11px] leading-relaxed">
+                        {signal.description}
+                      </CardDescription>
+                      <code className="text-[10px] font-mono text-muted-foreground block pt-1">
+                        {signal.key}
+                      </code>
+                    </CardHeader>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Resume & Experience Signals Section */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="h-6 w-6 rounded bg-emerald-100 flex items-center justify-center text-emerald-800">
+                  <FileText className="h-3.5 w-3.5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-semibold text-foreground">
+                      Resume & Experience Signals
+                    </h4>
+                    {mappedResumeCols.map(([orig, tgt]) => (
+                      <Badge key={orig} variant="forest" className="text-[9px] font-mono py-0">
+                        Mapped: "{orig}" → {tgt}
+                      </Badge>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Deep parser extracting technologies, projects, education, experience, and external links from PDF/DOCX resumes.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant="success" className="text-[10px]">
+                  Smart Fallback Active
+                </Badge>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={selectAllResume}
+                  className="text-[11px] h-7 px-2"
+                >
+                  Select All
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearResume}
+                  className="text-[11px] h-7 px-2 text-muted-foreground"
+                >
+                  Clear
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-2.5 p-3 rounded-lg border border-emerald-200/80 bg-emerald-50/50 text-emerald-900 text-xs">
+              <Info className="h-4 w-4 text-emerald-700 shrink-0 mt-0.5" />
+              <p className="leading-relaxed text-[11px]">
+                <strong>Multi-Signal Resolution:</strong> Missing academic CGPA, year of study, and GitHub URLs in the CSV automatically resolve from candidate resumes when available, with full provenance tracking.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {resumeSignals.map((signal) => {
                 const isSelected = selectedSignals.includes(signal.key);
                 return (
                   <Card
