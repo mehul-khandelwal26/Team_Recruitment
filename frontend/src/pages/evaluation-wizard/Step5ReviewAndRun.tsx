@@ -39,6 +39,31 @@ import type {
 } from '@/types';
 import { cn } from '@/lib/utils';
 
+const SIGNAL_NAMES: Record<string, string> = {
+  academic_cgpa: 'Academic CGPA',
+  academic_year: 'Academic Year',
+  normalized_cgpa_10_scale: 'Normalized CGPA (0-10)',
+  resume_extracted_skills: 'Resume Skills & Tech',
+  resume_programming_languages: 'Programming Languages',
+  resume_frameworks_libraries: 'Frameworks & Libraries',
+  resume_databases: 'Database Technologies',
+  resume_tools_technologies: 'Tools & DevOps',
+  resume_projects: 'Parsed Projects',
+  resume_experience_years: 'Years of Experience',
+  resume_education: 'Education Details',
+  resume_degree_level: 'Degree Level',
+  resume_certifications_achievements: 'Certifications',
+  resume_external_links: 'Portfolio & External Links',
+  github_public_repo_count: 'Public Repositories',
+  github_total_stars: 'Total Stargazers',
+  github_languages: 'Primary Languages',
+  github_recent_commits: 'Recent Commits (90d)',
+};
+
+const formatSignalName = (key: string): string => {
+  return SIGNAL_NAMES[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+};
+
 interface Step5ReviewAndRunProps {
   selectedDataset: DatasetSummary;
   signalMode: 'configure' | 'reuse';
@@ -338,8 +363,8 @@ export const Step5ReviewAndRun: React.FC<Step5ReviewAndRunProps> = ({
                               : '—'}
                           </TableCell>
                           <TableCell className="text-center">
-                            <Badge variant="success" className="font-mono text-[10px]">
-                              {team.selection_status}
+                            <Badge variant="success" className="text-[10px] font-semibold">
+                              Shortlisted
                             </Badge>
                           </TableCell>
                         </TableRow>
@@ -407,14 +432,15 @@ export const Step5ReviewAndRun: React.FC<Step5ReviewAndRunProps> = ({
                     <TruncatedId id={selectedExtractionRun.run_id} className="block font-semibold" />
                   </div>
                 ) : (
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex flex-wrap gap-1.5">
                     {selectedSignals.map((sig) => (
-                      <code
+                      <Badge
                         key={sig}
-                        className="text-[10px] bg-muted px-1.5 py-0.5 rounded border border-border text-foreground font-mono"
+                        variant="secondary"
+                        className="text-[11px] font-medium bg-muted/70 text-foreground border border-border/80 py-0.5 px-2"
                       >
-                        {sig}
-                      </code>
+                        {formatSignalName(sig)}
+                      </Badge>
                     ))}
                   </div>
                 )}
@@ -602,19 +628,19 @@ export const Step5ReviewAndRun: React.FC<Step5ReviewAndRunProps> = ({
                 {[
                   {
                     stage: 'signals' as PipelineStage,
-                    label: signalMode === 'reuse' ? 'Linking Pre-extracted Signals' : 'Extracting Selected Signals (POST /api/signals/extract)',
+                    label: signalMode === 'reuse' ? 'Linking Pre-extracted Signals' : 'Extracting & Resolving Selected Signals',
                   },
                   {
                     stage: 'eligibility' as PipelineStage,
-                    label: 'Evaluating Eligibility Rules (POST /api/rules/evaluate)',
+                    label: 'Evaluating Eligibility & Gatekeeping Rules',
                   },
                   {
                     stage: 'scoring' as PipelineStage,
-                    label: 'Calculating Multi-Criteria Scores (POST /api/scoring/evaluate)',
+                    label: 'Calculating Multi-Criteria Normalized Scores',
                   },
                   {
                     stage: 'ranking' as PipelineStage,
-                    label: 'Executing Top-X Ranking & Selection (POST /api/ranking/evaluate)',
+                    label: 'Executing Top-X Ranking & Selection Shortlist',
                   },
                 ].map((s) => {
                   const isDone = completedStages.has(s.stage);

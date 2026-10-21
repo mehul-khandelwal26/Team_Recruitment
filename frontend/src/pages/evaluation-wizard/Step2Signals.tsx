@@ -152,6 +152,19 @@ export const SUPPORTED_SIGNALS: SignalOption[] = [
   },
 ];
 
+const CANONICAL_FIELD_NAMES: Record<string, string> = {
+  academic_cgpa: 'Academic CGPA',
+  academic_year: 'Academic Year',
+  normalized_cgpa_10_scale: 'Normalized CGPA',
+  github_url: 'GitHub Profile',
+  resume_url: 'Resume File',
+  name: 'Candidate Name',
+  team_name: 'Team Name',
+};
+
+const formatTargetField = (key: string): string =>
+  CANONICAL_FIELD_NAMES[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
 interface Step2SignalsProps {
   selectedDataset: DatasetSummary;
   signalMode: 'configure' | 'reuse';
@@ -382,8 +395,8 @@ export const Step2Signals: React.FC<Step2SignalsProps> = ({
                       Academic Performance Signals
                     </h4>
                     {mappedAcademicCols.map(([orig, tgt]) => (
-                      <Badge key={orig} variant="forest" className="text-[9px] font-mono py-0">
-                        Mapped: "{orig}" → {tgt}
+                      <Badge key={orig} variant="forest" className="text-[10px] font-medium py-0.5 px-2">
+                        Mapped: {orig} → {formatTargetField(tgt)}
                       </Badge>
                     ))}
                   </div>
@@ -444,9 +457,6 @@ export const Step2Signals: React.FC<Step2SignalsProps> = ({
                       <CardDescription className="text-[11px] leading-relaxed">
                         {signal.description}
                       </CardDescription>
-                      <code className="text-[10px] font-mono text-muted-foreground block pt-1">
-                        {signal.key}
-                      </code>
                     </CardHeader>
                   </Card>
                 );
@@ -467,8 +477,8 @@ export const Step2Signals: React.FC<Step2SignalsProps> = ({
                       Resume & Experience Signals
                     </h4>
                     {mappedResumeCols.map(([orig, tgt]) => (
-                      <Badge key={orig} variant="forest" className="text-[9px] font-mono py-0">
-                        Mapped: "{orig}" → {tgt}
+                      <Badge key={orig} variant="forest" className="text-[10px] font-medium py-0.5 px-2">
+                        Mapped: {orig} → {formatTargetField(tgt)}
                       </Badge>
                     ))}
                   </div>
@@ -544,9 +554,6 @@ export const Step2Signals: React.FC<Step2SignalsProps> = ({
                       <CardDescription className="text-[11px] leading-relaxed">
                         {signal.description}
                       </CardDescription>
-                      <code className="text-[10px] font-mono text-muted-foreground block pt-1">
-                        {signal.key}
-                      </code>
                     </CardHeader>
                   </Card>
                 );
@@ -567,8 +574,8 @@ export const Step2Signals: React.FC<Step2SignalsProps> = ({
                       GitHub Technical & Activity Signals
                     </h4>
                     {mappedGithubCols.map(([orig, tgt]) => (
-                      <Badge key={orig} variant="forest" className="text-[9px] font-mono py-0">
-                        Mapped: "{orig}" → {tgt}
+                      <Badge key={orig} variant="forest" className="text-[10px] font-medium py-0.5 px-2">
+                        Mapped: {orig} → {formatTargetField(tgt)}
                       </Badge>
                     ))}
                   </div>
@@ -638,9 +645,6 @@ export const Step2Signals: React.FC<Step2SignalsProps> = ({
                       <CardDescription className="text-[11px] leading-relaxed">
                         {signal.description}
                       </CardDescription>
-                      <code className="text-[10px] font-mono text-muted-foreground block pt-1">
-                        {signal.key}
-                      </code>
                     </CardHeader>
                   </Card>
                 );

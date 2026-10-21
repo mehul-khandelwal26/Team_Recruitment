@@ -15,6 +15,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useRuleConfigs } from '@/hooks/useEvaluationWizard';
+import { formatRuleType } from '@/pages/configurations/configFormatters';
 import type { RuleConfiguration } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -174,26 +175,26 @@ export const Step3Eligibility: React.FC<Step3EligibilityProps> = ({
                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
                         Included Rules ({rules.length}):
                       </span>
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-1.5">
                         {rules.map((r) => (
                           <span
                             key={r.rule_id}
                             className={cn(
-                              'text-[10px] px-1.5 py-0.5 rounded border font-mono flex items-center gap-1',
+                              'text-[11px] px-2 py-0.5 rounded-md border flex items-center gap-1.5 transition-colors',
                               r.severity === 'hard'
-                                ? 'bg-card text-foreground border-border'
+                                ? 'bg-card text-foreground border-border shadow-2xs'
                                 : 'bg-muted/40 text-muted-foreground border-border/60'
                             )}
                             title={`${r.name}: ${r.description}`}
                           >
-                            <span>{r.rule_type}</span>
+                            <span className="font-medium">{formatRuleType(r.rule_type)}</span>
                             <span
                               className={cn(
-                                'text-[9px] uppercase font-bold',
-                                r.severity === 'hard' ? 'text-forest-800' : 'text-muted-foreground'
+                                'text-[9px] font-semibold px-1 py-0.2 rounded',
+                                r.severity === 'hard' ? 'bg-forest-100 text-forest-800' : 'bg-muted text-muted-foreground'
                               )}
                             >
-                              ({r.severity})
+                              {r.severity === 'hard' ? 'Strict Barrier' : 'Soft Advisory'}
                             </span>
                           </span>
                         ))}

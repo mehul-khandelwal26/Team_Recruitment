@@ -56,6 +56,16 @@ const DEFAULT_CANONICAL_FIELDS: CanonicalFieldInfo[] = [
   { field_key: 'academic_year', display_name: 'Academic Year of Study', is_structural_required: false, category: 'Academic Performance', description: 'Current year of study or batch' },
 ];
 
+const formatCanonicalFieldName = (key: string): string => {
+  const match = DEFAULT_CANONICAL_FIELDS.find((f) => f.field_key === key);
+  if (match) return match.display_name;
+  if (key === 'academic_cgpa') return 'Academic CGPA';
+  if (key === 'academic_year') return 'Academic Year';
+  return key
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+};
+
 interface Step1DatasetProps {
   selectedDataset: DatasetSummary | null;
   onSelectDataset: (dataset: DatasetSummary | null) => void;
@@ -447,11 +457,11 @@ export const Step1Dataset: React.FC<Step1DatasetProps> = ({
                   {Object.entries(effectiveActiveMapping).map(([orig, tgt]) => (
                     <span
                       key={orig}
-                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/90 border border-forest-300 font-mono text-[10px] text-forest-950 shadow-2xs"
+                      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/95 border border-forest-300 text-[10px] text-forest-950 shadow-2xs"
                     >
-                      <span className="font-semibold">{orig}</span>
-                      <span className="text-forest-600">→</span>
-                      <span className="text-forest-800 font-bold">{tgt}</span>
+                      <span className="font-mono text-forest-700">{orig}</span>
+                      <span className="text-forest-400">→</span>
+                      <span className="text-forest-900 font-semibold">{formatCanonicalFieldName(tgt)}</span>
                     </span>
                   ))}
                 </div>

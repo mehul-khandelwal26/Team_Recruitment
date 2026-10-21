@@ -15,6 +15,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useScoringConfigs } from '@/hooks/useEvaluationWizard';
+import { formatAggregation } from '@/pages/configurations/configFormatters';
 import type { ScoringConfiguration } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -185,12 +186,13 @@ export const Step4Scoring: React.FC<Step4ScoringProps> = ({
                             >
                               {crit.name}
                             </span>
-                            <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
-                              <span className="text-forest-800 font-semibold">
-                                w={crit.weight}
+                            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                              <span className="text-forest-800 font-semibold bg-forest-50 px-1.5 py-0.5 rounded border border-forest-200/60 text-[10px]">
+                                Weight: {crit.weight}
                               </span>
-                              <span>·</span>
-                              <span className="uppercase">{crit.aggregation}</span>
+                              <span className="text-[10px] text-muted-foreground">
+                                {formatAggregation(crit.aggregation)}
+                              </span>
                             </div>
                           </div>
                         ))}

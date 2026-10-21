@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Info, X } from 'lucide-react';
+import { Info, X, RotateCcw } from 'lucide-react';
 import { WizardStepper } from './evaluation-wizard/WizardStepper';
 import { Step1Dataset } from './evaluation-wizard/Step1Dataset';
 import { Step2Signals } from './evaluation-wizard/Step2Signals';
@@ -21,6 +21,29 @@ import type {
   RuleConfiguration,
   ScoringConfiguration,
 } from '@/types';
+
+const STEP_STAGE_INFO: Record<number, { title: string; desc: string }> = {
+  1: {
+    title: 'Dataset Ingestion & Selection',
+    desc: 'Select an existing registered candidate cohort or upload a new CSV / JSON dataset.',
+  },
+  2: {
+    title: 'Signal Extraction & Calibration',
+    desc: 'Extract and calibrate academic performance, parsed resume credentials, and GitHub metrics.',
+  },
+  3: {
+    title: 'Eligibility Verification Rules',
+    desc: 'Select or adjust automated gatekeeping rules to screen candidate qualifications.',
+  },
+  4: {
+    title: 'Multi-Criteria Scoring Weights',
+    desc: 'Apply normalized weighted scoring models across academic, technical skill, and portfolio dimensions.',
+  },
+  5: {
+    title: 'Pipeline Review & Shortlist Execution',
+    desc: 'Inspect the pre-flight configuration, specify Top-X team cutoff targets, and generate rankings.',
+  },
+};
 
 export const NewEvaluationPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -170,20 +193,46 @@ export const NewEvaluationPage: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
-      {/* Intro Header */}
-      <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <Badge variant="forest" className="font-mono text-xs">
-            Evaluation Wizard
-          </Badge>
-          <span className="text-xs text-muted-foreground">· End-to-End Pipeline Execution</span>
+      {/* Context Stage Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-1 border-b border-border/60">
+        <div className="space-y-0.5">
+          <div className="flex items-center gap-2">
+            <Badge variant="forest" className="font-mono text-[10px] tracking-wider uppercase px-2 py-0.5 font-semibold">
+              Stage {currentStep} of 5
+            </Badge>
+            <span className="text-xs font-semibold text-foreground">
+              {STEP_STAGE_INFO[currentStep]?.title || 'Evaluation Pipeline'}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            {STEP_STAGE_INFO[currentStep]?.desc}
+          </p>
         </div>
-        <h2 className="text-xl font-bold tracking-tight text-foreground">
-          New Candidate Evaluation
-        </h2>
-        <p className="text-xs text-muted-foreground max-w-3xl leading-relaxed">
-          Configure and execute the 5-stage automated recruitment workflow. The wizard utilizes the backend&apos;s ID-only evaluation flow to ensure instant execution, full audit trails, and deterministic selection.
-        </p>
+
+        <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+          {selectedDataset && (
+            <Badge variant="outline" className="text-xs bg-muted/40 gap-1.5 py-1 px-2.5 font-normal">
+              <span className="w-1.5 h-1.5 rounded-full bg-forest-600 animate-pulse" />
+              <span className="text-muted-foreground">Active Cohort:</span>
+              <strong className="font-semibold text-foreground truncate max-w-[180px]">
+                {selectedDataset.filename}
+              </strong>
+            </Badge>
+          )}
+
+          {(currentStep > 1 || completedSteps.size > 0 || selectedDataset !== null) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleReset}
+              className="h-7 px-2.5 text-xs text-muted-foreground hover:text-foreground gap-1.5"
+              title="Reset evaluation wizard to initial state"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Reset Wizard
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Deep-link Notice Banner if initialized from dashboard */}
