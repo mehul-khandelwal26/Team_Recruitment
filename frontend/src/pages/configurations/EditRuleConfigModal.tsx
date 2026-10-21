@@ -88,6 +88,9 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
   const [showConfirm, setShowConfirm] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const [allowedValuesText, setAllowedValuesText] = useState<Record<string, string>>({});
+  const [fieldKeysText, setFieldKeysText] = useState<Record<string, string>>({});
+
   useEffect(() => {
     if (open) {
       setName(config.name || '');
@@ -105,6 +108,23 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
           parameters: { ...(r.parameters || {}) },
         }))
       );
+
+      const initialAllowedText: Record<string, string> = {};
+      const initialFieldKeysText: Record<string, string> = {};
+      (config.rules || []).forEach((r) => {
+        const params = (r.parameters || {}) as Record<string, any>;
+        if (r.rule_type === 'allowed_values') {
+          const vals = params.allowed_values;
+          initialAllowedText[r.rule_id] = Array.isArray(vals) ? vals.join(', ') : (typeof vals === 'string' ? String(vals) : '');
+        }
+        if (r.rule_type === 'required_fields_present') {
+          const keys = params.field_keys;
+          initialFieldKeysText[r.rule_id] = Array.isArray(keys) ? keys.join(', ') : (typeof keys === 'string' ? String(keys) : '');
+        }
+      });
+      setAllowedValuesText(initialAllowedText);
+      setFieldKeysText(initialFieldKeysText);
+
       setExpandedRuleIndex(null);
       setIsAddMenuOpen(false);
       setShowConfirm(false);
@@ -154,6 +174,19 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
   };
 
   const handleRemoveRule = (index: number) => {
+    const target = rules[index];
+    if (target) {
+      setAllowedValuesText((prev) => {
+        const copy = { ...prev };
+        delete copy[target.rule_id];
+        return copy;
+      });
+      setFieldKeysText((prev) => {
+        const copy = { ...prev };
+        delete copy[target.rule_id];
+        return copy;
+      });
+    }
     setRules((prev) => prev.filter((_, i) => i !== index));
     if (expandedRuleIndex === index) {
       setExpandedRuleIndex(null);
@@ -176,6 +209,21 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
       is_enabled: true,
       parameters: { ...defaultParams },
     };
+
+    if (catalogItem.rule_type === 'allowed_values') {
+      const defaultAllowed = defaultParams.allowed_values;
+      setAllowedValuesText((prev) => ({
+        ...prev,
+        [newRuleId]: Array.isArray(defaultAllowed) ? defaultAllowed.join(', ') : '',
+      }));
+    }
+    if (catalogItem.rule_type === 'required_fields_present') {
+      const defaultKeys = defaultParams.field_keys;
+      setFieldKeysText((prev) => ({
+        ...prev,
+        [newRuleId]: Array.isArray(defaultKeys) ? defaultKeys.join(', ') : '',
+      }));
+    }
 
     setRules((prev) => [...prev, newRule]);
     setIsAddMenuOpen(false);
@@ -227,7 +275,11 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
           setErrorMessage(`Rule "${r.name}" requires either a Field Key or a Signal Key.`);
           return;
         }
-        if (!Array.isArray(p.allowed_values) || p.allowed_values.length === 0) {
+        const rawText = allowedValuesText[r.rule_id];
+        const effectiveAllowed = rawText !== undefined
+          ? rawText.split(',').map((s) => s.trim()).filter(Boolean)
+          : (Array.isArray(p.allowed_values) ? p.allowed_values : []);
+        if (effectiveAllowed.length === 0) {
           setErrorMessage(`Rule "${r.name}" requires at least one allowed value.`);
           return;
         }
@@ -254,7 +306,11 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
           return;
         }
       } else if (r.rule_type === 'required_fields_present') {
-        if (!Array.isArray(p.field_keys) || p.field_keys.length === 0) {
+        const rawText = fieldKeysText[r.rule_id];
+        const effectiveKeys = rawText !== undefined
+          ? rawText.split(',').map((s) => s.trim()).filter(Boolean)
+          : (Array.isArray(p.field_keys) ? p.field_keys : []);
+        if (effectiveKeys.length === 0) {
           setErrorMessage(`Rule "${r.name}" requires at least one field key.`);
           return;
         }
@@ -293,6 +349,18 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
         }
         if (r.rule_type === 'track_limit' && p.limit !== undefined) {
           p.limit = parseInt(String(p.limit), 10) || 1;
+        }
+        if (r.rule_type === 'allowed_values' && allowedValuesText[r.rule_id] !== undefined) {
+          p.allowed_values = allowedValuesText[r.rule_id]
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean);
+        }
+        if (r.rule_type === 'required_fields_present' && fieldKeysText[r.rule_id] !== undefined) {
+          p.field_keys = fieldKeysText[r.rule_id]
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean);
         }
         return { ...r, parameters: p };
       });
@@ -1067,17 +1135,30 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                             )}
                                           </div>
                                           <Input
-                                            value={Array.isArray(params.allowed_values) ? params.allowed_values.join(', ') : ''}
-                                            onChange={(e) =>
-                                              handleParameterChange(
-                                                idx,
-                                                'allowed_values',
-                                                e.target.value
-                                                  .split(',')
-                                                  .map((s) => s.trim())
-                                                  .filter(Boolean)
-                                              )
+                                            value={
+                                              allowedValuesText[rule.rule_id] !== undefined
+                                                ? allowedValuesText[rule.rule_id]
+                                                : (Array.isArray(params.allowed_values) ? params.allowed_values.join(', ') : '')
                                             }
+                                            onChange={(e) => {
+                                              const rawText = e.target.value;
+                                              setAllowedValuesText((prev) => ({ ...prev, [rule.rule_id]: rawText }));
+                                              const parsed = rawText
+                                                .split(',')
+                                                .map((s) => s.trim())
+                                                .filter(Boolean);
+                                              handleParameterChange(idx, 'allowed_values', parsed);
+                                            }}
+                                            onBlur={() => {
+                                              const raw = allowedValuesText[rule.rule_id] ?? (Array.isArray(params.allowed_values) ? params.allowed_values.join(', ') : '');
+                                              const parsed = raw
+                                                .split(',')
+                                                .map((s) => s.trim())
+                                                .filter(Boolean);
+                                              const formatted = parsed.join(', ');
+                                              setAllowedValuesText((prev) => ({ ...prev, [rule.rule_id]: formatted }));
+                                              handleParameterChange(idx, 'allowed_values', parsed);
+                                            }}
                                             placeholder="AI, Web3, Open..."
                                             className="h-7 text-xs font-mono"
                                           />
@@ -1156,17 +1237,30 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                           )}
                                         </div>
                                         <Input
-                                          value={Array.isArray(params.field_keys) ? params.field_keys.join(', ') : ''}
-                                          onChange={(e) =>
-                                            handleParameterChange(
-                                              idx,
-                                              'field_keys',
-                                              e.target.value
-                                                .split(',')
-                                                .map((s) => s.trim())
-                                                .filter(Boolean)
-                                            )
+                                          value={
+                                            fieldKeysText[rule.rule_id] !== undefined
+                                              ? fieldKeysText[rule.rule_id]
+                                              : (Array.isArray(params.field_keys) ? params.field_keys.join(', ') : '')
                                           }
+                                          onChange={(e) => {
+                                            const rawText = e.target.value;
+                                            setFieldKeysText((prev) => ({ ...prev, [rule.rule_id]: rawText }));
+                                            const parsed = rawText
+                                              .split(',')
+                                              .map((s) => s.trim())
+                                              .filter(Boolean);
+                                            handleParameterChange(idx, 'field_keys', parsed);
+                                          }}
+                                          onBlur={() => {
+                                            const raw = fieldKeysText[rule.rule_id] ?? (Array.isArray(params.field_keys) ? params.field_keys.join(', ') : '');
+                                            const parsed = raw
+                                              .split(',')
+                                              .map((s) => s.trim())
+                                              .filter(Boolean);
+                                            const formatted = parsed.join(', ');
+                                            setFieldKeysText((prev) => ({ ...prev, [rule.rule_id]: formatted }));
+                                            handleParameterChange(idx, 'field_keys', parsed);
+                                          }}
                                           placeholder="name, email, github_url..."
                                           className="h-7 text-xs font-mono"
                                         />
