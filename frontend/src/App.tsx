@@ -9,6 +9,7 @@ import { DashboardPage } from '@/pages/DashboardPage';
 import { NewEvaluationPage } from '@/pages/NewEvaluationPage';
 import { ResultsPage } from '@/pages/ResultsPage';
 import { ConfigurationsPage } from '@/pages/ConfigurationsPage';
+import { GuidePage } from '@/pages/GuidePage';
 import { LoginPage } from '@/pages/LoginPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 
@@ -25,6 +26,7 @@ export const App: React.FC = () => {
                 <Route path="evaluate" element={<NewEvaluationPage />} />
                 <Route path="results" element={<ResultsPage />} />
                 <Route path="configurations" element={<ConfigurationsPage />} />
+                <Route path="guide" element={<GuidePage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Route>
             </Route>
