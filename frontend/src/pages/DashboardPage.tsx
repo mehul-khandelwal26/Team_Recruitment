@@ -40,7 +40,7 @@ import {
 } from '@/components/ui/table';
 
 export const DashboardPage: React.FC = () => {
-  // TanStack Query hooks fetching lightweight summary list endpoints (limit 10)
+  // TanStack Query hooks fetching lightweight summary list endpoints
   const datasetsQuery = useDatasetSummaries(10);
   const extractionsQuery = useExtractionRunSummaries(10);
   const rankingsQuery = useRankingRunSummaries(10);
@@ -63,9 +63,6 @@ export const DashboardPage: React.FC = () => {
               <h2 className="text-xl font-bold tracking-tight text-foreground">
                 Recruitment Automation Workspace
               </h2>
-              <Badge variant="forest" className="font-mono text-[10px]">
-                Phase 7 Backend Live
-              </Badge>
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed max-w-2xl">
               Deterministic, explainable candidate shortlisting engine for hackathons and academic recruitment.
@@ -97,7 +94,7 @@ export const DashboardPage: React.FC = () => {
               Summary Overview
             </h3>
             <p className="text-xs text-muted-foreground">
-              Counts reflect the most recent records loaded via summary API (limit 10), not database-wide totals.
+              Overview of active candidate datasets, signal extractions, and evaluated ranking shortlists.
             </p>
           </div>
         </div>
@@ -125,9 +122,6 @@ export const DashboardPage: React.FC = () => {
                 <div className="flex items-baseline justify-between">
                   <span className="text-2xl font-bold font-mono tracking-tight text-foreground">
                     {datasets.length}
-                  </span>
-                  <span className="text-xs text-muted-foreground font-mono">
-                    max 10 recent
                   </span>
                 </div>
               )}
@@ -160,9 +154,6 @@ export const DashboardPage: React.FC = () => {
                   <span className="text-2xl font-bold font-mono tracking-tight text-foreground">
                     {extractions.length}
                   </span>
-                  <span className="text-xs text-muted-foreground font-mono">
-                    max 10 recent
-                  </span>
                 </div>
               )}
               <p className="text-xs text-muted-foreground mt-1">
@@ -193,9 +184,6 @@ export const DashboardPage: React.FC = () => {
                 <div className="flex items-baseline justify-between">
                   <span className="text-2xl font-bold font-mono tracking-tight text-foreground">
                     {rankingRuns.length}
-                  </span>
-                  <span className="text-xs text-muted-foreground font-mono">
-                    max 10 recent
                   </span>
                 </div>
               )}
@@ -289,11 +277,6 @@ export const DashboardPage: React.FC = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {!datasetsQuery.isLoading && !datasetsQuery.isError && (
-              <Badge variant="secondary" className="font-mono text-xs">
-                {datasets.length} loaded
-              </Badge>
-            )}
             <Button
               variant="outline"
               size="sm"
@@ -451,11 +434,6 @@ export const DashboardPage: React.FC = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {!rankingsQuery.isLoading && !rankingsQuery.isError && (
-              <Badge variant="secondary" className="font-mono text-xs">
-                {rankingRuns.length} loaded
-              </Badge>
-            )}
             <Button
               variant="outline"
               size="sm"
@@ -644,11 +622,6 @@ export const DashboardPage: React.FC = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {!extractionsQuery.isLoading && !extractionsQuery.isError && (
-              <Badge variant="secondary" className="font-mono text-xs">
-                {extractions.length} loaded
-              </Badge>
-            )}
             <Button
               variant="outline"
               size="sm"
