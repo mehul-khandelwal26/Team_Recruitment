@@ -274,8 +274,8 @@ export const DashboardPage: React.FC = () => {
 
       {/* 3. Quick Action Navigation Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="hover:border-forest-600/40 transition-colors">
-          <CardHeader className="pb-3">
+        <Card className="flex flex-col justify-between h-full hover:border-forest-600/40 transition-colors">
+          <CardHeader className="pb-3 flex-1 flex flex-col">
             <div className="flex items-center justify-between">
               <div className="flex h-9 w-9 items-center justify-center rounded-md bg-forest-50 text-forest-800 border border-forest-200">
                 <FolderPlus className="h-4 w-4" />
@@ -283,11 +283,11 @@ export const DashboardPage: React.FC = () => {
               <Badge variant="outline" className="text-[10px]">Step 1</Badge>
             </div>
             <CardTitle className="text-base mt-2">Registration Ingestion</CardTitle>
-            <CardDescription>
+            <CardDescription className="flex-1">
               Upload CSV or JSON registration forms with automatic schema discovery and missing ID generation.
             </CardDescription>
           </CardHeader>
-          <CardContent className="pt-0">
+          <CardContent className="pt-0 mt-auto">
             <Button asChild variant="link" className="p-0 h-auto text-xs font-semibold gap-1 text-forest-800">
               <Link to="/evaluate">
                 Launch Evaluation Flow <ArrowRight className="h-3 w-3" />
@@ -296,8 +296,8 @@ export const DashboardPage: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Card className="hover:border-forest-600/40 transition-colors">
-          <CardHeader className="pb-3">
+        <Card className="flex flex-col justify-between h-full hover:border-forest-600/40 transition-colors">
+          <CardHeader className="pb-3 flex-1 flex flex-col">
             <div className="flex items-center justify-between">
               <div className="flex h-9 w-9 items-center justify-center rounded-md bg-amber-50 text-amber-800 border border-amber-200">
                 <ShieldCheck className="h-4 w-4" />
@@ -305,11 +305,11 @@ export const DashboardPage: React.FC = () => {
               <Badge variant="outline" className="text-[10px]">Built-in</Badge>
             </div>
             <CardTitle className="text-base mt-2">Rule Presets & Overrides</CardTitle>
-            <CardDescription>
+            <CardDescription className="flex-1">
               Inspect 4 built-in rule presets including the seeded Demo: Lead Academic Review and audit logs.
             </CardDescription>
           </CardHeader>
-          <CardContent className="pt-0">
+          <CardContent className="pt-0 mt-auto">
             <Button asChild variant="link" className="p-0 h-auto text-xs font-semibold gap-1 text-forest-800">
               <Link to="/configurations">
                 Explore Configurations <ArrowRight className="h-3 w-3" />
@@ -318,8 +318,8 @@ export const DashboardPage: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Card className="hover:border-forest-600/40 transition-colors">
-          <CardHeader className="pb-3">
+        <Card className="flex flex-col justify-between h-full hover:border-forest-600/40 transition-colors">
+          <CardHeader className="pb-3 flex-1 flex flex-col">
             <div className="flex items-center justify-between">
               <div className="flex h-9 w-9 items-center justify-center rounded-md bg-sky-50 text-sky-800 border border-sky-200">
                 <FileSpreadsheet className="h-4 w-4" />
@@ -327,11 +327,11 @@ export const DashboardPage: React.FC = () => {
               <Badge variant="outline" className="text-[10px]">Shortlists</Badge>
             </div>
             <CardTitle className="text-base mt-2">Top-X Leaderboard & CSV</CardTitle>
-            <CardDescription>
+            <CardDescription className="flex-1">
               View shortlisted teams, cutoff boundaries, score breakdowns, and download formula-safe CSV exports.
             </CardDescription>
           </CardHeader>
-          <CardContent className="pt-0">
+          <CardContent className="pt-0 mt-auto">
             <Button asChild variant="link" className="p-0 h-auto text-xs font-semibold gap-1 text-forest-800">
               <Link to="/results">
                 View Shortlist Viewer <ArrowRight className="h-3 w-3" />
