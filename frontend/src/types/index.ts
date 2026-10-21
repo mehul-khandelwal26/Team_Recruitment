@@ -64,7 +64,7 @@ export type SignalCatalogResponse = Schema<'SignalCatalogResponse'>;
 
 // Rules & Eligibility models
 export type GlobalRuleConfig = Schema<'GlobalRuleConfig'>;
-export type RuleConfiguration = Schema<'RuleConfiguration'>;
+export type RuleConfiguration = Schema<'RuleConfiguration'> & { user_id?: string | null };
 export type RuleConfigurationUpdate = Schema<'RuleConfigurationUpdate'>;
 export type RuleConfigurationCreate = Schema<'RuleConfigurationCreate'>;
 export type RuleDefinition = Omit<Schema<'RuleDefinition'>, 'parameters'> & {
@@ -78,7 +78,7 @@ export type ManualOverrideCreate = Schema<'ManualOverrideCreate'>;
 export type RuleResult = Schema<'RuleResult'>;
 
 // Scoring models
-export type ScoringConfiguration = Schema<'ScoringConfiguration-Output'>;
+export type ScoringConfiguration = Schema<'ScoringConfiguration-Output'> & { user_id?: string | null };
 export type ScoringConfigurationUpdate = Schema<'ScoringConfigurationUpdate'>;
 export type ScoringConfigurationCreate = Schema<'ScoringConfigurationCreate'>;
 export type EvaluationCriterionInput = Schema<'EvaluationCriterion-Input'>;

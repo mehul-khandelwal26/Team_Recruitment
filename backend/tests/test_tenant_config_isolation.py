@@ -293,3 +293,47 @@ def test_evaluation_using_foreign_private_config_rejected(alice_headers, bob_hea
     assert bob_eval_scoring.status_code == 404
     assert "not found" in bob_eval_scoring.text.lower()
 
+
+
+def test_edge_scoring_model_and_demo_mixed_review_immutability(alice_headers):
+    client = TestClient(app)
+
+    # 1. Edge scoring model ("Academic & Resume Hybrid Scorer") is readable as system preset
+    resp = client.get("/api/scoring/configs/edge_scoring_model", headers=alice_headers)
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "Academic & Resume Hybrid Scorer"
+    assert resp.json()["user_id"] == "system"
+
+    # 2. Cannot be modified (403 Forbidden)
+    resp_put = client.put(
+        "/api/scoring/configs/edge_scoring_model",
+        json={"name": "Hacked Hybrid Scorer"},
+        headers=alice_headers,
+    )
+    assert resp_put.status_code == 403
+    assert "System default" in resp_put.text
+
+    # 3. Cannot be deleted (403 Forbidden)
+    resp_del = client.delete("/api/scoring/configs/edge_scoring_model", headers=alice_headers)
+    assert resp_del.status_code == 403
+    assert "System default" in resp_del.text
+
+    # 4. Demo mixed review ("Demo: Lead Academic Review") is readable as system preset
+    resp_rules = client.get("/api/rules/configs/demo_mixed_review", headers=alice_headers)
+    assert resp_rules.status_code == 200
+    assert resp_rules.json()["name"] == "Demo: Lead Academic Review"
+    assert resp_rules.json()["user_id"] == "system"
+
+    # 5. Cannot be modified (403 Forbidden)
+    resp_rules_put = client.put(
+        "/api/rules/configs/demo_mixed_review",
+        json={"name": "Hacked Demo Mixed Review"},
+        headers=alice_headers,
+    )
+    assert resp_rules_put.status_code == 403
+    assert "System default" in resp_rules_put.text
+
+    # 6. Cannot be deleted (403 Forbidden)
+    resp_rules_del = client.delete("/api/rules/configs/demo_mixed_review", headers=alice_headers)
+    assert resp_rules_del.status_code == 403
+    assert "System default" in resp_rules_del.text
