@@ -146,9 +146,17 @@ export const TeamDetailModal: React.FC<TeamDetailModalProps> = ({
                           ? 'destructive'
                           : 'secondary'
                   }
-                  className="font-mono text-[10px]"
+                  className="text-[10px] font-medium"
                 >
-                  {team.selection_status}
+                  {team.selection_status === 'SELECTED'
+                    ? 'Shortlisted'
+                    : team.selection_status === 'NEEDS_REVIEW'
+                      ? 'Pending Review'
+                      : team.selection_status === 'NOT_SELECTED'
+                        ? 'Below Cutoff'
+                        : team.selection_status === 'UNRESOLVED'
+                          ? 'Identity Conflict'
+                          : 'Disqualified'}
                 </Badge>
               </div>
               <DialogDescription className="mt-0.5">
