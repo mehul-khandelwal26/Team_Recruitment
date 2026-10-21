@@ -3,7 +3,6 @@ import {
   ShieldCheck,
   Scale,
   ArrowRight,
-  Info,
   History,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -123,19 +122,12 @@ export const VersionHistoryTab: React.FC<VersionHistoryTabProps> = ({
         </CardContent>
       </Card>
 
-      {/* Audit & Immutability Context Card */}
-      <div className="p-3.5 rounded-lg bg-forest-50/70 border border-forest-200/80 text-forest-900 text-xs flex items-start gap-3">
-        <Info className="h-4 w-4 shrink-0 text-forest-700 mt-0.5" />
-        <div className="space-y-1">
-          <p className="font-bold text-xs text-forest-900">
-            Immutable Audit Trail & Reproducibility Guarantee
-          </p>
-          <p className="text-[11px] leading-relaxed text-forest-800">
-            Every evaluation pipeline executed by this recruitment tool records the exact configuration ID
-            and integer version number. When rules or criteria weights are adjusted, an immutable next version
-            is generated. Historical runs are never overwritten or altered by newer revisions.
-          </p>
-        </div>
+      {/* Audit & Immutability Context Banner */}
+      <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg bg-forest-50/80 border border-forest-200/70 text-forest-950 text-xs shadow-2xs">
+        <ShieldCheck className="h-4 w-4 shrink-0 text-forest-700" />
+        <p className="text-xs text-forest-900">
+          <span className="font-semibold">Immutable Version Guarantee:</span> Every evaluation run records the exact configuration ID and revision snapshot. Historical shortlists remain 100% reproducible.
+        </p>
       </div>
 
       {/* Version History Timeline */}

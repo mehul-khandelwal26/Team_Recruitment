@@ -5,7 +5,9 @@ import {
   Scale,
   GitBranch,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { useRuleConfigs, useScoringConfigs } from '@/hooks/useConfigurations';
 import { EligibilityTab } from './configurations/EligibilityTab';
 import { ScoringTab } from './configurations/ScoringTab';
 import { VersionHistoryTab } from './configurations/VersionHistoryTab';
@@ -44,67 +46,87 @@ export const ConfigurationsPage: React.FC = () => {
     handleTabChange('scoring');
   };
 
+  const ruleConfigsQuery = useRuleConfigs();
+  const scoringConfigsQuery = useScoringConfigs();
+  const ruleCount = ruleConfigsQuery.data?.length ?? 0;
+  const scoringCount = scoringConfigsQuery.data?.length ?? 0;
+
   return (
     <div className="space-y-6">
-      {/* Editorial Header */}
-      <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <Badge variant="forest" className="font-mono text-xs">
-            Configuration Management
-          </Badge>
-          <span className="text-xs text-muted-foreground">· Immutable Versioning Active</span>
-        </div>
-        <h2 className="text-xl font-bold tracking-tight text-foreground">
-          Eligibility Rules & Scoring Configurations
-        </h2>
-        <p className="text-sm text-muted-foreground max-w-3xl leading-relaxed">
-          Manage deterministic eligibility criteria, configure relative scoring weights, and inspect
-          versioned snapshots ensuring all historical recruitment evaluations remain 100% reproducible.
-        </p>
-      </div>
-
-      {/* Primary Navigation Tabs */}
-      <div className="border-b border-border">
-        <nav className="flex space-x-6" aria-label="Configuration Sections">
+      {/* Segmented Tab Controls & Quick Engine Status */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-4">
+        {/* Segmented Tab Buttons */}
+        <div className="inline-flex items-center gap-1 p-1 rounded-lg bg-secondary/60 border border-border/70 overflow-x-auto max-w-full">
           <button
             type="button"
             onClick={() => handleTabChange('rules')}
-            className={`flex items-center gap-2 pb-3 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
+            className={cn(
+              'inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer whitespace-nowrap',
               activeTab === 'rules'
-                ? 'border-forest-700 text-forest-700'
-                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
-            }`}
+                ? 'bg-card text-foreground shadow-xs font-semibold'
+                : 'text-muted-foreground hover:text-foreground hover:bg-card/50'
+            )}
           >
-            <ShieldCheck className="h-4 w-4" />
-            Eligibility Rules
+            <ShieldCheck className={cn('h-3.5 w-3.5', activeTab === 'rules' ? 'text-forest-700' : 'text-muted-foreground')} />
+            <span>Eligibility Rules</span>
+            <span
+              className={cn(
+                'font-mono text-[10px] px-1.5 py-0.2 rounded-full',
+                activeTab === 'rules'
+                  ? 'bg-forest-50 text-forest-800 border border-forest-200/60 font-semibold'
+                  : 'bg-muted text-muted-foreground'
+              )}
+            >
+              {ruleCount}
+            </span>
           </button>
 
           <button
             type="button"
             onClick={() => handleTabChange('scoring')}
-            className={`flex items-center gap-2 pb-3 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
+            className={cn(
+              'inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer whitespace-nowrap',
               activeTab === 'scoring'
-                ? 'border-forest-700 text-forest-700'
-                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
-            }`}
+                ? 'bg-card text-foreground shadow-xs font-semibold'
+                : 'text-muted-foreground hover:text-foreground hover:bg-card/50'
+            )}
           >
-            <Scale className="h-4 w-4" />
-            Scoring Weights & Models
+            <Scale className={cn('h-3.5 w-3.5', activeTab === 'scoring' ? 'text-forest-700' : 'text-muted-foreground')} />
+            <span>Scoring Weights & Models</span>
+            <span
+              className={cn(
+                'font-mono text-[10px] px-1.5 py-0.2 rounded-full',
+                activeTab === 'scoring'
+                  ? 'bg-forest-50 text-forest-800 border border-forest-200/60 font-semibold'
+                  : 'bg-muted text-muted-foreground'
+              )}
+            >
+              {scoringCount}
+            </span>
           </button>
 
           <button
             type="button"
             onClick={() => handleTabChange('history')}
-            className={`flex items-center gap-2 pb-3 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
+            className={cn(
+              'inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer whitespace-nowrap',
               activeTab === 'history'
-                ? 'border-forest-700 text-forest-700'
-                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
-            }`}
+                ? 'bg-card text-foreground shadow-xs font-semibold'
+                : 'text-muted-foreground hover:text-foreground hover:bg-card/50'
+            )}
           >
-            <GitBranch className="h-4 w-4" />
-            Version History & Audit
+            <GitBranch className={cn('h-3.5 w-3.5', activeTab === 'history' ? 'text-forest-700' : 'text-muted-foreground')} />
+            <span>Version History & Audit</span>
           </button>
-        </nav>
+        </div>
+
+        {/* Quick Audit Indicator */}
+        <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground">
+          <Badge variant="outline" className="font-mono text-[10px] bg-card text-muted-foreground">
+            Deterministic Engine
+          </Badge>
+          <span className="text-[11px]">All versions immutable & audit-backed</span>
+        </div>
       </div>
 
       {/* Tab Panels */}

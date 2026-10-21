@@ -11,7 +11,9 @@ import {
   Trash2,
   Lock,
   Loader2,
+  Cpu,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -32,6 +34,11 @@ import {
 } from '@/hooks/useConfigurations';
 import { EditScoringWeightsModal } from './EditScoringWeightsModal';
 import { CreateScoringConfigModal } from './CreateScoringConfigModal';
+import {
+  formatCriterionType,
+  formatMissingPolicy,
+  formatAggregation,
+} from './configFormatters';
 
 const BUILTIN_SCORING_PRESETS = [
   'balanced',
@@ -175,47 +182,53 @@ export const ScoringTab: React.FC<ScoringTabProps> = ({
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
           {configs.map((cfg) => {
             const isSelected = cfg.config_id === currentConfigId;
             return (
               <Card
                 key={cfg.config_id}
                 onClick={() => handleSelectConfig(cfg.config_id)}
-                className={`cursor-pointer transition-all border text-left p-3.5 ${
+                className={cn(
+                  'cursor-pointer transition-all border text-left p-3.5 flex flex-col justify-between rounded-xl relative group min-h-[130px]',
                   isSelected
-                    ? 'border-forest-700 bg-forest-50/40 ring-1 ring-forest-700/50 shadow-sm'
-                    : 'border-border/80 hover:border-forest-600/50 bg-card hover:bg-muted/20'
-                }`}
+                    ? 'border-forest-700 bg-forest-50/40 ring-1 ring-forest-700/50 shadow-xs'
+                    : 'border-border/80 hover:border-forest-600/50 bg-card hover:bg-muted/20 hover:shadow-2xs'
+                )}
               >
-                <div className="flex items-center justify-between gap-1">
-                  <Badge
-                    variant={isSelected ? 'forest' : 'outline'}
-                    className="font-mono text-[10px]"
-                  >
-                    v{cfg.version}
-                  </Badge>
-                  <code className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border truncate max-w-[120px]">
-                    {cfg.config_id}
-                  </code>
-                </div>
-                <div className="mt-2">
-                  <h4 className="text-xs font-bold text-foreground truncate cursor-help" title={cfg.name}>
-                    {cfg.name}
-                  </h4>
-                  <p
-                    className="text-[11px] text-muted-foreground line-clamp-2 mt-1 leading-snug cursor-help"
-                    title={cfg.description || 'No description provided.'}
-                  >
-                    {cfg.description || 'No description provided.'}
-                  </p>
+                <div>
+                  <div className="flex items-center justify-between gap-1">
+                    <Badge
+                      variant={isSelected ? 'forest' : 'outline'}
+                      className="font-mono text-[10px]"
+                    >
+                      v{cfg.version}
+                    </Badge>
+                    <code className="text-[10px] font-mono text-muted-foreground bg-muted/80 px-1.5 py-0.5 rounded border border-border/70 truncate max-w-[110px]">
+                      {cfg.config_id}
+                    </code>
+                  </div>
+                  <div className="mt-2.5">
+                    <h4 className="text-xs font-bold text-foreground line-clamp-1" title={cfg.name}>
+                      {cfg.name}
+                    </h4>
+                    <p
+                      className={cn(
+                        'text-[11px] line-clamp-2 mt-1 leading-snug',
+                        cfg.description ? 'text-muted-foreground' : 'text-muted-foreground/60 italic'
+                      )}
+                      title={cfg.description || 'No description provided.'}
+                    >
+                      {cfg.description || 'No description provided.'}
+                    </p>
+                  </div>
                 </div>
                 <div className="mt-3 pt-2 border-t border-border/60 flex items-center justify-between text-[10px] text-muted-foreground">
                   <span className="flex items-center gap-1 font-mono">
                     <Scale className="h-3 w-3 text-forest-700" />
                     Scale: {cfg.scale_max || 100} pts
                   </span>
-                  <span className="font-mono text-[10px] text-forest-700 font-medium">
+                  <span className={cn('font-mono text-[10px] font-medium', isSelected ? 'text-forest-700 font-semibold' : 'text-muted-foreground group-hover:text-forest-700')}>
                     {isSelected ? '● Selected' : 'Select →'}
                   </span>
                 </div>
@@ -340,24 +353,26 @@ export const ScoringTab: React.FC<ScoringTabProps> = ({
 
             <CardContent className="space-y-5 pt-0">
               {/* Model Parameters Bar */}
-              <div className="p-3 bg-muted/40 rounded-lg border border-border/70 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground">Scale Maximum:</span>
-                  <span className="font-mono font-bold text-forest-700 bg-forest-50 px-1.5 py-0.5 rounded border border-forest-200/60">
+              <div className="p-3 bg-muted/30 rounded-xl border border-border/80 flex flex-wrap items-center gap-x-6 gap-y-2.5 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground font-medium">Scale Maximum:</span>
+                  <span className="font-mono font-bold text-forest-700 bg-forest-50 px-2 py-0.5 rounded border border-forest-200/60">
                     {currentConfig.scale_max || 100.0} pts
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground">Score Ineligible Teams:</span>
-                  <span className="font-mono text-foreground font-semibold">
-                    {currentConfig.score_ineligible_teams ? 'Enabled (Calculates Informational Score)' : 'Disabled (0.0 Disqualified)'}
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground font-medium">Ineligible Teams:</span>
+                  <span className="font-mono text-foreground font-semibold bg-card px-2 py-0.5 rounded border border-border/80">
+                    {currentConfig.score_ineligible_teams ? 'Scoring Enabled (Audit Only)' : 'Disqualified (0.0 pts)'}
                   </span>
                 </div>
                 {currentConfig.lead_field && (
-                  <div className="flex items-center gap-1.5">
-                    <UserCheck className="h-3.5 w-3.5 text-forest-700" />
-                    <span className="text-muted-foreground">Lead Field:</span>
-                    <span className="font-mono font-semibold text-foreground">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-forest-50 text-forest-700 border border-forest-200/60">
+                      <UserCheck className="h-3.5 w-3.5" />
+                    </div>
+                    <span className="text-muted-foreground font-medium">Lead Field:</span>
+                    <span className="font-mono font-semibold text-foreground bg-card px-2 py-0.5 rounded border border-border/80">
                       {currentConfig.lead_field}
                     </span>
                   </div>
@@ -365,7 +380,7 @@ export const ScoringTab: React.FC<ScoringTabProps> = ({
               </div>
 
               {/* Criteria Table */}
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 <div className="flex items-center justify-between text-xs font-semibold text-foreground">
                   <span className="flex items-center gap-1.5">
                     <Layers className="h-3.5 w-3.5 text-forest-700" />
@@ -380,9 +395,9 @@ export const ScoringTab: React.FC<ScoringTabProps> = ({
                   </div>
                 </div>
 
-                <div className="border border-border rounded-lg overflow-hidden">
+                <div className="border border-border/80 rounded-xl overflow-hidden shadow-2xs">
                   <table className="w-full text-left text-xs">
-                    <thead className="bg-muted/60 border-b border-border text-[11px] text-muted-foreground">
+                    <thead className="bg-muted/50 border-b border-border text-[11px] font-medium text-muted-foreground">
                       <tr>
                         <th className="py-2.5 px-3">Criterion & Signal Key</th>
                         <th className="py-2.5 px-3">Type</th>
@@ -392,13 +407,14 @@ export const ScoringTab: React.FC<ScoringTabProps> = ({
                         <th className="py-2.5 px-3 w-28 text-right">Weight Share</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-border">
+                    <tbody className="divide-y divide-border/60">
                       {(currentConfig.criteria || []).map((crit) => {
                         const isEnabled = crit.is_enabled;
                         const share =
                           isEnabled && totalWeight > 0
                             ? ((crit.weight / totalWeight) * 100).toFixed(1)
                             : '0.0';
+                        const missingPolicy = formatMissingPolicy(crit.missing_data_policy);
 
                         return (
                           <tr
@@ -408,55 +424,63 @@ export const ScoringTab: React.FC<ScoringTabProps> = ({
                             }`}
                           >
                             <td className="py-3 px-3">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-semibold text-foreground">{crit.name}</span>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-semibold text-foreground text-xs">{crit.name}</span>
                                 {!isEnabled && (
                                   <Badge variant="outline" className="text-[9px] text-muted-foreground">
                                     Disabled
                                   </Badge>
                                 )}
                               </div>
-                              <div className="text-[10px] font-mono text-muted-foreground mt-0.5">
-                                id: <span className="text-foreground">{crit.criterion_id}</span>
-                              </div>
-                              <div className="text-[10px] font-mono text-forest-700 bg-forest-50 inline-block px-1 rounded mt-0.5 border border-forest-100">
-                                {crit.target_signal_key}
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="inline-flex items-center gap-1 text-[10px] font-mono text-forest-800 bg-forest-50 px-1.5 py-0.5 rounded border border-forest-200/60">
+                                  <Cpu className="h-3 w-3 text-forest-700" />
+                                  {crit.target_signal_key}
+                                </span>
+                                <span className="text-[10px] font-mono text-muted-foreground/75">
+                                  id: {crit.criterion_id}
+                                </span>
                               </div>
                               {crit.description && (
-                                <p className="text-[11px] text-muted-foreground mt-1 leading-snug">
+                                <p className="text-[11px] text-muted-foreground mt-1 leading-snug max-w-xl">
                                   {crit.description}
                                 </p>
                               )}
                             </td>
                             <td className="py-3 px-3">
-                              <Badge variant="outline" className="font-mono text-[10px]">
-                                {crit.criterion_type}
-                              </Badge>
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-muted/80 text-foreground border border-border/70">
+                                {formatCriterionType(crit.criterion_type)}
+                              </span>
                             </td>
                             <td className="py-3 px-3">
                               <div className="text-foreground font-medium text-[11px]">
-                                Agg: <span className="font-mono text-forest-700">{crit.aggregation}</span>
+                                {formatAggregation(crit.aggregation)}
                               </div>
                               {crit.normalization?.linear_range && (
-                                <div className="text-[10px] font-mono text-muted-foreground mt-0.5">
-                                  min: {crit.normalization.linear_range.min_value}, max:{' '}
-                                  {crit.normalization.linear_range.max_value}
+                                <div className="text-[10px] font-mono text-muted-foreground mt-0.5 bg-muted/50 px-1.5 py-0.5 rounded border border-border/50 inline-block">
+                                  Range: {crit.normalization.linear_range.min_value} – {crit.normalization.linear_range.max_value}
                                 </div>
                               )}
                               {crit.normalization?.boolean_mapping && (
-                                <div className="text-[10px] font-mono text-muted-foreground mt-0.5">
-                                  T: {crit.normalization.boolean_mapping.true_score}, F:{' '}
-                                  {crit.normalization.boolean_mapping.false_score}
+                                <div className="text-[10px] font-mono text-muted-foreground mt-0.5 bg-muted/50 px-1.5 py-0.5 rounded border border-border/50 inline-block">
+                                  True: {crit.normalization.boolean_mapping.true_score} · False: {crit.normalization.boolean_mapping.false_score}
                                 </div>
                               )}
                             </td>
                             <td className="py-3 px-3">
-                              <span className="font-mono text-[10px] bg-muted/80 px-1.5 py-0.5 rounded border border-border">
-                                {crit.missing_data_policy}
+                              <span
+                                className={cn(
+                                  'inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border',
+                                  missingPolicy.tone === 'info'
+                                    ? 'bg-sky-50 text-sky-800 border-sky-200/70'
+                                    : 'bg-muted/70 text-muted-foreground border-border/70'
+                                )}
+                              >
+                                {missingPolicy.label}
                               </span>
                             </td>
                             <td className="py-3 px-3 text-right">
-                              <span className="font-mono font-bold text-sm text-foreground bg-muted/50 px-2 py-0.5 rounded border border-border">
+                              <span className="font-mono font-bold text-sm text-foreground bg-muted/50 px-2 py-0.5 rounded border border-border shadow-2xs">
                                 {crit.weight.toFixed(1)}
                               </span>
                             </td>
@@ -466,9 +490,9 @@ export const ScoringTab: React.FC<ScoringTabProps> = ({
                                   {isEnabled ? `${share}%` : '—'}
                                 </span>
                                 {isEnabled && (
-                                  <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden mt-1">
+                                  <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden mt-1 border border-border/40">
                                     <div
-                                      className="h-full bg-forest-600 rounded-full"
+                                      className="h-full bg-forest-600 rounded-full transition-all"
                                       style={{ width: `${Math.min(100, parseFloat(share))}%` }}
                                     />
                                   </div>

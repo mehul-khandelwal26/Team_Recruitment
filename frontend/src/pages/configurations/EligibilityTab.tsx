@@ -11,7 +11,10 @@ import {
   Trash2,
   Lock,
   Loader2,
+  User,
+  Users,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -32,6 +35,13 @@ import {
 } from '@/hooks/useConfigurations';
 import { EditRuleConfigModal } from './EditRuleConfigModal';
 import { CreateRuleConfigModal } from './CreateRuleConfigModal';
+import {
+  formatRuleType,
+  formatMissingPolicy,
+  formatScope,
+  formatMemberSelection,
+  formatRuleParameters,
+} from './configFormatters';
 
 const BUILTIN_RULE_PRESETS = ['basic', 'demo_mixed_review', 'open_solo', 'strict'];
 
@@ -170,47 +180,53 @@ export const EligibilityTab: React.FC<EligibilityTabProps> = ({
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
           {configs.map((cfg) => {
             const isSelected = cfg.config_id === currentConfigId;
             return (
               <Card
                 key={cfg.config_id}
                 onClick={() => handleSelectConfig(cfg.config_id)}
-                className={`cursor-pointer transition-all border text-left p-3.5 ${
+                className={cn(
+                  'cursor-pointer transition-all border text-left p-3.5 flex flex-col justify-between rounded-xl relative group min-h-[130px]',
                   isSelected
-                    ? 'border-forest-700 bg-forest-50/40 ring-1 ring-forest-700/50 shadow-sm'
-                    : 'border-border/80 hover:border-forest-600/50 bg-card hover:bg-muted/20'
-                }`}
+                    ? 'border-forest-700 bg-forest-50/40 ring-1 ring-forest-700/50 shadow-xs'
+                    : 'border-border/80 hover:border-forest-600/50 bg-card hover:bg-muted/20 hover:shadow-2xs'
+                )}
               >
-                <div className="flex items-center justify-between gap-1">
-                  <Badge
-                    variant={isSelected ? 'forest' : 'outline'}
-                    className="font-mono text-[10px]"
-                  >
-                    v{cfg.version}
-                  </Badge>
-                  <code className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border truncate max-w-[120px]">
-                    {cfg.config_id}
-                  </code>
-                </div>
-                <div className="mt-2">
-                  <h4 className="text-xs font-bold text-foreground truncate cursor-help" title={cfg.name}>
-                    {cfg.name}
-                  </h4>
-                  <p
-                    className="text-[11px] text-muted-foreground line-clamp-2 mt-1 leading-snug cursor-help"
-                    title={cfg.description || 'No description provided.'}
-                  >
-                    {cfg.description || 'No description provided.'}
-                  </p>
+                <div>
+                  <div className="flex items-center justify-between gap-1">
+                    <Badge
+                      variant={isSelected ? 'forest' : 'outline'}
+                      className="font-mono text-[10px]"
+                    >
+                      v{cfg.version}
+                    </Badge>
+                    <code className="text-[10px] font-mono text-muted-foreground bg-muted/80 px-1.5 py-0.5 rounded border border-border/70 truncate max-w-[110px]">
+                      {cfg.config_id}
+                    </code>
+                  </div>
+                  <div className="mt-2.5">
+                    <h4 className="text-xs font-bold text-foreground line-clamp-1" title={cfg.name}>
+                      {cfg.name}
+                    </h4>
+                    <p
+                      className={cn(
+                        'text-[11px] line-clamp-2 mt-1 leading-snug',
+                        cfg.description ? 'text-muted-foreground' : 'text-muted-foreground/60 italic'
+                      )}
+                      title={cfg.description || 'No description provided.'}
+                    >
+                      {cfg.description || 'No description provided.'}
+                    </p>
+                  </div>
                 </div>
                 <div className="mt-3 pt-2 border-t border-border/60 flex items-center justify-between text-[10px] text-muted-foreground">
                   <span className="flex items-center gap-1 font-mono">
                     <Layers className="h-3 w-3 text-forest-700" />
                     {cfg.rules?.length || 0} Rules
                   </span>
-                  <span className="font-mono text-[10px] text-forest-700 font-medium">
+                  <span className={cn('font-mono text-[10px] font-medium', isSelected ? 'text-forest-700 font-semibold' : 'text-muted-foreground group-hover:text-forest-700')}>
                     {isSelected ? '● Selected' : 'Select →'}
                   </span>
                 </div>
@@ -336,25 +352,27 @@ export const EligibilityTab: React.FC<EligibilityTabProps> = ({
             <CardContent className="space-y-5 pt-0">
               {/* Global Config Settings Bar */}
               {currentConfig.global_config && (
-                <div className="p-3 bg-muted/40 rounded-lg border border-border/70 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <UserCheck className="h-3.5 w-3.5 text-forest-700" />
-                    <span className="text-muted-foreground">Team Lead Field:</span>
-                    <span className="font-mono font-semibold text-foreground">
+                <div className="p-3 bg-muted/30 rounded-xl border border-border/80 flex flex-wrap items-center gap-x-6 gap-y-2.5 text-xs">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-forest-50 text-forest-700 border border-forest-200/60">
+                      <UserCheck className="h-3.5 w-3.5" />
+                    </div>
+                    <span className="text-muted-foreground font-medium">Team Lead Field:</span>
+                    <span className="font-mono font-semibold text-foreground bg-card px-2 py-0.5 rounded border border-border/80">
                       {currentConfig.global_config.lead_field || 'role'}
                     </span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-muted-foreground">Lead Values:</span>
-                    <span className="font-mono text-[11px] text-foreground bg-card px-1.5 py-0.5 rounded border border-border">
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground font-medium">Lead Recognition Values:</span>
+                    <span className="font-mono text-[11px] text-foreground bg-card px-2 py-0.5 rounded border border-border/80">
                       {(currentConfig.global_config.lead_values || []).join(', ') || 'lead, team lead'}
                     </span>
                   </div>
                   {currentConfig.global_config.default_academic_scale && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-muted-foreground">Default Academic Scale:</span>
-                      <span className="font-mono font-semibold text-foreground">
-                        {currentConfig.global_config.default_academic_scale}
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground font-medium">Default Scale:</span>
+                      <span className="font-mono font-semibold text-foreground bg-card px-2 py-0.5 rounded border border-border/80">
+                        {currentConfig.global_config.default_academic_scale} pts max
                       </span>
                     </div>
                   )}
@@ -362,7 +380,7 @@ export const EligibilityTab: React.FC<EligibilityTabProps> = ({
               )}
 
               {/* Evaluator Rules Table */}
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 <div className="flex items-center justify-between text-xs font-semibold text-foreground">
                   <span className="flex items-center gap-1.5">
                     <Layers className="h-3.5 w-3.5 text-forest-700" />
@@ -373,11 +391,11 @@ export const EligibilityTab: React.FC<EligibilityTabProps> = ({
                   </span>
                 </div>
 
-                <div className="border border-border rounded-lg overflow-hidden">
+                <div className="border border-border/80 rounded-xl overflow-hidden shadow-2xs">
                   <table className="w-full text-left text-xs">
-                    <thead className="bg-muted/60 border-b border-border text-[11px] text-muted-foreground">
+                    <thead className="bg-muted/50 border-b border-border text-[11px] font-medium text-muted-foreground">
                       <tr>
-                        <th className="py-2.5 px-3 w-12 text-center">Order</th>
+                        <th className="py-2.5 px-3 w-14 text-center">Order</th>
                         <th className="py-2.5 px-3">Rule Definition</th>
                         <th className="py-2.5 px-3">Scope & Selection</th>
                         <th className="py-2.5 px-3">Severity</th>
@@ -385,10 +403,13 @@ export const EligibilityTab: React.FC<EligibilityTabProps> = ({
                         <th className="py-2.5 px-3">Parameters</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-border">
+                    <tbody className="divide-y divide-border/60">
                       {(currentConfig.rules || []).map((rule) => {
                         const isHard = rule.severity === 'hard';
                         const isEnabled = rule.is_enabled;
+                        const missingPolicy = formatMissingPolicy(rule.on_missing);
+                        const memberSel = formatMemberSelection(rule.member_selection);
+                        const paramList = formatRuleParameters(rule.rule_type, rule.parameters);
 
                         return (
                           <tr
@@ -397,60 +418,81 @@ export const EligibilityTab: React.FC<EligibilityTabProps> = ({
                               !isEnabled ? 'opacity-40 bg-muted/10' : ''
                             }`}
                           >
-                            <td className="py-3 px-3 text-center font-mono text-muted-foreground">
-                              {rule.order}
+                            <td className="py-3 px-3 text-center">
+                              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted/80 font-mono text-[11px] font-bold text-muted-foreground">
+                                {String(rule.order).padStart(2, '0')}
+                              </span>
                             </td>
                             <td className="py-3 px-3">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-semibold text-foreground">{rule.name}</span>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-semibold text-foreground text-xs">{rule.name}</span>
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-forest-50 text-forest-800 border border-forest-200/60">
+                                  {formatRuleType(rule.rule_type)}
+                                </span>
                                 {!isEnabled && (
                                   <Badge variant="outline" className="text-[9px] text-muted-foreground">
                                     Disabled
                                   </Badge>
                                 )}
                               </div>
-                              <div className="text-[10px] font-mono text-muted-foreground mt-0.5">
-                                id: <span className="text-foreground">{rule.rule_id}</span> · type:{' '}
-                                <span className="text-forest-700 font-medium">{rule.rule_type}</span>
+                              <div className="text-[10px] font-mono text-muted-foreground/75 mt-0.5">
+                                id: {rule.rule_id}
                               </div>
                               {rule.description && (
-                                <p className="text-[11px] text-muted-foreground mt-1 leading-snug">
+                                <p className="text-[11px] text-muted-foreground mt-1 leading-snug max-w-xl">
                                   {rule.description}
                                 </p>
                               )}
                             </td>
                             <td className="py-3 px-3">
-                              <div className="font-medium text-foreground capitalize">
-                                {rule.scope}
+                              <div className="flex items-center gap-1.5 font-medium text-foreground">
+                                {rule.scope === 'member' ? (
+                                  <User className="h-3.5 w-3.5 text-forest-700" />
+                                ) : (
+                                  <Users className="h-3.5 w-3.5 text-forest-700" />
+                                )}
+                                <span>{formatScope(rule.scope)}</span>
                               </div>
-                              {rule.member_selection && (
-                                <div className="text-[10px] font-mono text-muted-foreground mt-0.5">
-                                  select: {rule.member_selection}
+                              {memberSel && (
+                                <div className="text-[10px] text-muted-foreground mt-0.5 bg-muted/60 px-1.5 py-0.5 rounded inline-block border border-border/50">
+                                  {memberSel}
                                 </div>
                               )}
                             </td>
                             <td className="py-3 px-3">
-                              <Badge
-                                variant={isHard ? 'forest' : 'secondary'}
-                                className="font-mono text-[10px] capitalize"
+                              <span
+                                className={cn(
+                                  'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border',
+                                  isHard
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80 font-semibold'
+                                    : 'bg-secondary text-secondary-foreground border-border'
+                                )}
                               >
-                                {rule.severity}
-                              </Badge>
-                            </td>
-                            <td className="py-3 px-3">
-                              <span className="font-mono text-[11px] bg-muted/80 px-1.5 py-0.5 rounded border border-border">
-                                {rule.on_missing}
+                                {isHard ? 'Hard Filter' : 'Soft Advisory'}
                               </span>
                             </td>
                             <td className="py-3 px-3">
-                              {rule.parameters && Object.keys(rule.parameters).length > 0 ? (
+                              <span
+                                className={cn(
+                                  'inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border',
+                                  missingPolicy.tone === 'warning'
+                                    ? 'bg-amber-50/80 text-amber-800 border-amber-200/60'
+                                    : 'bg-muted/70 text-muted-foreground border-border/70'
+                                )}
+                              >
+                                {missingPolicy.label}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3">
+                              {paramList.length > 0 ? (
                                 <div className="flex flex-wrap gap-1 max-w-xs">
-                                  {Object.entries(rule.parameters).map(([k, v]) => (
+                                  {paramList.map((param, pIdx) => (
                                     <span
-                                      key={k}
-                                      className="text-[10px] font-mono bg-card px-1.5 py-0.5 rounded border border-border/80 text-foreground"
+                                      key={pIdx}
+                                      className="text-[10px] font-mono bg-card px-2 py-0.5 rounded-md border border-border/80 text-foreground flex items-center gap-1 shadow-2xs"
                                     >
-                                      {k}: {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+                                      <span className="text-muted-foreground font-sans font-medium text-[10px]">{param.label}:</span>
+                                      <span className="font-semibold">{param.value}</span>
                                     </span>
                                   ))}
                                 </div>
