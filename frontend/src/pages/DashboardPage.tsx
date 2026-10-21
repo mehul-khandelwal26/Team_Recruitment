@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   Trash2,
 } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 import { DeleteConfirmModal } from '@/components/common/DeleteConfirmModal';
 import { apiService } from '@/lib/api-services';
 import type { DatasetSummary, ExtractionRunSummary, RankingRunSummaryItem } from '@/types';
@@ -40,6 +41,8 @@ import {
 } from '@/components/ui/table';
 
 export const DashboardPage: React.FC = () => {
+  const { user } = useAuth();
+
   // TanStack Query hooks fetching lightweight summary list endpoints
   const datasetsQuery = useDatasetSummaries(10);
   const extractionsQuery = useExtractionRunSummaries(10);
@@ -53,30 +56,43 @@ export const DashboardPage: React.FC = () => {
   const [rankingRunToDelete, setRankingRunToDelete] = React.useState<RankingRunSummaryItem | null>(null);
   const [extractionToDelete, setExtractionToDelete] = React.useState<ExtractionRunSummary | null>(null);
 
+  const firstName = user?.full_name ? user.full_name.split(' ')[0] : 'Organizer';
+
   return (
     <div className="space-y-8">
-      {/* Top Banner / Welcome */}
-      <div className="rounded-lg border border-border bg-card p-6 shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
+      {/* 1. Command Center Hero Banner */}
+      <div className="relative overflow-hidden rounded-xl border border-border/80 bg-card p-6 sm:p-7 shadow-xs">
+        {/* Subtle ambient green radial glow */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-20 -right-20 h-64 w-64 rounded-full bg-forest-500/5 blur-3xl"
+        />
+
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2 max-w-2xl">
             <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold tracking-tight text-foreground">
-                Recruitment Automation Workspace
-              </h2>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-forest-50 border border-forest-200/80 px-2.5 py-0.5 text-[11px] font-medium text-forest-800">
+                <span className="h-1.5 w-1.5 rounded-full bg-forest-600 animate-pulse" />
+                Workspace Active
+              </span>
             </div>
-            <p className="text-sm text-muted-foreground leading-relaxed max-w-2xl">
+            <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
+              Welcome back, {firstName}.
+            </h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
               Deterministic, explainable candidate shortlisting engine for hackathons and academic recruitment.
-              Configured with 10 eligibility rule evaluators, multi-criteria weighted scoring, and tie-protected Top-X ranking.
+              Configure rule evaluators, score multi-criteria signals, and generate tie-protected Top-X shortlists.
             </p>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <Button asChild variant="default" className="gap-2">
+
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 shrink-0">
+            <Button asChild variant="default" className="gap-2 shadow-xs h-10 px-4 font-medium">
               <Link to="/evaluate">
                 <PlayCircle className="h-4 w-4" />
                 Start Evaluation
               </Link>
             </Button>
-            <Button asChild variant="outline" className="gap-2">
+            <Button asChild variant="outline" className="gap-2 h-10 px-4 font-medium border-border/80 hover:bg-secondary/60">
               <Link to="/configurations">
                 <SlidersHorizontal className="h-4 w-4" />
                 View Presets
@@ -86,112 +102,158 @@ export const DashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Section A: Overview Metrics Cards */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">
-              Summary Overview
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              Overview of active candidate datasets, signal extractions, and evaluated ranking shortlists.
-            </p>
-          </div>
+      {/* 2. Elevated Metric Stat Cards */}
+      <div className="space-y-3">
+        <div>
+          <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">
+            Summary Overview
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Overview of active candidate datasets, signal extractions, and evaluated ranking shortlists.
+          </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Datasets Count Card */}
-          <Card className="border-border">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">
-                  Recent Datasets Loaded
-                </span>
-                <Database className="h-4 w-4 text-forest-700" />
+          {/* Card 1: Datasets Count Card */}
+          <div className="group relative overflow-hidden rounded-xl border border-border/80 bg-card p-5 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-forest-600/40">
+            <div className="flex items-center justify-between pb-3">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Candidate Datasets
+              </span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-forest-50 text-forest-800 border border-forest-200/60 shadow-2xs transition-colors group-hover:bg-forest-100/70">
+                <Database className="h-4 w-4" />
               </div>
-            </CardHeader>
-            <CardContent>
-              {datasetsQuery.isLoading ? (
-                <Skeleton className="h-8 w-16 my-1" />
-              ) : datasetsQuery.isError ? (
-                <div className="flex items-center gap-2 text-destructive text-sm font-medium">
-                  <AlertCircle className="h-4 w-4" />
-                  <span>Failed to load</span>
-                </div>
-              ) : (
-                <div className="flex items-baseline justify-between">
-                  <span className="text-2xl font-bold font-mono tracking-tight text-foreground">
-                    {datasets.length}
-                  </span>
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground mt-1">
-                Candidate registrations ready for pipeline evaluation
-              </p>
-            </CardContent>
-          </Card>
+            </div>
 
-          {/* Extraction Runs Count Card */}
-          <Card className="border-border">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">
-                  Recent Extractions Loaded
-                </span>
-                <Cpu className="h-4 w-4 text-forest-700" />
+            {datasetsQuery.isLoading ? (
+              <Skeleton className="h-9 w-20 my-1" />
+            ) : datasetsQuery.isError ? (
+              <div className="flex items-center gap-2 text-destructive text-sm font-medium my-1">
+                <AlertCircle className="h-4 w-4" />
+                <span>Failed to load</span>
               </div>
-            </CardHeader>
-            <CardContent>
-              {extractionsQuery.isLoading ? (
-                <Skeleton className="h-8 w-16 my-1" />
-              ) : extractionsQuery.isError ? (
-                <div className="flex items-center gap-2 text-destructive text-sm font-medium">
-                  <AlertCircle className="h-4 w-4" />
-                  <span>Failed to load</span>
-                </div>
-              ) : (
-                <div className="flex items-baseline justify-between">
-                  <span className="text-2xl font-bold font-mono tracking-tight text-foreground">
-                    {extractions.length}
-                  </span>
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground mt-1">
-                GitHub, academic, & technical signal extraction runs
-              </p>
-            </CardContent>
-          </Card>
+            ) : (
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-bold font-mono tracking-tight text-foreground">
+                  {datasets.length}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {datasets.length === 1 ? 'roster uploaded' : 'rosters uploaded'}
+                </span>
+              </div>
+            )}
 
-          {/* Ranking Runs Count Card */}
-          <Card className="border-border">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">
-                  Recent Ranking Runs Loaded
-                </span>
-                <Trophy className="h-4 w-4 text-forest-700" />
+            <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+              Candidate registrations ready for signal extraction and evaluation
+            </p>
+
+            <div className="mt-4 pt-3 border-t border-border/60 flex items-center justify-between">
+              <Link
+                to="/evaluate?tab=upload"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-forest-800 hover:text-forest-900 group/link transition-colors"
+              >
+                <span>Upload Dataset</span>
+                <ArrowRight className="h-3 w-3 transition-transform group-hover/link:translate-x-0.5" />
+              </Link>
+              <span className="text-[11px] font-mono text-muted-foreground">
+                {datasets.length > 0 ? 'Active' : 'Empty'}
+              </span>
+            </div>
+          </div>
+
+          {/* Card 2: Signal Extractions Count Card */}
+          <div className="group relative overflow-hidden rounded-xl border border-border/80 bg-card p-5 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-forest-600/40">
+            <div className="flex items-center justify-between pb-3">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Signal Extractions
+              </span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200/60 shadow-2xs transition-colors group-hover:bg-emerald-100/70">
+                <Cpu className="h-4 w-4" />
               </div>
-            </CardHeader>
-            <CardContent>
-              {rankingsQuery.isLoading ? (
-                <Skeleton className="h-8 w-16 my-1" />
-              ) : rankingsQuery.isError ? (
-                <div className="flex items-center gap-2 text-destructive text-sm font-medium">
-                  <AlertCircle className="h-4 w-4" />
-                  <span>Failed to load</span>
-                </div>
-              ) : (
-                <div className="flex items-baseline justify-between">
-                  <span className="text-2xl font-bold font-mono tracking-tight text-foreground">
-                    {rankingRuns.length}
-                  </span>
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground mt-1">
-                Top-X shortlists evaluated with tie-break cutoffs
-              </p>
-            </CardContent>
-          </Card>
+            </div>
+
+            {extractionsQuery.isLoading ? (
+              <Skeleton className="h-9 w-20 my-1" />
+            ) : extractionsQuery.isError ? (
+              <div className="flex items-center gap-2 text-destructive text-sm font-medium my-1">
+                <AlertCircle className="h-4 w-4" />
+                <span>Failed to load</span>
+              </div>
+            ) : (
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-bold font-mono tracking-tight text-foreground">
+                  {extractions.length}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {extractions.length === 1 ? 'run completed' : 'runs completed'}
+                </span>
+              </div>
+            )}
+
+            <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+              GitHub, academic records, and technical profile attributes analyzed
+            </p>
+
+            <div className="mt-4 pt-3 border-t border-border/60 flex items-center justify-between">
+              <Link
+                to="/evaluate"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-forest-800 hover:text-forest-900 group/link transition-colors"
+              >
+                <span>Run Signal Extraction</span>
+                <ArrowRight className="h-3 w-3 transition-transform group-hover/link:translate-x-0.5" />
+              </Link>
+              <span className="text-[11px] font-mono text-muted-foreground">
+                {extractions.length > 0 ? 'Signals Ready' : 'Pending'}
+              </span>
+            </div>
+          </div>
+
+          {/* Card 3: Ranking Shortlists Count Card */}
+          <div className="group relative overflow-hidden rounded-xl border border-border/80 bg-card p-5 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-forest-600/40">
+            <div className="flex items-center justify-between pb-3">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Evaluated Shortlists
+              </span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-800 border border-amber-200/60 shadow-2xs transition-colors group-hover:bg-amber-100/70">
+                <Trophy className="h-4 w-4" />
+              </div>
+            </div>
+
+            {rankingsQuery.isLoading ? (
+              <Skeleton className="h-9 w-20 my-1" />
+            ) : rankingsQuery.isError ? (
+              <div className="flex items-center gap-2 text-destructive text-sm font-medium my-1">
+                <AlertCircle className="h-4 w-4" />
+                <span>Failed to load</span>
+              </div>
+            ) : (
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-bold font-mono tracking-tight text-foreground">
+                  {rankingRuns.length}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {rankingRuns.length === 1 ? 'shortlist evaluated' : 'shortlists evaluated'}
+                </span>
+              </div>
+            )}
+
+            <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+              Top-X candidate shortlists with tie-break cutoffs and audit trails
+            </p>
+
+            <div className="mt-4 pt-3 border-t border-border/60 flex items-center justify-between">
+              <Link
+                to="/results"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-forest-800 hover:text-forest-900 group/link transition-colors"
+              >
+                <span>View Shortlist Results</span>
+                <ArrowRight className="h-3 w-3 transition-transform group-hover/link:translate-x-0.5" />
+              </Link>
+              <span className="text-[11px] font-mono text-muted-foreground">
+                {rankingRuns.length > 0 ? 'Tie-Safe' : 'No Runs'}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
