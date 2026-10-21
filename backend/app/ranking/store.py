@@ -16,10 +16,10 @@ from app.ranking.schemas import RankingRunResponse
 class RankingRunStoreProtocol(Protocol):
     """Protocol defining persistence interface for ranking runs."""
 
-    def save(self, record: RankingRunResponse) -> None: ...
+    def save(self, record: RankingRunResponse, user_id: Optional[str] = None) -> None: ...
     def get(self, run_id: str) -> Optional[RankingRunResponse]: ...
-    def list_runs(self) -> list[RankingRunResponse]: ...
-    def list_summaries(self, limit: int = 50) -> list[RankingRunSummaryItem]: ...
+    def list_runs(self, user_id: Optional[str] = None) -> list[RankingRunResponse]: ...
+    def list_summaries(self, limit: int = 50, user_id: Optional[str] = None) -> list[RankingRunSummaryItem]: ...
     def delete(self, run_id: str) -> bool: ...
     def reset(self) -> None: ...
 
@@ -30,8 +30,11 @@ class InMemoryRankingRunStore:
     def __init__(self) -> None:
         self._runs: dict[str, RankingRunResponse] = {}
 
-    def save(self, record: RankingRunResponse) -> None:
-        self._runs[record.run_id] = record.model_copy(deep=True)
+    def save(self, record: RankingRunResponse, user_id: Optional[str] = None) -> None:
+        copy_rec = record.model_copy(deep=True)
+        if user_id:
+            copy_rec.user_id = user_id
+        self._runs[record.run_id] = copy_rec
 
     def get(self, run_id: str) -> Optional[RankingRunResponse]:
         record = self._runs.get(run_id)
@@ -39,14 +42,19 @@ class InMemoryRankingRunStore:
             return None
         return record.model_copy(deep=True)
 
-    def list_runs(self) -> list[RankingRunResponse]:
-        return [r.model_copy(deep=True) for r in self._runs.values()]
+    def list_runs(self, user_id: Optional[str] = None) -> list[RankingRunResponse]:
+        runs = list(self._runs.values())
+        if user_id:
+            runs = [r for r in runs if getattr(r, "user_id", None) == user_id]
+        return [r.model_copy(deep=True) for r in runs]
 
-    def list_summaries(self, limit: int = 50) -> list[RankingRunSummaryItem]:
+    def list_summaries(self, limit: int = 50, user_id: Optional[str] = None) -> list[RankingRunSummaryItem]:
         from app.ranking.schemas import RankingRunSummaryItem
         from app.storage import default_storage_factory
 
         records = list(self._runs.values())
+        if user_id:
+            records = [r for r in records if getattr(r, "user_id", None) == user_id]
         records.sort(
             key=lambda r: (
                 str(r.evaluated_at or ""),

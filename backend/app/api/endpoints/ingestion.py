@@ -14,11 +14,14 @@ import json
 from typing import Optional, Union
 import uuid
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
+from app.auth.dependencies import get_current_user
+from app.config import AUTH_ENABLED
 from app.ingestion.discovery import CANONICAL_FIELD_CATALOG, discover_fields_from_bytes
 from app.ingestion.parser import parse_csv, parse_json
 from app.ingestion.store import default_dataset_store
+from app.schemas.auth import UserSchema
 from app.schemas.ingestion import DatasetRecord, DatasetSummary, UploadResponse, ValidationError
 from app.schemas.mapping import CanonicalFieldInfo, FieldDiscoveryResponse
 
@@ -71,6 +74,7 @@ async def upload_registration_file(
         None,
         description="Optional explicit dataset identifier to assign to this upload",
     ),
+    current_user: UserSchema = Depends(get_current_user),
 ) -> UploadResponse:
     """Accept a registration file, validate it, and return structured results.
 
@@ -139,9 +143,11 @@ async def upload_registration_file(
         if content_type == "application/json" or (file.filename and file.filename.lower().endswith(".json")):
             file_type = "json"
 
+        user_id = current_user.user_id if AUTH_ENABLED else None
         now_dt = datetime.datetime.now(datetime.timezone.utc)
         record = DatasetRecord(
             dataset_id=ds_id,
+            user_id=user_id,
             filename=file.filename or f"uploaded.{file_type}",
             file_type=file_type,
             teams_count=result.teams_count,
@@ -153,7 +159,7 @@ async def upload_registration_file(
             created_at=now_dt.isoformat(),
             payload=result.model_dump(),
         )
-        saved = default_dataset_store.save(record)
+        saved = default_dataset_store.save(record, user_id=user_id)
         result.dataset_id = saved.dataset_id
         result.mapping = saved.mapping
 
@@ -161,10 +167,15 @@ async def upload_registration_file(
 
 
 @router.get("/datasets/{dataset_id}", response_model=DatasetRecord)
-async def get_dataset(dataset_id: str) -> DatasetRecord:
+async def get_dataset(
+    dataset_id: str,
+    current_user: UserSchema = Depends(get_current_user),
+) -> DatasetRecord:
     """Retrieve an uploaded dataset snapshot by dataset_id."""
     record = default_dataset_store.get(dataset_id)
-    if record is None:
+    if record is None or (
+        AUTH_ENABLED and record.user_id and record.user_id != current_user.user_id
+    ):
         raise HTTPException(
             status_code=404,
             detail=f"Dataset '{dataset_id}' not found.",
@@ -173,10 +184,15 @@ async def get_dataset(dataset_id: str) -> DatasetRecord:
 
 
 @router.get("/datasets/{dataset_id}/dependencies")
-async def get_dataset_dependencies(dataset_id: str) -> dict[str, Any]:
+async def get_dataset_dependencies(
+    dataset_id: str,
+    current_user: UserSchema = Depends(get_current_user),
+) -> dict[str, Any]:
     """Retrieve counts of downstream evaluation runs dependent on this dataset."""
     record = default_dataset_store.get(dataset_id)
-    if record is None:
+    if record is None or (
+        AUTH_ENABLED and record.user_id and record.user_id != current_user.user_id
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Dataset '{dataset_id}' not found.",
@@ -194,10 +210,13 @@ async def get_dataset_dependencies(dataset_id: str) -> dict[str, Any]:
 async def delete_dataset(
     dataset_id: str,
     cascade: bool = Query(default=False, description="Cascade delete all associated runs"),
+    current_user: UserSchema = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Permanently delete an uploaded dataset and optionally cascade delete dependent runs."""
     record = default_dataset_store.get(dataset_id)
-    if record is None:
+    if record is None or (
+        AUTH_ENABLED and record.user_id and record.user_id != current_user.user_id
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Dataset '{dataset_id}' not found.",
@@ -242,11 +261,13 @@ async def delete_dataset(
 async def list_datasets(
     summary: bool = Query(default=False, description="Return lightweight summary objects without teams or payload"),
     limit: int = Query(default=50, ge=1, le=200, description="Maximum number of items to return (1-200)"),
+    current_user: UserSchema = Depends(get_current_user),
 ) -> Union[list[DatasetRecord], list[DatasetSummary]]:
     """List all uploaded datasets ordered by upload timestamp."""
+    user_id = current_user.user_id if AUTH_ENABLED else None
     if summary:
-        return default_dataset_store.list_summaries(limit=limit)
-    return default_dataset_store.list_datasets()
+        return default_dataset_store.list_summaries(limit=limit, user_id=user_id)
+    return default_dataset_store.list_datasets(user_id=user_id)
 
 
 

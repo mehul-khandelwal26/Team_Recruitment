@@ -136,7 +136,7 @@ class PostgresRuleConfigStore(BasePostgresStore):
             cfg.is_active = row.is_active
             return cfg
 
-    def list_latest(self) -> list[RuleConfiguration]:
+    def list_latest(self, user_id: Optional[str] = None) -> list[RuleConfiguration]:
         from app.rules.schemas import RuleConfiguration
 
         with self.session() as s:
@@ -158,8 +158,16 @@ class PostgresRuleConfigStore(BasePostgresStore):
                     ),
                 )
                 .where(RuleConfigurationModel.is_active.is_(True))
-                .order_by(RuleConfigurationModel.config_id)
             )
+            if user_id:
+                stmt = stmt.where(
+                    sa.or_(
+                        RuleConfigurationModel.user_id.is_(None),
+                        RuleConfigurationModel.user_id == "system",
+                        RuleConfigurationModel.user_id == user_id,
+                    )
+                )
+            stmt = stmt.order_by(RuleConfigurationModel.config_id)
             rows = s.execute(stmt).scalars().all()
             results = []
             for r in rows:
@@ -177,13 +185,14 @@ class PostgresRuleConfigStore(BasePostgresStore):
             )
             return list(s.execute(stmt).scalars().all())
 
-    def save(self, config: RuleConfiguration) -> RuleConfiguration:
+    def save(self, config: RuleConfiguration, user_id: Optional[str] = None) -> RuleConfiguration:
         now_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
         if not config.created_at:
             config.created_at = now_ts
         config.updated_at = now_ts
+        eff_user_id = user_id or getattr(config, "user_id", None)
 
-        derived = derive_rule_configuration_columns(config)
+        derived = derive_rule_configuration_columns(config, user_id=eff_user_id)
         with self.session() as s:
             model = RuleConfigurationModel(**derived)
             s.add(model)
@@ -288,7 +297,7 @@ class PostgresScoringConfigStore(BasePostgresStore):
             cfg.is_active = row.is_active
             return cfg
 
-    def list_latest(self) -> list[ScoringConfiguration]:
+    def list_latest(self, user_id: Optional[str] = None) -> list[ScoringConfiguration]:
         from app.scoring.schemas import ScoringConfiguration
 
         with self.session() as s:
@@ -310,8 +319,16 @@ class PostgresScoringConfigStore(BasePostgresStore):
                     ),
                 )
                 .where(ScoringConfigurationModel.is_active.is_(True))
-                .order_by(ScoringConfigurationModel.config_id)
             )
+            if user_id:
+                stmt = stmt.where(
+                    sa.or_(
+                        ScoringConfigurationModel.user_id.is_(None),
+                        ScoringConfigurationModel.user_id == "system",
+                        ScoringConfigurationModel.user_id == user_id,
+                    )
+                )
+            stmt = stmt.order_by(ScoringConfigurationModel.config_id)
             rows = s.execute(stmt).scalars().all()
             results = []
             for r in rows:
@@ -329,13 +346,14 @@ class PostgresScoringConfigStore(BasePostgresStore):
             )
             return list(s.execute(stmt).scalars().all())
 
-    def save(self, config: ScoringConfiguration) -> ScoringConfiguration:
+    def save(self, config: ScoringConfiguration, user_id: Optional[str] = None) -> ScoringConfiguration:
         now_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
         if not config.created_at:
             config.created_at = now_ts
         config.updated_at = now_ts
+        eff_user_id = user_id or getattr(config, "user_id", None)
 
-        derived = derive_scoring_configuration_columns(config)
+        derived = derive_scoring_configuration_columns(config, user_id=eff_user_id)
         with self.session() as s:
             model = ScoringConfigurationModel(**derived)
             s.add(model)
@@ -432,8 +450,11 @@ class PostgresScoringConfigStore(BasePostgresStore):
 class PostgresEligibilityRunStore(BasePostgresStore):
     """PostgreSQL store for historical eligibility runs."""
 
-    def save(self, record: EligibilityRunResponse) -> None:
-        derived = derive_eligibility_run_columns(record)
+    def save(self, record: EligibilityRunResponse, user_id: Optional[str] = None) -> None:
+        eff_user_id = user_id or getattr(record, "user_id", None)
+        derived = derive_eligibility_run_columns(record, user_id=eff_user_id)
+        if eff_user_id and isinstance(derived.get("payload"), dict):
+            derived["payload"]["user_id"] = eff_user_id
         with self.session() as s:
             model = EligibilityRunModel(**derived)
             s.add(model)
@@ -448,13 +469,17 @@ class PostgresEligibilityRunStore(BasePostgresStore):
                 return None
             return EligibilityRunResponse.model_validate(row.payload)
 
-    def list_runs(self, config_id: Optional[str] = None) -> list[EligibilityRunResponse]:
+    def list_runs(
+        self, config_id: Optional[str] = None, user_id: Optional[str] = None
+    ) -> list[EligibilityRunResponse]:
         from app.rules.schemas import EligibilityRunResponse
 
         with self.session() as s:
             stmt = select(EligibilityRunModel)
             if config_id:
                 stmt = stmt.where(EligibilityRunModel.config_id == config_id)
+            if user_id is not None:
+                stmt = stmt.where(EligibilityRunModel.user_id == user_id)
             stmt = stmt.order_by(EligibilityRunModel.evaluated_at.desc())
             rows = s.execute(stmt).scalars().all()
             return [EligibilityRunResponse.model_validate(r.payload) for r in rows]
@@ -546,8 +571,11 @@ class PostgresManualOverrideStore(BasePostgresStore):
 class PostgresScoringRunStore(BasePostgresStore):
     """PostgreSQL store for historical scoring evaluation runs."""
 
-    def save(self, record: ScoringRunResponse) -> None:
-        derived = derive_scoring_run_columns(record)
+    def save(self, record: ScoringRunResponse, user_id: Optional[str] = None) -> None:
+        eff_user_id = user_id or getattr(record, "user_id", None)
+        derived = derive_scoring_run_columns(record, user_id=eff_user_id)
+        if eff_user_id and isinstance(derived.get("payload"), dict):
+            derived["payload"]["user_id"] = eff_user_id
         with self.session() as s:
             model = ScoringRunModel(**derived)
             s.add(model)
@@ -562,13 +590,17 @@ class PostgresScoringRunStore(BasePostgresStore):
                 return None
             return ScoringRunResponse.model_validate(row.payload)
 
-    def list_runs(self, config_id: Optional[str] = None) -> list[ScoringRunResponse]:
+    def list_runs(
+        self, config_id: Optional[str] = None, user_id: Optional[str] = None
+    ) -> list[ScoringRunResponse]:
         from app.scoring.schemas import ScoringRunResponse
 
         with self.session() as s:
             stmt = select(ScoringRunModel)
             if config_id:
                 stmt = stmt.where(ScoringRunModel.config_id == config_id)
+            if user_id is not None:
+                stmt = stmt.where(ScoringRunModel.user_id == user_id)
             stmt = stmt.order_by(ScoringRunModel.evaluated_at.desc())
             rows = s.execute(stmt).scalars().all()
             return [ScoringRunResponse.model_validate(r.payload) for r in rows]
@@ -598,8 +630,9 @@ class PostgresScoringRunStore(BasePostgresStore):
 class PostgresRankingRunStore(BasePostgresStore):
     """PostgreSQL store for Top-X shortlisted rankings."""
 
-    def save(self, record: RankingRunResponse) -> None:
-        derived = derive_ranking_run_columns(record)
+    def save(self, record: RankingRunResponse, user_id: Optional[str] = None) -> None:
+        eff_user_id = user_id or getattr(record, "user_id", None)
+        derived = derive_ranking_run_columns(record, user_id=eff_user_id)
         with self.session() as s:
             model = RankingRunModel(**derived)
             s.add(model)
@@ -614,15 +647,18 @@ class PostgresRankingRunStore(BasePostgresStore):
                 return None
             return RankingRunResponse.model_validate(row.payload)
 
-    def list_runs(self) -> list[RankingRunResponse]:
+    def list_runs(self, user_id: Optional[str] = None) -> list[RankingRunResponse]:
         from app.ranking.schemas import RankingRunResponse
 
         with self.session() as s:
-            stmt = select(RankingRunModel).order_by(RankingRunModel.evaluated_at.desc())
+            stmt = select(RankingRunModel)
+            if user_id:
+                stmt = stmt.where(RankingRunModel.user_id == user_id)
+            stmt = stmt.order_by(RankingRunModel.evaluated_at.desc())
             rows = s.execute(stmt).scalars().all()
             return [RankingRunResponse.model_validate(r.payload) for r in rows]
 
-    def list_summaries(self, limit: int = 50) -> list[RankingRunSummaryItem]:
+    def list_summaries(self, limit: int = 50, user_id: Optional[str] = None) -> list[RankingRunSummaryItem]:
         from app.ranking.schemas import RankingRunSummaryItem
 
         with self.session() as s:
@@ -659,11 +695,12 @@ class PostgresRankingRunStore(BasePostgresStore):
                     DatasetModel,
                     RankingRunModel.dataset_id == DatasetModel.dataset_id,
                 )
-                .order_by(
-                    RankingRunModel.evaluated_at.desc(), RankingRunModel.run_id.desc()
-                )
-                .limit(limit)
             )
+            if user_id:
+                stmt = stmt.where(RankingRunModel.user_id == user_id)
+            stmt = stmt.order_by(
+                RankingRunModel.evaluated_at.desc(), RankingRunModel.run_id.desc()
+            ).limit(limit)
             rows = s.execute(stmt).all()
             summaries = []
             for r in rows:
@@ -735,10 +772,12 @@ class PostgresRankingRunStore(BasePostgresStore):
 class PostgresDatasetStore(BasePostgresStore):
     """PostgreSQL store for uploaded and validated registration datasets."""
 
-    def save(self, record: DatasetRecord) -> DatasetRecord:
+    def save(self, record: DatasetRecord, user_id: Optional[str] = None) -> DatasetRecord:
+        eff_user_id = user_id or getattr(record, "user_id", None)
         derived = derive_dataset_columns(
             payload=record.payload or record.model_dump(),
             dataset_id=record.dataset_id,
+            user_id=eff_user_id,
             filename=record.filename,
             file_type=record.file_type,
             uploaded_at=record.uploaded_at,
@@ -752,6 +791,7 @@ class PostgresDatasetStore(BasePostgresStore):
         stmt = stmt.on_conflict_do_update(
             index_elements=["dataset_id"],
             set_={
+                "user_id": stmt.excluded.user_id,
                 "filename": stmt.excluded.filename,
                 "file_type": stmt.excluded.file_type,
                 "teams_count": stmt.excluded.teams_count,
@@ -777,6 +817,7 @@ class PostgresDatasetStore(BasePostgresStore):
                 return None
             return DatasetRecord(
                 dataset_id=row.dataset_id,
+                user_id=row.user_id,
                 filename=row.filename,
                 file_type=row.file_type,
                 teams_count=row.teams_count,
@@ -797,15 +838,19 @@ class PostgresDatasetStore(BasePostgresStore):
                 payload=row.payload,
             )
 
-    def list_datasets(self) -> list[DatasetRecord]:
+    def list_datasets(self, user_id: Optional[str] = None) -> list[DatasetRecord]:
         from app.schemas.ingestion import DatasetRecord
 
         with self.session() as s:
-            stmt = select(DatasetModel).order_by(DatasetModel.uploaded_at.desc())
+            stmt = select(DatasetModel)
+            if user_id:
+                stmt = stmt.where(DatasetModel.user_id == user_id)
+            stmt = stmt.order_by(DatasetModel.uploaded_at.desc())
             rows = s.execute(stmt).scalars().all()
             return [
                 DatasetRecord(
                     dataset_id=row.dataset_id,
+                    user_id=row.user_id,
                     filename=row.filename,
                     file_type=row.file_type,
                     teams_count=row.teams_count,
@@ -828,7 +873,7 @@ class PostgresDatasetStore(BasePostgresStore):
                 for row in rows
             ]
 
-    def list_summaries(self, limit: int = 50) -> list[DatasetSummary]:
+    def list_summaries(self, limit: int = 50, user_id: Optional[str] = None) -> list[DatasetSummary]:
         from app.schemas.ingestion import DatasetSummary
 
         warnings_count_expr = sa.case(
@@ -843,6 +888,7 @@ class PostgresDatasetStore(BasePostgresStore):
             stmt = (
                 select(
                     DatasetModel.dataset_id,
+                    DatasetModel.user_id,
                     DatasetModel.filename,
                     DatasetModel.file_type,
                     DatasetModel.teams_count,
@@ -850,13 +896,18 @@ class PostgresDatasetStore(BasePostgresStore):
                     DatasetModel.uploaded_at,
                     warnings_count_expr,
                 )
-                .order_by(DatasetModel.uploaded_at.desc(), DatasetModel.dataset_id.desc())
+            )
+            if user_id:
+                stmt = stmt.where(DatasetModel.user_id == user_id)
+            stmt = (
+                stmt.order_by(DatasetModel.uploaded_at.desc(), DatasetModel.dataset_id.desc())
                 .limit(limit)
             )
             rows = s.execute(stmt).all()
             return [
                 DatasetSummary(
                     dataset_id=r.dataset_id,
+                    user_id=r.user_id,
                     filename=r.filename,
                     file_type=r.file_type,
                     teams_count=r.teams_count,
@@ -950,12 +1001,14 @@ class PostgresDatasetStore(BasePostgresStore):
 class PostgresExtractionRunStore(BasePostgresStore):
     """PostgreSQL store for historical signal extraction runs."""
 
-    def save(self, record: ExtractionRunResponse) -> None:
-        derived = derive_extraction_run_columns(record)
+    def save(self, record: ExtractionRunResponse, user_id: Optional[str] = None) -> None:
+        eff_user_id = user_id or getattr(record, "user_id", None)
+        derived = derive_extraction_run_columns(record, user_id=eff_user_id)
         stmt = pg_insert(ExtractionRunModel).values(**derived)
         stmt = stmt.on_conflict_do_update(
             index_elements=["run_id"],
             set_={
+                "user_id": stmt.excluded.user_id,
                 "dataset_id": stmt.excluded.dataset_id,
                 "selected_signals": stmt.excluded.selected_signals,
                 "analyzers_executed": stmt.excluded.analyzers_executed,
@@ -977,11 +1030,15 @@ class PostgresExtractionRunStore(BasePostgresStore):
                 return None
             return ExtractionRunResponse.model_validate(row.payload)
 
-    def list_runs(self, dataset_id: Optional[str] = None) -> list[ExtractionRunResponse]:
+    def list_runs(
+        self, dataset_id: Optional[str] = None, user_id: Optional[str] = None
+    ) -> list[ExtractionRunResponse]:
         from app.signals.schemas import ExtractionRunResponse
 
         with self.session() as s:
             stmt = select(ExtractionRunModel)
+            if user_id:
+                stmt = stmt.where(ExtractionRunModel.user_id == user_id)
             if dataset_id:
                 stmt = stmt.where(ExtractionRunModel.dataset_id == dataset_id)
             stmt = stmt.order_by(ExtractionRunModel.created_at.desc())
@@ -989,7 +1046,7 @@ class PostgresExtractionRunStore(BasePostgresStore):
             return [ExtractionRunResponse.model_validate(r.payload) for r in rows]
 
     def list_summaries(
-        self, limit: int = 50, dataset_id: Optional[str] = None
+        self, limit: int = 50, dataset_id: Optional[str] = None, user_id: Optional[str] = None
     ) -> list[ExtractionRunSummary]:
         from app.signals.schemas import ExtractionRunSummary
 
@@ -1012,6 +1069,7 @@ class PostgresExtractionRunStore(BasePostgresStore):
         with self.session() as s:
             stmt = select(
                 ExtractionRunModel.run_id,
+                ExtractionRunModel.user_id,
                 ExtractionRunModel.dataset_id,
                 ExtractionRunModel.created_at,
                 ExtractionRunModel.selected_signals,
@@ -1020,6 +1078,8 @@ class PostgresExtractionRunStore(BasePostgresStore):
                 warnings_count_expr,
                 errors_count_expr,
             )
+            if user_id:
+                stmt = stmt.where(ExtractionRunModel.user_id == user_id)
             if dataset_id:
                 stmt = stmt.where(ExtractionRunModel.dataset_id == dataset_id)
             stmt = stmt.order_by(
@@ -1029,6 +1089,7 @@ class PostgresExtractionRunStore(BasePostgresStore):
             return [
                 ExtractionRunSummary(
                     run_id=r.run_id,
+                    user_id=r.user_id,
                     dataset_id=r.dataset_id,
                     created_at=(
                         r.created_at.isoformat()

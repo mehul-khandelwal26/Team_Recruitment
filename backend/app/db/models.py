@@ -104,6 +104,7 @@ class RuleConfigurationModel(Base):
 
     config_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -123,6 +124,7 @@ class RuleConfigurationModel(Base):
 
 def derive_rule_configuration_columns(
     payload: dict[str, Any] | BaseModel,
+    user_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """Derive typed columns for `rule_configurations` from its source-of-truth payload."""
     data = _to_dict(payload)
@@ -143,6 +145,7 @@ def derive_rule_configuration_columns(
     return {
         "config_id": config_id,
         "version": version,
+        "user_id": user_id or data.get("user_id"),
         "name": name,
         "description": description,
         "is_active": is_active,
@@ -177,6 +180,7 @@ class DatasetModel(Base):
     __tablename__ = "datasets"
 
     dataset_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     file_type: Mapped[str] = mapped_column(String(16), nullable=False)
     teams_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -205,6 +209,7 @@ def derive_dataset_columns(
     dataset_id: str,
     filename: str,
     file_type: str,
+    user_id: Optional[str] = None,
     uploaded_at: str | datetime.datetime | None = None,
     mapping: dict[str, Any] | None = None,
     teams_count: int | None = None,
@@ -243,6 +248,7 @@ def derive_dataset_columns(
 
     return {
         "dataset_id": dataset_id,
+        "user_id": user_id or data.get("user_id"),
         "filename": filename,
         "file_type": file_type.lower(),
         "teams_count": effective_teams_count,
@@ -280,6 +286,7 @@ class ExtractionRunModel(Base):
     __tablename__ = "extraction_runs"
 
     run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     dataset_id: Mapped[Optional[str]] = mapped_column(
         String(64),
         ForeignKey("datasets.dataset_id", ondelete="RESTRICT"),
@@ -306,6 +313,7 @@ class ExtractionRunModel(Base):
 
 def derive_extraction_run_columns(
     payload: dict[str, Any] | BaseModel,
+    user_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """Derive typed columns for `extraction_runs` from its source-of-truth payload."""
     data = _to_dict(payload)
@@ -324,6 +332,7 @@ def derive_extraction_run_columns(
 
     return {
         "run_id": run_id,
+        "user_id": user_id or data.get("user_id"),
         "dataset_id": dataset_id,
         "created_at": created_at,
         "selected_signals": selected_signals,
@@ -361,6 +370,7 @@ class EligibilityRunModel(Base):
     __tablename__ = "eligibility_runs"
 
     run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     config_id: Mapped[str] = mapped_column(String(64), nullable=False)
     config_version: Mapped[int] = mapped_column(Integer, nullable=False)
     dataset_id: Mapped[Optional[str]] = mapped_column(
@@ -400,6 +410,7 @@ class EligibilityRunModel(Base):
 
 def derive_eligibility_run_columns(
     payload: dict[str, Any] | BaseModel,
+    user_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """Derive typed columns for `eligibility_runs` from its source-of-truth payload."""
     data = _to_dict(payload)
@@ -426,6 +437,7 @@ def derive_eligibility_run_columns(
 
     return {
         "run_id": run_id,
+        "user_id": user_id or data.get("user_id"),
         "config_id": config_id,
         "config_version": config_version,
         "dataset_id": dataset_id,
@@ -558,6 +570,7 @@ class ScoringConfigurationModel(Base):
 
     config_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     scale_max: Mapped[float] = mapped_column(
@@ -583,6 +596,7 @@ class ScoringConfigurationModel(Base):
 
 def derive_scoring_configuration_columns(
     payload: dict[str, Any] | BaseModel,
+    user_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """Derive typed columns for `scoring_configurations` from its source-of-truth payload."""
     data = _to_dict(payload)
@@ -605,6 +619,7 @@ def derive_scoring_configuration_columns(
     return {
         "config_id": config_id,
         "version": version,
+        "user_id": user_id or data.get("user_id"),
         "name": name,
         "description": description,
         "scale_max": scale_max,
@@ -646,6 +661,7 @@ class ScoringRunModel(Base):
     __tablename__ = "scoring_runs"
 
     run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     config_id: Mapped[str] = mapped_column(String(64), nullable=False)
     config_version: Mapped[int] = mapped_column(Integer, nullable=False)
     config_source: Mapped[str] = mapped_column(
@@ -690,6 +706,7 @@ class ScoringRunModel(Base):
 
 def derive_scoring_run_columns(
     payload: dict[str, Any] | BaseModel,
+    user_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """Derive typed columns for `scoring_runs` from its source-of-truth payload."""
     data = _to_dict(payload)
@@ -718,6 +735,7 @@ def derive_scoring_run_columns(
 
     return {
         "run_id": run_id,
+        "user_id": user_id or data.get("user_id"),
         "config_id": config_id,
         "config_version": config_version,
         "config_source": config_source,
@@ -765,6 +783,7 @@ class RankingRunModel(Base):
     __tablename__ = "ranking_runs"
 
     run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     scoring_run_id: Mapped[Optional[str]] = mapped_column(
         String(64),
         ForeignKey("scoring_runs.run_id", ondelete="RESTRICT"),
@@ -814,6 +833,7 @@ class RankingRunModel(Base):
 
 def derive_ranking_run_columns(
     payload: dict[str, Any] | BaseModel,
+    user_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """Derive typed columns for `ranking_runs` from its source-of-truth payload."""
     data = _to_dict(payload)
@@ -843,6 +863,7 @@ def derive_ranking_run_columns(
 
     return {
         "run_id": run_id,
+        "user_id": user_id or data.get("user_id"),
         "scoring_run_id": scoring_run_id,
         "eligibility_run_id": eligibility_run_id,
         "dataset_id": dataset_id,

@@ -203,6 +203,7 @@ class ScoringConfiguration(BaseModel):
     """Organizer-controlled configuration bundle for an evaluation run."""
 
     config_id: str = Field(..., min_length=1, description="Unique configuration identifier")
+    user_id: Optional[str] = Field(None, description="Owning user identifier for multi-tenant isolation")
     name: str = Field(..., min_length=1, description="Human-readable configuration name")
     version: int = Field(1, ge=1, description="Immutable version number, auto-incremented on update")
     description: Optional[str] = Field(None, description="Description of scoring rubric and intent")
@@ -366,6 +367,10 @@ class ScoringRunResponse(BaseModel):
     dataset_id: Optional[str] = Field(
         default=None,
         description="Source dataset ID if evaluated from a stored dataset.",
+    )
+    user_id: Optional[str] = Field(
+        default=None,
+        description="Owner user ID for isolated workspaces.",
     )
     extraction_run_id: Optional[str] = Field(
         default=None,

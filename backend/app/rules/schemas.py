@@ -155,6 +155,7 @@ class RuleConfiguration(BaseModel):
 
     config_id: str = Field(..., description="Unique configuration identifier.")
     version: int = Field(default=1, description="Version number of this configuration (increments on edit).")
+    user_id: Optional[str] = Field(default=None, description="Owning user identifier for multi-tenant isolation.")
     name: str = Field(..., description="Human-readable name for this configuration.")
     description: str = Field(default="", description="Description of the configuration's purpose.")
     global_config: GlobalRuleConfig = Field(
@@ -336,6 +337,10 @@ class EligibilityEvaluateRequest(BaseModel):
         default=None,
         description="Optional extraction run identifier if signals were loaded from a stored extraction run.",
     )
+    user_id: Optional[str] = Field(
+        default=None,
+        description="Owner user ID for isolated workspaces.",
+    )
 
     @model_validator(mode="after")
     def validate_teams_or_dataset(self) -> EligibilityEvaluateRequest:
@@ -368,6 +373,10 @@ class EligibilityRunResponse(BaseModel):
     extraction_run_id: Optional[str] = Field(
         default=None,
         description="Optional extraction run identifier if signals were loaded from a stored extraction run.",
+    )
+    user_id: Optional[str] = Field(
+        default=None,
+        description="Owner user ID for isolated workspaces.",
     )
 
 

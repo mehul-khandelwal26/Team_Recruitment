@@ -19,8 +19,10 @@ import datetime
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.auth.dependencies import get_current_user
+from app.config import AUTH_ENABLED
 from app.ingestion.store import default_dataset_store
 from app.rules.config_store import default_config_store
 from app.rules.engine import evaluate_teams
@@ -38,6 +40,7 @@ from app.rules.schemas import (
 )
 from app.rules.store import default_override_store, default_run_store, get_effective_run
 from app.rules.types import RULE_TYPE_CATALOG
+from app.schemas.auth import UserSchema
 from app.signals.flatten import flatten_extraction_signals
 from app.signals.store import default_extraction_run_store
 
@@ -56,13 +59,19 @@ async def get_rule_catalog() -> list[RuleTypeCatalogItem]:
 
 
 @router.get("/configs", response_model=list[RuleConfiguration])
-async def list_configurations() -> list[RuleConfiguration]:
+async def list_configurations(
+    current_user: UserSchema = Depends(get_current_user),
+) -> list[RuleConfiguration]:
     """List the latest active version of all registered rule configurations."""
-    return default_config_store.list_latest()
+    user_id = current_user.user_id if AUTH_ENABLED else None
+    return default_config_store.list_latest(user_id=user_id)
 
 
 @router.post("/configs", response_model=RuleConfiguration, status_code=201)
-async def create_configuration(payload: RuleConfigurationCreate) -> RuleConfiguration:
+async def create_configuration(
+    payload: RuleConfigurationCreate,
+    current_user: UserSchema = Depends(get_current_user),
+) -> RuleConfiguration:
     """Create a new custom eligibility rule configuration (version 1)."""
     from app.rules.validation import validate_rule_configuration
 
@@ -77,9 +86,11 @@ async def create_configuration(payload: RuleConfigurationCreate) -> RuleConfigur
             detail=f"Configuration with ID '{cfg_id}' already exists. Use PUT to create a new version.",
         )
 
+    user_id = current_user.user_id if AUTH_ENABLED else None
     now_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
     new_cfg = RuleConfiguration(
         config_id=cfg_id,
+        user_id=user_id,
         version=1,
         name=payload.name,
         description=payload.description,
@@ -90,7 +101,7 @@ async def create_configuration(payload: RuleConfigurationCreate) -> RuleConfigur
         updated_at=now_ts,
     )
 
-    return default_config_store.save(new_cfg)
+    return default_config_store.save(new_cfg, user_id=user_id)
 
 
 @router.get("/configs/{config_id}", response_model=RuleConfiguration)
@@ -152,7 +163,10 @@ async def delete_configuration(config_id: str) -> dict[str, str]:
 
 
 @router.post("/evaluate", response_model=EligibilityRunResponse)
-async def evaluate_eligibility(payload: EligibilityEvaluateRequest) -> EligibilityRunResponse:
+async def evaluate_eligibility(
+    payload: EligibilityEvaluateRequest,
+    current_user: UserSchema = Depends(get_current_user),
+) -> EligibilityRunResponse:
     """Execute deterministic eligibility evaluation against teams and signals.
 
     - Resolves configuration by config_id (default: 'basic' preset) and optional version.
@@ -184,7 +198,9 @@ async def evaluate_eligibility(payload: EligibilityEvaluateRequest) -> Eligibili
     if teams_to_evaluate is None:
         if payload.dataset_id:
             ds = default_dataset_store.get(payload.dataset_id)
-            if ds is None:
+            if ds is None or (
+                AUTH_ENABLED and ds.user_id and ds.user_id != current_user.user_id
+            ):
                 raise HTTPException(
                     status_code=404,
                     detail=f"Dataset '{payload.dataset_id}' not found.",
@@ -200,7 +216,9 @@ async def evaluate_eligibility(payload: EligibilityEvaluateRequest) -> Eligibili
     signals_to_evaluate = payload.signals
     if signals_to_evaluate is None and payload.extraction_run_id:
         ext_run = default_extraction_run_store.get(payload.extraction_run_id)
-        if ext_run is None:
+        if ext_run is None or (
+            AUTH_ENABLED and ext_run.user_id and ext_run.user_id != current_user.user_id
+        ):
             raise HTTPException(
                 status_code=404,
                 detail=f"Extraction run '{payload.extraction_run_id}' not found.",
@@ -214,7 +232,9 @@ async def evaluate_eligibility(payload: EligibilityEvaluateRequest) -> Eligibili
         signals_to_evaluate = [MemberSignals.model_validate(item) for item in flat]
     elif signals_to_evaluate is not None and payload.extraction_run_id:
         ext_run = default_extraction_run_store.get(payload.extraction_run_id)
-        if ext_run is None:
+        if ext_run is None or (
+            AUTH_ENABLED and ext_run.user_id and ext_run.user_id != current_user.user_id
+        ):
             raise HTTPException(
                 status_code=404,
                 detail=f"Extraction run '{payload.extraction_run_id}' not found.",
@@ -237,18 +257,25 @@ async def evaluate_eligibility(payload: EligibilityEvaluateRequest) -> Eligibili
         run_response.dataset_id = payload.dataset_id
     if payload.extraction_run_id:
         run_response.extraction_run_id = payload.extraction_run_id
+    user_id = current_user.user_id if AUTH_ENABLED else None
+    run_response.user_id = user_id
 
     # Persist in run store
-    default_run_store.save(run_response)
+    default_run_store.save(run_response, user_id=user_id)
 
     return run_response
 
 
 @router.get("/runs/{run_id}", response_model=EligibilityRunResponse)
-async def get_run_results(run_id: str) -> EligibilityRunResponse:
+async def get_run_results(
+    run_id: str,
+    current_user: UserSchema = Depends(get_current_user),
+) -> EligibilityRunResponse:
     """Retrieve an evaluation run's results, with any manual overrides merged."""
     run_record = get_effective_run(run_id)
-    if run_record is None:
+    if run_record is None or (
+        AUTH_ENABLED and run_record.user_id and run_record.user_id != current_user.user_id
+    ):
         raise HTTPException(status_code=404, detail=f"Evaluation run '{run_id}' not found.")
     return run_record
 
@@ -258,14 +285,46 @@ async def apply_team_override(
     run_id: str,
     team_id: str,
     payload: ManualOverrideCreate,
+    current_user: UserSchema = Depends(get_current_user),
 ) -> ManualOverride:
     """Apply an organizer's manual eligibility override to a team in an evaluation run.
 
     Requires a non-empty explanation reason. The original evaluation record remains immutable.
     """
     run_record = default_run_store.get(run_id)
-    if run_record is None:
+    if run_record is None or (
+        AUTH_ENABLED and run_record.user_id and run_record.user_id != current_user.user_id
+    ):
         raise HTTPException(status_code=404, detail=f"Evaluation run '{run_id}' not found.")
+
+    team_target = next((t for t in run_record.teams if t.team_id == team_id), None)
+    if team_target is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Team '{team_id}' not found in evaluation run '{run_id}'.",
+        )
+
+    clean_reason = payload.reason.strip()
+    if not clean_reason:
+        raise HTTPException(
+            status_code=400,
+            detail="A non-empty reason is mandatory for manual eligibility overrides.",
+        )
+
+    now_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    override = ManualOverride(
+        override_id=f"ovr_{uuid.uuid4().hex[:10]}",
+        run_id=run_id,
+        team_id=team_id,
+        original_status=team_target.status,
+        override_status=payload.override_status,
+        reason=clean_reason,
+        overridden_by=payload.overridden_by or current_user.name or "organizer",
+        overridden_at=now_ts,
+    )
+
+    default_override_store.save(override)
+    return override
 
     team_target = next((t for t in run_record.teams if t.team_id == team_id), None)
     if team_target is None:

@@ -6,8 +6,10 @@ import csv
 import io
 from typing import Any, Optional, Union
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
+from app.auth.dependencies import get_current_user
+from app.config import AUTH_ENABLED
 from app.ingestion.store import default_dataset_store
 from app.ranking.engine import evaluate_ranking
 from app.ranking.schemas import (
@@ -17,6 +19,7 @@ from app.ranking.schemas import (
 )
 from app.ranking.store import default_ranking_run_store
 from app.rules.store import get_effective_run
+from app.schemas.auth import UserSchema
 from app.scoring.config_store import default_scoring_config_store
 from app.scoring.engine import evaluate_scoring
 from app.scoring.schemas import ScoringConfiguration
@@ -28,13 +31,18 @@ router = APIRouter(prefix="/api/ranking", tags=["Ranking"])
 
 
 @router.post("/evaluate", response_model=RankingRunResponse)
-def evaluate_ranking_endpoint(request: RankingEvaluationRequest) -> RankingRunResponse:
+def evaluate_ranking_endpoint(
+    request: RankingEvaluationRequest,
+    current_user: UserSchema = Depends(get_current_user),
+) -> RankingRunResponse:
     """Execute deterministic Top-X ranking and selection from scoring results or end-to-end evaluation."""
     # 1. Provenance inheritance from Option A (scoring_run_id)
     scoring_run = None
     if request.scoring_run_id:
         scoring_run = default_scoring_run_store.get(request.scoring_run_id)
-        if scoring_run is None:
+        if scoring_run is None or (
+            AUTH_ENABLED and scoring_run.user_id and scoring_run.user_id != current_user.user_id
+        ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Scoring run '{request.scoring_run_id}' not found.",
@@ -53,7 +61,9 @@ def evaluate_ranking_endpoint(request: RankingEvaluationRequest) -> RankingRunRe
     effective_elig_run = None
     if request.eligibility_run_id:
         effective_elig_run = get_effective_run(request.eligibility_run_id)
-        if effective_elig_run is None:
+        if effective_elig_run is None or (
+            AUTH_ENABLED and effective_elig_run.user_id and effective_elig_run.user_id != current_user.user_id
+        ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Eligibility run '{request.eligibility_run_id}' not found.",
@@ -80,7 +90,9 @@ def evaluate_ranking_endpoint(request: RankingEvaluationRequest) -> RankingRunRe
     # Validate extraction_run_id consistency if present
     if request.extraction_run_id:
         ext_run = default_extraction_run_store.get(request.extraction_run_id)
-        if ext_run is None:
+        if ext_run is None or (
+            AUTH_ENABLED and ext_run.user_id and ext_run.user_id != current_user.user_id
+        ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Extraction run '{request.extraction_run_id}' not found.",
@@ -108,7 +120,9 @@ def evaluate_ranking_endpoint(request: RankingEvaluationRequest) -> RankingRunRe
         teams_to_use = request.teams
         if teams_to_use is None and request.dataset_id:
             ds = default_dataset_store.get(request.dataset_id)
-            if ds is None:
+            if ds is None or (
+                AUTH_ENABLED and ds.user_id and ds.user_id != current_user.user_id
+            ):
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Dataset '{request.dataset_id}' not found.",
@@ -160,7 +174,9 @@ def evaluate_ranking_endpoint(request: RankingEvaluationRequest) -> RankingRunRe
             scoring_run.dataset_id = request.dataset_id
         if request.extraction_run_id:
             scoring_run.extraction_run_id = request.extraction_run_id
-        default_scoring_run_store.save(scoring_run)
+        user_id = current_user.user_id if AUTH_ENABLED else None
+        scoring_run.user_id = user_id
+        default_scoring_run_store.save(scoring_run, user_id=user_id)
         scoring_results = scoring_run.teams
         derived_scoring_run_id = scoring_run.run_id
 
@@ -182,16 +198,24 @@ def evaluate_ranking_endpoint(request: RankingEvaluationRequest) -> RankingRunRe
     if request.extraction_run_id:
         ranking_run.extraction_run_id = request.extraction_run_id
 
+    user_id = current_user.user_id if AUTH_ENABLED else None
+    ranking_run.user_id = user_id
+
     # 5. Persist run record
-    default_ranking_run_store.save(ranking_run)
+    default_ranking_run_store.save(ranking_run, user_id=user_id)
     return ranking_run
 
 
 @router.get("/runs/{run_id}", response_model=RankingRunResponse)
-def get_ranking_run(run_id: str) -> RankingRunResponse:
+def get_ranking_run(
+    run_id: str,
+    current_user: UserSchema = Depends(get_current_user),
+) -> RankingRunResponse:
     """Retrieve a recorded ranking run with all shortlisted teams, breakdowns, and exclusions."""
     record = default_ranking_run_store.get(run_id)
-    if record is None:
+    if record is None or (
+        AUTH_ENABLED and record.user_id and record.user_id != current_user.user_id
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Ranking run '{run_id}' not found.",
@@ -200,10 +224,15 @@ def get_ranking_run(run_id: str) -> RankingRunResponse:
 
 
 @router.delete("/runs/{run_id}")
-def delete_ranking_run(run_id: str) -> dict[str, Any]:
+def delete_ranking_run(
+    run_id: str,
+    current_user: UserSchema = Depends(get_current_user),
+) -> dict[str, Any]:
     """Permanently delete a recorded ranking run."""
     record = default_ranking_run_store.get(run_id)
-    if record is None:
+    if record is None or (
+        AUTH_ENABLED and record.user_id and record.user_id != current_user.user_id
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Ranking run '{run_id}' not found.",
@@ -225,19 +254,25 @@ def delete_ranking_run(run_id: str) -> dict[str, Any]:
 def list_ranking_runs(
     summary: bool = Query(default=False, description="Return lightweight summary objects without team lists"),
     limit: int = Query(default=50, ge=1, le=200, description="Maximum number of items to return (1-200)"),
+    current_user: UserSchema = Depends(get_current_user),
 ) -> Union[list[RankingRunResponse], list[RankingRunSummaryItem]]:
     """List all recorded ranking evaluation runs."""
+    user_id = current_user.user_id if AUTH_ENABLED else None
     if summary:
-        return default_ranking_run_store.list_summaries(limit=limit)
-    return default_ranking_run_store.list_runs()
-
+        return default_ranking_run_store.list_summaries(limit=limit, user_id=user_id)
+    return default_ranking_run_store.list_runs(user_id=user_id)
 
 
 @router.get("/runs/{run_id}/export")
-def export_ranking_run_csv(run_id: str) -> Response:
+def export_ranking_run_csv(
+    run_id: str,
+    current_user: UserSchema = Depends(get_current_user),
+) -> Response:
     """Export a recorded ranking run as a CSV file with formula-injection mitigation."""
     record = default_ranking_run_store.get(run_id)
-    if record is None:
+    if record is None or (
+        AUTH_ENABLED and record.user_id and record.user_id != current_user.user_id
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Ranking run '{run_id}' not found.",

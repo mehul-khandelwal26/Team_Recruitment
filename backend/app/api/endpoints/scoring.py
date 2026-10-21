@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.auth.dependencies import get_current_user
+from app.config import AUTH_ENABLED
 from app.ingestion.store import default_dataset_store
 from app.rules.store import get_effective_run
+from app.schemas.auth import UserSchema
 from app.scoring.config_store import default_scoring_config_store
 from app.scoring.engine import evaluate_scoring
 from app.scoring.schemas import (
@@ -128,13 +131,19 @@ def get_scoring_catalog() -> ScoringCatalogResponse:
 
 
 @router.get("/configs", response_model=list[ScoringConfiguration])
-def list_scoring_configs() -> list[ScoringConfiguration]:
+def list_scoring_configs(
+    current_user: UserSchema = Depends(get_current_user),
+) -> list[ScoringConfiguration]:
     """List latest versions of all stored scoring configurations."""
-    return default_scoring_config_store.list_latest()
+    user_id = current_user.user_id if AUTH_ENABLED else None
+    return default_scoring_config_store.list_latest(user_id=user_id)
 
 
 @router.post("/configs", response_model=ScoringConfiguration, status_code=status.HTTP_201_CREATED)
-def create_scoring_config(payload: ScoringConfigurationCreate) -> ScoringConfiguration:
+def create_scoring_config(
+    payload: ScoringConfigurationCreate,
+    current_user: UserSchema = Depends(get_current_user),
+) -> ScoringConfiguration:
     """Create a new validated scoring configuration (starts at version 1)."""
     # Check if config_id already exists
     existing = default_scoring_config_store.get(payload.config_id)
@@ -144,8 +153,10 @@ def create_scoring_config(payload: ScoringConfigurationCreate) -> ScoringConfigu
             detail=f"Scoring configuration '{payload.config_id}' already exists. Use PUT to create a new version.",
         )
 
+    user_id = current_user.user_id if AUTH_ENABLED else None
     config = ScoringConfiguration(
         config_id=payload.config_id,
+        user_id=user_id,
         name=payload.name,
         version=1,
         description=payload.description,
@@ -163,7 +174,7 @@ def create_scoring_config(payload: ScoringConfigurationCreate) -> ScoringConfigu
             detail={"errors": validation_errors},
         )
 
-    return default_scoring_config_store.save(config)
+    return default_scoring_config_store.save(config, user_id=user_id)
 
 
 @router.get("/configs/{config_id}", response_model=ScoringConfiguration)
@@ -251,7 +262,10 @@ def delete_scoring_configuration(config_id: str) -> dict[str, str]:
 
 
 @router.post("/evaluate", response_model=ScoringRunResponse)
-def evaluate_teams_endpoint(request: ScoringEvaluationRequest) -> ScoringRunResponse:
+def evaluate_teams_endpoint(
+    request: ScoringEvaluationRequest,
+    current_user: UserSchema = Depends(get_current_user),
+) -> ScoringRunResponse:
     """Evaluate teams against a scoring configuration and return detailed breakdowns."""
     config: Optional[ScoringConfiguration] = None
 
@@ -282,7 +296,9 @@ def evaluate_teams_endpoint(request: ScoringEvaluationRequest) -> ScoringRunResp
     # 1. Provenance inheritance
     if request.eligibility_run_id:
         elig_run = get_effective_run(request.eligibility_run_id)
-        if elig_run is None:
+        if elig_run is None or (
+            AUTH_ENABLED and elig_run.user_id and elig_run.user_id != current_user.user_id
+        ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Eligibility run '{request.eligibility_run_id}' not found.",
@@ -303,7 +319,9 @@ def evaluate_teams_endpoint(request: ScoringEvaluationRequest) -> ScoringRunResp
     if teams_to_evaluate is None:
         if request.dataset_id:
             ds = default_dataset_store.get(request.dataset_id)
-            if ds is None:
+            if ds is None or (
+                AUTH_ENABLED and ds.user_id and ds.user_id != current_user.user_id
+            ):
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Dataset '{request.dataset_id}' not found.",
@@ -319,7 +337,9 @@ def evaluate_teams_endpoint(request: ScoringEvaluationRequest) -> ScoringRunResp
     signals_to_evaluate = request.signals
     if signals_to_evaluate is None and request.extraction_run_id:
         ext_run = default_extraction_run_store.get(request.extraction_run_id)
-        if ext_run is None:
+        if ext_run is None or (
+            AUTH_ENABLED and ext_run.user_id and ext_run.user_id != current_user.user_id
+        ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Extraction run '{request.extraction_run_id}' not found.",
@@ -332,7 +352,9 @@ def evaluate_teams_endpoint(request: ScoringEvaluationRequest) -> ScoringRunResp
         signals_to_evaluate = flatten_extraction_signals(ext_run)
     elif signals_to_evaluate is not None and request.extraction_run_id:
         ext_run = default_extraction_run_store.get(request.extraction_run_id)
-        if ext_run is None:
+        if ext_run is None or (
+            AUTH_ENABLED and ext_run.user_id and ext_run.user_id != current_user.user_id
+        ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Extraction run '{request.extraction_run_id}' not found.",
@@ -359,16 +381,24 @@ def evaluate_teams_endpoint(request: ScoringEvaluationRequest) -> ScoringRunResp
     if request.extraction_run_id:
         result.extraction_run_id = request.extraction_run_id
 
+    user_id = current_user.user_id if AUTH_ENABLED else None
+    result.user_id = user_id
+
     # Persist in run store
-    default_scoring_run_store.save(result)
+    default_scoring_run_store.save(result, user_id=user_id)
     return result
 
 
 @router.get("/runs/{run_id}", response_model=ScoringRunResponse)
-def get_scoring_run(run_id: str) -> ScoringRunResponse:
+def get_scoring_run(
+    run_id: str,
+    current_user: UserSchema = Depends(get_current_user),
+) -> ScoringRunResponse:
     """Retrieve a recorded scoring run with all team scores and criteria breakdowns."""
     run_record = default_scoring_run_store.get(run_id)
-    if run_record is None:
+    if run_record is None or (
+        AUTH_ENABLED and run_record.user_id and run_record.user_id != current_user.user_id
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Scoring run '{run_id}' not found.",

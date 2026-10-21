@@ -187,6 +187,7 @@ class ExtractionRunResponse(BaseModel):
     """Standardized response returned by signal extraction runs."""
 
     run_id: str = Field(..., description="Unique extraction run identifier")
+    user_id: Optional[str] = Field(None, description="Owning user identifier for multi-tenant isolation")
     teams: list[TeamExtractionResult] = Field(default_factory=list, description="Extracted signals per team and member")
     selected_signals: list[str] = Field(default_factory=list, description="Signals selected for this run")
     analyzers_executed: list[str] = Field(default_factory=list, description="Analyzers that executed in this run")
@@ -216,6 +217,7 @@ class ExtractionRunSummary(BaseModel):
     """Lightweight summary of a signal extraction run for dashboard and history views."""
 
     run_id: str = Field(..., description="Unique extraction run identifier.")
+    user_id: Optional[str] = Field(default=None, description="Owning user identifier.")
     dataset_id: Optional[str] = Field(default=None, description="Source dataset ID if associated.")
     created_at: str = Field(..., description="ISO 8601 execution and creation timestamp.")
     selected_signals: list[str] = Field(default_factory=list, description="Signals selected for this run.")

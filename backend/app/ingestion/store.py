@@ -14,10 +14,10 @@ from app.schemas.ingestion import DatasetRecord
 class DatasetStoreProtocol(Protocol):
     """Protocol defining persistence interface for uploaded dataset records."""
 
-    def save(self, record: DatasetRecord) -> DatasetRecord: ...
+    def save(self, record: DatasetRecord, user_id: Optional[str] = None) -> DatasetRecord: ...
     def get(self, dataset_id: str) -> Optional[DatasetRecord]: ...
-    def list_datasets(self) -> list[DatasetRecord]: ...
-    def list_summaries(self, limit: int = 50) -> list[DatasetSummary]: ...
+    def list_datasets(self, user_id: Optional[str] = None) -> list[DatasetRecord]: ...
+    def list_summaries(self, limit: int = 50, user_id: Optional[str] = None) -> list[DatasetSummary]: ...
     def get_dependent_counts(self, dataset_id: str) -> dict[str, int]: ...
     def delete(self, dataset_id: str, cascade: bool = False) -> bool: ...
     def reset(self) -> None: ...
@@ -29,9 +29,12 @@ class InMemoryDatasetStore:
     def __init__(self) -> None:
         self._datasets: dict[str, DatasetRecord] = {}
 
-    def save(self, record: DatasetRecord) -> DatasetRecord:
-        self._datasets[record.dataset_id] = record.model_copy(deep=True)
-        return record
+    def save(self, record: DatasetRecord, user_id: Optional[str] = None) -> DatasetRecord:
+        copy_rec = record.model_copy(deep=True)
+        if user_id:
+            copy_rec.user_id = user_id
+        self._datasets[record.dataset_id] = copy_rec
+        return copy_rec
 
     def get(self, dataset_id: str) -> Optional[DatasetRecord]:
         rec = self._datasets.get(dataset_id)
@@ -39,8 +42,11 @@ class InMemoryDatasetStore:
             return None
         return rec.model_copy(deep=True)
 
-    def list_datasets(self) -> list[DatasetRecord]:
-        indexed_records = list(enumerate(self._datasets.values()))
+    def list_datasets(self, user_id: Optional[str] = None) -> list[DatasetRecord]:
+        records = list(self._datasets.values())
+        if user_id:
+            records = [r for r in records if getattr(r, "user_id", None) == user_id]
+        indexed_records = list(enumerate(records))
         indexed_records.sort(
             key=lambda item: (
                 str(item[1].uploaded_at or ""),
@@ -50,10 +56,13 @@ class InMemoryDatasetStore:
         )
         return [r.model_copy(deep=True) for _, r in indexed_records]
 
-    def list_summaries(self, limit: int = 50) -> list[DatasetSummary]:
+    def list_summaries(self, limit: int = 50, user_id: Optional[str] = None) -> list[DatasetSummary]:
         from app.schemas.ingestion import DatasetSummary
 
-        indexed_records = list(enumerate(self._datasets.values()))
+        records = list(self._datasets.values())
+        if user_id:
+            records = [r for r in records if getattr(r, "user_id", None) == user_id]
+        indexed_records = list(enumerate(records))
         indexed_records.sort(
             key=lambda item: (
                 str(item[1].uploaded_at or ""),
@@ -66,6 +75,7 @@ class InMemoryDatasetStore:
         return [
             DatasetSummary(
                 dataset_id=r.dataset_id,
+                user_id=getattr(r, "user_id", None),
                 filename=r.filename,
                 file_type=r.file_type,
                 teams_count=r.teams_count,

@@ -14,11 +14,11 @@ from app.signals.schemas import ExtractionRunResponse
 class ExtractionRunStoreProtocol(Protocol):
     """Protocol for signal extraction run persistence."""
 
-    def save(self, record: ExtractionRunResponse) -> None: ...
+    def save(self, record: ExtractionRunResponse, user_id: Optional[str] = None) -> None: ...
     def get(self, run_id: str) -> Optional[ExtractionRunResponse]: ...
-    def list_runs(self, dataset_id: Optional[str] = None) -> list[ExtractionRunResponse]: ...
+    def list_runs(self, dataset_id: Optional[str] = None, user_id: Optional[str] = None) -> list[ExtractionRunResponse]: ...
     def list_summaries(
-        self, limit: int = 50, dataset_id: Optional[str] = None
+        self, limit: int = 50, dataset_id: Optional[str] = None, user_id: Optional[str] = None
     ) -> list[ExtractionRunSummary]: ...
     def get_dependent_counts(self, run_id: str) -> dict[str, int]: ...
     def delete(self, run_id: str, cascade: bool = False) -> bool: ...
@@ -31,8 +31,11 @@ class InMemoryExtractionRunStore:
     def __init__(self) -> None:
         self._runs: dict[str, ExtractionRunResponse] = {}
 
-    def save(self, record: ExtractionRunResponse) -> None:
-        self._runs[record.run_id] = record.model_copy(deep=True)
+    def save(self, record: ExtractionRunResponse, user_id: Optional[str] = None) -> None:
+        copy_rec = record.model_copy(deep=True)
+        if user_id:
+            copy_rec.user_id = user_id
+        self._runs[record.run_id] = copy_rec
 
     def get(self, run_id: str) -> Optional[ExtractionRunResponse]:
         rec = self._runs.get(run_id)
@@ -40,19 +43,25 @@ class InMemoryExtractionRunStore:
             return None
         return rec.model_copy(deep=True)
 
-    def list_runs(self, dataset_id: Optional[str] = None) -> list[ExtractionRunResponse]:
+    def list_runs(
+        self, dataset_id: Optional[str] = None, user_id: Optional[str] = None
+    ) -> list[ExtractionRunResponse]:
         runs = list(self._runs.values())
+        if user_id:
+            runs = [r for r in runs if getattr(r, "user_id", None) == user_id]
         if dataset_id:
             runs = [r for r in runs if r.dataset_id == dataset_id]
         runs.sort(key=lambda r: str(r.created_at or ""), reverse=True)
         return [r.model_copy(deep=True) for r in runs]
 
     def list_summaries(
-        self, limit: int = 50, dataset_id: Optional[str] = None
+        self, limit: int = 50, dataset_id: Optional[str] = None, user_id: Optional[str] = None
     ) -> list[ExtractionRunSummary]:
         from app.signals.schemas import ExtractionRunSummary
 
         runs = list(self._runs.values())
+        if user_id:
+            runs = [r for r in runs if getattr(r, "user_id", None) == user_id]
         if dataset_id:
             runs = [r for r in runs if r.dataset_id == dataset_id]
         runs.sort(
@@ -66,6 +75,7 @@ class InMemoryExtractionRunStore:
         return [
             ExtractionRunSummary(
                 run_id=r.run_id,
+                user_id=getattr(r, "user_id", None),
                 dataset_id=r.dataset_id,
                 created_at=str(r.created_at or ""),
                 selected_signals=list(r.selected_signals or []),
