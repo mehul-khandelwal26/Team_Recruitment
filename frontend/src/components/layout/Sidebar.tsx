@@ -5,7 +5,7 @@ import {
   PlayCircle,
   Trophy,
   SlidersHorizontal,
-  GraduationCap,
+  ShieldCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { NavItem } from '@/types';
@@ -67,10 +67,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className
         )}
       >
-        {/* Brand / Header */}
+        {/* Brand / Header (Harmonized with Login Page: ShieldCheck) */}
         <div className="flex h-16 shrink-0 items-center gap-3 border-b border-sidebar-border px-5">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-xs">
-            <GraduationCap className="h-5 w-5" />
+            <ShieldCheck className="h-5 w-5" />
           </div>
           <div className="flex flex-col min-w-0">
             <span className="font-semibold text-sm tracking-tight text-foreground truncate">
