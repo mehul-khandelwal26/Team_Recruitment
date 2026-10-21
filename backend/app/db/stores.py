@@ -212,6 +212,7 @@ class PostgresRuleConfigStore(BasePostgresStore):
 
         new_config = RuleConfiguration(
             config_id=config_id,
+            user_id=getattr(current, "user_id", None),
             version=new_version,
             name=update_payload.name if update_payload.name is not None else current.name,
             description=(
@@ -240,7 +241,7 @@ class PostgresRuleConfigStore(BasePostgresStore):
             created_at=current.created_at,
             updated_at=now_ts,
         )
-        return self.save(new_config)
+        return self.save(new_config, user_id=getattr(current, "user_id", None))
 
     def delete(self, config_id: str) -> bool:
         """Soft-delete all versions of the given configuration in a single transaction."""
@@ -373,6 +374,7 @@ class PostgresScoringConfigStore(BasePostgresStore):
 
         new_config = ScoringConfiguration(
             config_id=config_id,
+            user_id=getattr(current, "user_id", None),
             version=new_version,
             name=update_payload.name if update_payload.name is not None else current.name,
             description=(
@@ -416,7 +418,7 @@ class PostgresScoringConfigStore(BasePostgresStore):
             created_at=current.created_at,
             updated_at=now_ts,
         )
-        return self.save(new_config)
+        return self.save(new_config, user_id=getattr(current, "user_id", None))
 
     def delete(self, config_id: str) -> bool:
         """Soft-delete all versions of the scoring configuration in a single transaction."""

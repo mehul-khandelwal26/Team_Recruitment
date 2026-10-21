@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import type { User, AuthStatusResponse } from '@/types';
 import { apiService } from '@/lib/api-services';
 import { getStoredAuthToken, setStoredAuthToken } from '@/lib/api-client';
+import { queryClient } from '@/lib/query-client';
 
 interface AuthContextType {
   user: User | null;
@@ -62,6 +63,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             } catch (err) {
               // Token invalid or expired
               if (isMounted) {
+                queryClient.clear();
                 setStoredAuthToken(null);
                 setToken(null);
                 setUser(null);
@@ -86,6 +88,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Listen for 401 unauthorized events dispatched by api-client
     const handleUnauthorized = () => {
+      queryClient.clear();
       setStoredAuthToken(null);
       setToken(null);
       setUser(null);
@@ -98,10 +101,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
+  // Ensure query cache is completely purged whenever user_id changes
+  useEffect(() => {
+    queryClient.clear();
+  }, [user?.user_id]);
+
   const loginWithGoogle = useCallback(async (idToken: string) => {
     setError(null);
     try {
+      queryClient.clear();
       const resp = await apiService.loginWithGoogle(idToken);
+      queryClient.clear();
       setStoredAuthToken(resp.access_token);
       setToken(resp.access_token);
       setUser(resp.user);
@@ -115,7 +125,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const devLogin = useCallback(async (email?: string, name?: string) => {
     setError(null);
     try {
+      queryClient.clear();
       const resp = await apiService.devLogin(email, name);
+      queryClient.clear();
       setStoredAuthToken(resp.access_token);
       setToken(resp.access_token);
       setUser(resp.user);
@@ -132,6 +144,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.warn('Backend logout encountered non-fatal error:', err);
     } finally {
+      queryClient.clear();
       setStoredAuthToken(null);
       setToken(null);
       setUser(null);

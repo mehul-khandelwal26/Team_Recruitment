@@ -149,7 +149,9 @@ def evaluate_ranking_endpoint(
             scoring_config = default_scoring_config_store.get(
                 cfg_id, version=request.scoring_config_version
             )
-            if scoring_config is None:
+            if scoring_config is None or (
+                AUTH_ENABLED and scoring_config.user_id and scoring_config.user_id not in ("system", current_user.user_id)
+            ):
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Scoring configuration '{cfg_id}' not found.",

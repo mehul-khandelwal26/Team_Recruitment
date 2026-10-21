@@ -108,10 +108,13 @@ async def create_configuration(
 async def get_configuration(
     config_id: str,
     version: Optional[int] = Query(None, description="Optional specific version number"),
+    current_user: UserSchema = Depends(get_current_user),
 ) -> RuleConfiguration:
     """Retrieve a rule configuration by ID. Returns latest version if version is omitted."""
     cfg = default_config_store.get(config_id, version=version)
-    if cfg is None:
+    if cfg is None or (
+        AUTH_ENABLED and cfg.user_id and cfg.user_id not in ("system", current_user.user_id)
+    ):
         raise HTTPException(
             status_code=404,
             detail=f"Configuration '{config_id}'" + (f" version {version}" if version else "") + " not found.",
@@ -123,12 +126,25 @@ async def get_configuration(
 async def update_configuration(
     config_id: str,
     payload: RuleConfigurationUpdate,
+    current_user: UserSchema = Depends(get_current_user),
 ) -> RuleConfiguration:
     """Update a rule configuration.
 
     Guarantees immutability by creating a new version with an incremented version number.
     Previous versions are preserved unchanged.
     """
+    existing = default_config_store.get(config_id)
+    if existing is None or (
+        AUTH_ENABLED and existing.user_id and existing.user_id not in ("system", current_user.user_id)
+    ):
+        raise HTTPException(status_code=404, detail=f"Configuration '{config_id}' not found.")
+
+    if AUTH_ENABLED and (existing.user_id is None or existing.user_id == "system"):
+        raise HTTPException(
+            status_code=403,
+            detail="System default configurations cannot be modified. Create a custom configuration instead.",
+        )
+
     from app.rules.validation import validate_rule_configuration
 
     validate_rule_configuration(payload)
@@ -140,8 +156,16 @@ async def update_configuration(
 
 
 @router.get("/configs/{config_id}/versions", response_model=list[int])
-async def list_configuration_versions(config_id: str) -> list[int]:
+async def list_configuration_versions(
+    config_id: str,
+    current_user: UserSchema = Depends(get_current_user),
+) -> list[int]:
     """List all available version numbers for a given configuration."""
+    existing = default_config_store.get(config_id)
+    if existing is None or (
+        AUTH_ENABLED and existing.user_id and existing.user_id not in ("system", current_user.user_id)
+    ):
+        raise HTTPException(status_code=404, detail=f"Configuration '{config_id}' not found.")
     versions = default_config_store.list_versions(config_id)
     if not versions:
         raise HTTPException(status_code=404, detail=f"Configuration '{config_id}' not found.")
@@ -149,8 +173,23 @@ async def list_configuration_versions(config_id: str) -> list[int]:
 
 
 @router.delete("/configs/{config_id}", response_model=dict[str, str])
-async def delete_configuration(config_id: str) -> dict[str, str]:
+async def delete_configuration(
+    config_id: str,
+    current_user: UserSchema = Depends(get_current_user),
+) -> dict[str, str]:
     """Soft-delete a configuration by marking it inactive."""
+    existing = default_config_store.get(config_id)
+    if existing is None or (
+        AUTH_ENABLED and existing.user_id and existing.user_id not in ("system", current_user.user_id)
+    ):
+        raise HTTPException(status_code=404, detail=f"Configuration '{config_id}' not found.")
+
+    if AUTH_ENABLED and (existing.user_id is None or existing.user_id == "system"):
+        raise HTTPException(
+            status_code=403,
+            detail="System default configurations cannot be deleted.",
+        )
+
     success = default_config_store.delete(config_id)
     if not success:
         raise HTTPException(status_code=404, detail=f"Configuration '{config_id}' not found.")
@@ -177,7 +216,9 @@ async def evaluate_eligibility(
     target_config_id = payload.config_id or "basic"
     config = default_config_store.get(target_config_id, version=payload.config_version)
 
-    if config is None:
+    if config is None or (
+        AUTH_ENABLED and config.user_id and config.user_id not in ("system", current_user.user_id)
+    ):
         raise HTTPException(
             status_code=404,
             detail=(
@@ -320,35 +361,6 @@ async def apply_team_override(
         override_status=payload.override_status,
         reason=clean_reason,
         overridden_by=payload.overridden_by or current_user.name or "organizer",
-        overridden_at=now_ts,
-    )
-
-    default_override_store.save(override)
-    return override
-
-    team_target = next((t for t in run_record.teams if t.team_id == team_id), None)
-    if team_target is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Team '{team_id}' not found in evaluation run '{run_id}'.",
-        )
-
-    clean_reason = payload.reason.strip()
-    if not clean_reason:
-        raise HTTPException(
-            status_code=400,
-            detail="A non-empty reason is mandatory for manual eligibility overrides.",
-        )
-
-    now_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    override = ManualOverride(
-        override_id=f"ovr_{uuid.uuid4().hex[:10]}",
-        run_id=run_id,
-        team_id=team_id,
-        original_status=team_target.status,
-        override_status=payload.override_status,
-        reason=clean_reason,
-        overridden_by=payload.overridden_by or "organizer",
         overridden_at=now_ts,
     )
 

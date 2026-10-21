@@ -89,6 +89,7 @@ class ScoringConfigStore:
 
         new_config = ScoringConfiguration(
             config_id=config_id,
+            user_id=getattr(current, "user_id", None),
             version=new_version,
             name=update_payload.name if update_payload.name is not None else current.name,
             description=update_payload.description if update_payload.description is not None else current.description,

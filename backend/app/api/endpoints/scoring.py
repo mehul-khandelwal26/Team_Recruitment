@@ -181,10 +181,13 @@ def create_scoring_config(
 def get_scoring_config(
     config_id: str,
     version: Optional[int] = Query(None, description="Optional explicit version number"),
+    current_user: UserSchema = Depends(get_current_user),
 ) -> ScoringConfiguration:
     """Fetch a configuration by ID (latest version by default, or specific version)."""
     config = default_scoring_config_store.get(config_id, version=version)
-    if config is None:
+    if config is None or (
+        AUTH_ENABLED and config.user_id and config.user_id not in ("system", current_user.user_id)
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Scoring configuration '{config_id}' (version: {version or 'latest'}) not found.",
@@ -196,18 +199,28 @@ def get_scoring_config(
 def update_scoring_config(
     config_id: str,
     payload: ScoringConfigurationUpdate,
+    current_user: UserSchema = Depends(get_current_user),
 ) -> ScoringConfiguration:
     """Update a scoring configuration by creating a new immutable version."""
     current = default_scoring_config_store.get(config_id)
-    if current is None:
+    if current is None or (
+        AUTH_ENABLED and current.user_id and current.user_id not in ("system", current_user.user_id)
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Scoring configuration '{config_id}' not found.",
         )
 
+    if AUTH_ENABLED and (current.user_id is None or current.user_id == "system"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="System default scoring configurations cannot be modified. Create a custom configuration instead.",
+        )
+
     # Construct preview for validation
     candidate_config = ScoringConfiguration(
         config_id=config_id,
+        user_id=current.user_id,
         version=current.version + 1,
         name=payload.name if payload.name is not None else current.name,
         description=payload.description if payload.description is not None else current.description,
@@ -233,8 +246,19 @@ def update_scoring_config(
 
 
 @router.get("/configs/{config_id}/versions", response_model=list[int])
-def get_scoring_config_versions(config_id: str) -> list[int]:
+def get_scoring_config_versions(
+    config_id: str,
+    current_user: UserSchema = Depends(get_current_user),
+) -> list[int]:
     """List all available version numbers for a scoring configuration."""
+    current = default_scoring_config_store.get(config_id)
+    if current is None or (
+        AUTH_ENABLED and current.user_id and current.user_id not in ("system", current_user.user_id)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Scoring configuration '{config_id}' not found.",
+        )
     versions = default_scoring_config_store.list_versions(config_id)
     if not versions:
         raise HTTPException(
@@ -245,8 +269,26 @@ def get_scoring_config_versions(config_id: str) -> list[int]:
 
 
 @router.delete("/configs/{config_id}", response_model=dict[str, str])
-def delete_scoring_configuration(config_id: str) -> dict[str, str]:
+def delete_scoring_configuration(
+    config_id: str,
+    current_user: UserSchema = Depends(get_current_user),
+) -> dict[str, str]:
     """Soft-delete a scoring configuration by marking it inactive."""
+    current = default_scoring_config_store.get(config_id)
+    if current is None or (
+        AUTH_ENABLED and current.user_id and current.user_id not in ("system", current_user.user_id)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Scoring configuration '{config_id}' not found.",
+        )
+
+    if AUTH_ENABLED and (current.user_id is None or current.user_id == "system"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="System default scoring configurations cannot be deleted.",
+        )
+
     success = default_scoring_config_store.delete(config_id)
     if not success:
         raise HTTPException(
@@ -280,7 +322,9 @@ def evaluate_teams_endpoint(
     else:
         cfg_id = request.config_id or "balanced"
         config = default_scoring_config_store.get(cfg_id, version=request.config_version)
-        if config is None:
+        if config is None or (
+            AUTH_ENABLED and config.user_id and config.user_id not in ("system", current_user.user_id)
+        ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Scoring configuration '{cfg_id}' (version: {request.config_version or 'latest'}) not found.",
