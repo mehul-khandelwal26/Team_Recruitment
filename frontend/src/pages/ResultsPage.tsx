@@ -97,90 +97,110 @@ export const ResultsPage: React.FC = () => {
   if (!runId) {
     return (
       <div className="space-y-6 max-w-5xl mx-auto">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <Badge variant="forest" className="font-mono text-xs">
-              Leaderboard & Audit
-            </Badge>
-            <span className="text-xs text-muted-foreground">· Historical Results</span>
+        {/* Context Header Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Badge variant="forest" className="font-mono text-xs">
+                Evaluation Archive
+              </Badge>
+              <span className="text-xs text-muted-foreground">
+                Historical candidate shortlists and explainability audit trails
+              </span>
+            </div>
           </div>
-          <h2 className="text-xl font-bold tracking-tight text-foreground">
-            Evaluation Results & Leaderboards
-          </h2>
-          <p className="text-xs text-muted-foreground max-w-2xl leading-relaxed">
-            Select a previous evaluation run from history below, or launch the Evaluation Wizard to generate a new candidate recruitment run.
-          </p>
-        </div>
-
-        {/* Empty State Card */}
-        <div className="text-center py-10 px-4 rounded-xl border border-dashed border-border bg-card">
-          <Trophy className="h-10 w-10 text-muted-foreground/60 mx-auto mb-3" />
-          <h3 className="text-sm font-semibold text-foreground">No Evaluation Run Selected</h3>
-          <p className="text-xs text-muted-foreground max-w-md mx-auto mt-1 mb-5">
-            To view detailed team rankings, score breakdowns, and manual overrides, specify a valid ranking run or choose one from recent runs below.
-          </p>
-          <Button onClick={() => navigate('/evaluate')} className="gap-2 shadow-sm">
+          <Button
+            onClick={() => navigate('/evaluate')}
+            size="sm"
+            className="gap-2 shadow-xs text-xs self-start sm:self-auto"
+          >
             <PlusCircle className="h-4 w-4" />
-            Start New Evaluation Wizard
+            New Evaluation Run
           </Button>
         </div>
 
-        {/* Recent Runs Table */}
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-            <Layers className="h-4 w-4 text-forest-700" />
-            Recent Ranking Evaluation Runs
-          </h3>
-
-          {isLoadingRecent ? (
-            <div className="space-y-2">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
+        {/* Recent Runs List or Empty State */}
+        {isLoadingRecent ? (
+          <div className="space-y-2">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </div>
+        ) : !recentRuns || recentRuns.length === 0 ? (
+          <div className="text-center py-12 px-4 rounded-xl border border-dashed border-border/80 bg-card/60">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted/80 text-muted-foreground mx-auto mb-3">
+              <Trophy className="h-6 w-6" />
             </div>
-          ) : !recentRuns || recentRuns.length === 0 ? (
-            <p className="text-xs text-muted-foreground italic">
-              No previous evaluation runs recorded in the database.
+            <h3 className="text-sm font-bold text-foreground">No Evaluation Runs Recorded</h3>
+            <p className="text-xs text-muted-foreground max-w-md mx-auto mt-1 mb-5">
+              Run the Candidate Evaluation Wizard to ingest candidate datasets, evaluate eligibility criteria, and compute your Top-X shortlisted teams.
             </p>
-          ) : (
-            <div className="rounded-lg border border-border bg-card overflow-hidden">
+            <Button onClick={() => navigate('/evaluate')} className="gap-2 shadow-xs text-xs">
+              <PlusCircle className="h-4 w-4" />
+              Launch Evaluation Flow
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-foreground flex items-center gap-2 tracking-tight">
+                <Layers className="h-4 w-4 text-forest-700" />
+                Recorded Evaluation Runs ({recentRuns.length})
+              </h3>
+              <span className="text-xs text-muted-foreground font-mono">
+                Deterministic Top-X Shortlists
+              </span>
+            </div>
+
+            <div className="rounded-xl border border-border/80 bg-card overflow-hidden shadow-2xs">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="bg-muted/30 border-b border-border text-muted-foreground">
-                    <th className="py-2.5 px-3 text-left font-semibold">Run ID</th>
-                    <th className="py-2.5 px-3 text-left font-semibold">Evaluated At</th>
-                    <th className="py-2.5 px-3 text-right font-semibold">Top-X</th>
-                    <th className="py-2.5 px-3 text-right font-semibold">Selected</th>
-                    <th className="py-2.5 px-3 text-right font-semibold">Actions</th>
+                  <tr className="bg-muted/50 border-b border-border text-muted-foreground font-medium text-[11px]">
+                    <th className="py-3 px-4 text-left">Ranking Run ID</th>
+                    <th className="py-3 px-4 text-left">Evaluated At</th>
+                    <th className="py-3 px-4 text-center">Quota</th>
+                    <th className="py-3 px-4 text-center">Shortlisted</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
+                <tbody className="divide-y divide-border/60">
                   {recentRuns.map((r) => (
                     <tr
                       key={r.run_id}
                       onClick={() => navigate(`/results?run_id=${r.run_id}`)}
-                      className="hover:bg-muted/30 cursor-pointer transition-colors"
+                      className="hover:bg-muted/20 cursor-pointer transition-colors"
                     >
-                      <td className="py-2.5 px-3 font-mono font-semibold text-foreground">
-                        <TruncatedId id={r.run_id} />
+                      <td className="py-3 px-4 font-mono font-semibold text-foreground">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-forest-50 text-forest-800 border border-forest-200/60 shadow-2xs">
+                            <Trophy className="h-3.5 w-3.5" />
+                          </div>
+                          <TruncatedId id={r.run_id} />
+                        </div>
                       </td>
-                      <td className="py-2.5 px-3 text-muted-foreground">
+                      <td className="py-3 px-4 text-muted-foreground">
                         {formatDate(r.evaluated_at)}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono">{r.top_x}</td>
-                      <td className="py-2.5 px-3 text-right font-mono font-bold text-forest-900">
-                        {r.selected_teams_count || r.selected || 0}
+                      <td className="py-3 px-4 text-center">
+                        <span className="font-mono text-[11px] bg-muted/80 px-2 py-0.5 rounded border border-border/80 text-foreground font-medium">
+                          Top {r.top_x}
+                        </span>
                       </td>
-                      <td className="py-2.5 px-3 text-right">
-                        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                      <td className="py-3 px-4 text-center">
+                        <span className="font-mono text-xs font-bold text-forest-800 bg-forest-50 px-2.5 py-0.5 rounded-full border border-forest-200/80">
+                          {r.selected_teams_count || r.selected || 0} teams
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="h-7 px-2 text-xs gap-1 text-forest-700 hover:text-forest-900 hover:bg-forest-50"
+                            className="h-7 px-2.5 text-xs gap-1 font-semibold text-forest-800 hover:text-forest-900 hover:bg-forest-50"
                             onClick={() => navigate(`/results?run_id=${r.run_id}`)}
                           >
-                            View
-                            <ArrowRight className="h-3 w-3" />
+                            View Leaderboard
+                            <ArrowRight className="h-3.5 w-3.5" />
                           </Button>
                           <Button
                             size="sm"
@@ -198,8 +218,8 @@ export const ResultsPage: React.FC = () => {
                 </tbody>
               </table>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Delete Modal for Recent Runs List */}
         {runToDelete && (

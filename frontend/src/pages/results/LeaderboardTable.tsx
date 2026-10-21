@@ -215,27 +215,36 @@ export const LeaderboardTable: React.FC<LeaderboardTableProps> = ({
         </div>
 
         {/* Filter Tabs */}
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="inline-flex items-center gap-1 p-1 rounded-lg bg-secondary/60 border border-border/70 overflow-x-auto max-w-full">
           {[
-            { id: 'ALL', label: 'All', count: counts.all },
-            { id: 'SELECTED', label: 'Shortlist', count: counts.selected },
+            { id: 'ALL', label: 'All Candidates', count: counts.all },
+            { id: 'SELECTED', label: 'Shortlisted', count: counts.selected },
             { id: 'NEEDS_REVIEW', label: 'Needs Review', count: counts.needs_review },
             { id: 'NOT_SELECTED', label: 'Below Cutoff', count: counts.not_selected },
-            { id: 'EXCLUDED', label: 'Excluded', count: counts.excluded },
+            { id: 'EXCLUDED', label: 'Disqualified', count: counts.excluded },
           ].map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setStatusFilter(tab.id as FilterStatus)}
               className={cn(
-                'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md border transition-all',
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer whitespace-nowrap',
                 statusFilter === tab.id
-                  ? 'border-forest-600 bg-forest-50/70 text-forest-950 font-bold shadow-sm'
-                  : 'border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted/30'
+                  ? 'bg-card text-foreground shadow-xs font-bold'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-card/50'
               )}
             >
               <span>{tab.label}</span>
-              <span className="text-[10px] opacity-75 font-mono">({tab.count})</span>
+              <span
+                className={cn(
+                  'font-mono text-[10px] px-1.5 py-0.2 rounded-full',
+                  statusFilter === tab.id
+                    ? 'bg-forest-50 text-forest-800 border border-forest-200/60 font-semibold'
+                    : 'bg-muted text-muted-foreground'
+                )}
+              >
+                {tab.count}
+              </span>
             </button>
           ))}
         </div>
@@ -319,18 +328,32 @@ export const LeaderboardTable: React.FC<LeaderboardTableProps> = ({
                     {/* Rank */}
                     <TableCell className="text-center font-mono">
                       {row.rank !== null ? (
-                        <span
-                          className={cn(
-                            'inline-flex h-6 w-6 items-center justify-center rounded-full font-bold text-xs',
-                            isSelected
-                              ? 'bg-forest-800 text-white shadow-sm'
-                              : 'bg-muted text-muted-foreground'
-                          )}
-                        >
-                          {row.rank}
-                        </span>
+                        row.rank === 1 ? (
+                          <span className="inline-flex h-6.5 w-6.5 items-center justify-center rounded-full bg-amber-100 text-amber-950 border border-amber-300 font-bold text-xs shadow-2xs" title="Rank #1">
+                            1
+                          </span>
+                        ) : row.rank === 2 ? (
+                          <span className="inline-flex h-6.5 w-6.5 items-center justify-center rounded-full bg-slate-200 text-slate-900 border border-slate-300 font-bold text-xs shadow-2xs" title="Rank #2">
+                            2
+                          </span>
+                        ) : row.rank === 3 ? (
+                          <span className="inline-flex h-6.5 w-6.5 items-center justify-center rounded-full bg-amber-50 text-amber-900 border border-amber-200 font-bold text-xs shadow-2xs" title="Rank #3">
+                            3
+                          </span>
+                        ) : (
+                          <span
+                            className={cn(
+                              'inline-flex h-6 w-6 items-center justify-center rounded-full font-semibold text-xs',
+                              isSelected
+                                ? 'bg-forest-800 text-white shadow-2xs'
+                                : 'bg-muted text-muted-foreground'
+                            )}
+                          >
+                            {row.rank}
+                          </span>
+                        )
                       ) : (
-                        <span className="text-muted-foreground">—</span>
+                        <span className="text-muted-foreground font-mono">—</span>
                       )}
                     </TableCell>
 
@@ -353,19 +376,31 @@ export const LeaderboardTable: React.FC<LeaderboardTableProps> = ({
                     </TableCell>
 
                     {/* Final Score */}
-                    <TableCell className="text-right font-mono font-bold">
+                    <TableCell className="text-right">
                       {row.final_score !== null ? (
-                        <span
-                          className={cn(
-                            isSelected
-                              ? 'text-forest-950 font-bold'
-                              : isReview
-                                ? 'text-amber-900'
-                                : 'text-foreground'
-                          )}
-                        >
-                          {Number(row.final_score).toFixed(2)}
-                        </span>
+                        <div className="flex flex-col items-end">
+                          <span
+                            className={cn(
+                              'font-mono font-bold text-sm',
+                              isSelected
+                                ? 'text-forest-950 font-bold'
+                                : isReview
+                                  ? 'text-amber-900'
+                                  : 'text-foreground'
+                            )}
+                          >
+                            {Number(row.final_score).toFixed(2)}
+                          </span>
+                          <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden mt-1 border border-border/40">
+                            <div
+                              className={cn(
+                                'h-full rounded-full transition-all',
+                                isSelected ? 'bg-forest-600' : 'bg-muted-foreground/40'
+                              )}
+                              style={{ width: `${Math.min(100, Math.max(0, Number(row.final_score)))}%` }}
+                            />
+                          </div>
+                        </div>
                       ) : (
                         <span className="text-muted-foreground font-normal text-[11px]">No Score</span>
                       )}
@@ -373,38 +408,40 @@ export const LeaderboardTable: React.FC<LeaderboardTableProps> = ({
 
                     {/* Eligibility Status */}
                     <TableCell className="text-center">
-                      <Badge
-                        variant={
-                          row.eligibility_status === 'ELIGIBLE'
-                            ? 'success'
-                            : row.eligibility_status === 'NEEDS_REVIEW'
-                              ? 'warning'
-                              : row.eligibility_status === 'INELIGIBLE'
-                                ? 'destructive'
-                                : 'outline'
-                        }
-                        className="font-mono text-[10px]"
-                      >
-                        {row.eligibility_status || 'UNVERIFIED'}
-                      </Badge>
+                      {row.eligibility_status === 'ELIGIBLE' ? (
+                        <Badge variant="success" className="text-[10px] font-medium">Eligible</Badge>
+                      ) : row.eligibility_status === 'NEEDS_REVIEW' ? (
+                        <Badge variant="warning" className="text-[10px] font-medium">Pending Review</Badge>
+                      ) : row.eligibility_status === 'INELIGIBLE' ? (
+                        <Badge variant="destructive" className="text-[10px] font-medium">Ineligible</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] font-medium">Unverified</Badge>
+                      )}
                     </TableCell>
 
                     {/* Selection Status */}
                     <TableCell className="text-center">
-                      <Badge
-                        variant={
-                          isSelected
-                            ? 'forest'
-                            : isReview
-                              ? 'warning'
-                              : isExcluded
-                                ? 'destructive'
-                                : 'secondary'
-                        }
-                        className="font-mono text-[10px]"
-                      >
-                        {row.selection_status}
-                      </Badge>
+                      {isSelected ? (
+                        <Badge variant="forest" className="text-[10px] font-medium">
+                          Shortlisted
+                        </Badge>
+                      ) : isReview ? (
+                        <Badge variant="warning" className="text-[10px] font-medium">
+                          Pending Review
+                        </Badge>
+                      ) : row.selection_status === 'NOT_SELECTED' ? (
+                        <Badge variant="secondary" className="text-[10px] font-medium text-muted-foreground">
+                          Below Cutoff
+                        </Badge>
+                      ) : row.selection_status === 'UNRESOLVED' ? (
+                        <Badge variant="outline" className="text-[10px] font-medium border-purple-200 text-purple-700 bg-purple-50">
+                          Identity Conflict
+                        </Badge>
+                      ) : (
+                        <Badge variant="destructive" className="text-[10px] font-medium">
+                          Disqualified
+                        </Badge>
+                      )}
                     </TableCell>
 
                     {/* Action Button */}

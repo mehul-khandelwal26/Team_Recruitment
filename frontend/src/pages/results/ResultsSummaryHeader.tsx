@@ -83,7 +83,7 @@ export const ResultsSummaryHeader: React.FC<ResultsSummaryHeaderProps> = ({
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <Badge variant="forest" className="font-mono text-xs">
-              Live Results Leaderboard
+              Shortlist Leaderboard
             </Badge>
             <span className="text-xs text-muted-foreground flex items-center gap-1">
               <Calendar className="h-3 w-3" />
@@ -94,25 +94,22 @@ export const ResultsSummaryHeader: React.FC<ResultsSummaryHeaderProps> = ({
             <Trophy className="h-5 w-5 text-forest-700" />
             Recruitment Ranking & Shortlist Leaderboard
           </h2>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground pt-0.5">
-            <span>
-              Run ID: <TruncatedId id={rankingRun.run_id} className="font-bold text-foreground" />
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground pt-1">
+            <span className="inline-flex items-center gap-1.5 font-mono bg-muted/80 px-2 py-0.5 rounded border border-border/70 text-foreground font-semibold">
+              <span className="font-sans font-medium text-muted-foreground text-[11px]">Run:</span>
+              <TruncatedId id={rankingRun.run_id} />
             </span>
             {rankingRun.eligibility_run_id && (
-              <>
-                <span>·</span>
-                <span>
-                  Eligibility Run: <TruncatedId id={rankingRun.eligibility_run_id} />
-                </span>
-              </>
+              <span className="inline-flex items-center gap-1 font-mono bg-muted/50 px-2 py-0.5 rounded border border-border/60 text-muted-foreground">
+                <span className="font-sans font-medium text-[11px]">Eligibility:</span>
+                <TruncatedId id={rankingRun.eligibility_run_id} />
+              </span>
             )}
             {rankingRun.scoring_run_id && (
-              <>
-                <span>·</span>
-                <span>
-                  Scoring Run: <TruncatedId id={rankingRun.scoring_run_id} />
-                </span>
-              </>
+              <span className="inline-flex items-center gap-1 font-mono bg-muted/50 px-2 py-0.5 rounded border border-border/60 text-muted-foreground">
+                <span className="font-sans font-medium text-[11px]">Scoring:</span>
+                <TruncatedId id={rankingRun.scoring_run_id} />
+              </span>
             )}
           </div>
         </div>
@@ -228,11 +225,11 @@ export const ResultsSummaryHeader: React.FC<ResultsSummaryHeaderProps> = ({
       {/* Summary Metrics Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {/* Total Evaluated */}
-        <div className="p-3 bg-card rounded-lg border border-border shadow-sm space-y-0.5">
+        <div className="p-3.5 bg-card rounded-xl border border-border/80 shadow-2xs space-y-1">
           <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
             Evaluated
           </span>
-          <span className="text-xl font-bold font-mono text-foreground">
+          <span className="text-xl font-bold font-mono text-foreground block">
             {summary?.total_teams_evaluated || 0}
           </span>
           <span className="text-[10px] text-muted-foreground block truncate">
@@ -241,11 +238,11 @@ export const ResultsSummaryHeader: React.FC<ResultsSummaryHeaderProps> = ({
         </div>
 
         {/* Selected / Shortlist */}
-        <div className="p-3 bg-forest-50/60 rounded-lg border border-forest-200/80 shadow-sm space-y-0.5">
+        <div className="p-3.5 bg-forest-50/50 rounded-xl border border-forest-200/80 shadow-2xs space-y-1">
           <span className="text-[10px] font-bold text-forest-900 uppercase tracking-wider block">
             Shortlisted (Top-X)
           </span>
-          <span className="text-xl font-bold font-mono text-forest-950">
+          <span className="text-xl font-bold font-mono text-forest-950 block">
             {summary?.selected_teams_count || 0}{' '}
             <span className="text-xs font-normal text-muted-foreground">
               / {summary?.requested_top_x || rankingRun.top_x}
@@ -259,11 +256,11 @@ export const ResultsSummaryHeader: React.FC<ResultsSummaryHeaderProps> = ({
         </div>
 
         {/* Cutoff Score */}
-        <div className="p-3 bg-card rounded-lg border border-border shadow-sm space-y-0.5">
+        <div className="p-3.5 bg-card rounded-xl border border-border/80 shadow-2xs space-y-1">
           <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
             Cutoff Score
           </span>
-          <span className="text-xl font-bold font-mono text-foreground">
+          <span className="text-xl font-bold font-mono text-foreground block">
             {summary?.cutoff_score !== null && summary?.cutoff_score !== undefined
               ? Number(summary.cutoff_score).toFixed(2)
               : '—'}
@@ -274,41 +271,47 @@ export const ResultsSummaryHeader: React.FC<ResultsSummaryHeaderProps> = ({
         </div>
 
         {/* Needs Review */}
-        <div className="p-3 bg-card rounded-lg border border-border shadow-sm space-y-0.5">
+        <div className="p-3.5 bg-card rounded-xl border border-border/80 shadow-2xs space-y-1">
           <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
             Needs Review
           </span>
-          <span className="text-xl font-bold font-mono text-amber-800">
+          <span className="text-xl font-bold font-mono text-amber-800 block">
             {summary?.needs_review_count || 0}
           </span>
           <span className="text-[10px] text-muted-foreground block truncate">
-            Organizer action needed
+            {summary?.needs_review_count && summary.needs_review_count > 0
+              ? 'Organizer action required'
+              : 'All reviews clear'}
           </span>
         </div>
 
         {/* Excluded */}
-        <div className="p-3 bg-card rounded-lg border border-border shadow-sm space-y-0.5">
+        <div className="p-3.5 bg-card rounded-xl border border-border/80 shadow-2xs space-y-1">
           <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
-            Excluded / Ineligible
+            Disqualified
           </span>
-          <span className="text-xl font-bold font-mono text-muted-foreground">
+          <span className="text-xl font-bold font-mono text-muted-foreground block">
             {summary?.excluded_count || 0}
           </span>
           <span className="text-[10px] text-muted-foreground block truncate">
-            Failed mandatory rules
+            {summary?.excluded_count && summary.excluded_count > 0
+              ? 'Did not meet criteria'
+              : 'Zero disqualified'}
           </span>
         </div>
 
         {/* Unresolved */}
-        <div className="p-3 bg-card rounded-lg border border-border shadow-sm space-y-0.5">
+        <div className="p-3.5 bg-card rounded-xl border border-border/80 shadow-2xs space-y-1">
           <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
-            Unresolved
+            Identity Conflicts
           </span>
-          <span className="text-xl font-bold font-mono text-muted-foreground">
+          <span className="text-xl font-bold font-mono text-muted-foreground block">
             {summary?.unresolved_count || 0}
           </span>
           <span className="text-[10px] text-muted-foreground block truncate">
-            Colliding/temp identity
+            {summary?.unresolved_count && summary.unresolved_count > 0
+              ? 'Profile resolution required'
+              : 'No identity conflicts'}
           </span>
         </div>
       </div>
