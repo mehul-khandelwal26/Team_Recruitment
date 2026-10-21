@@ -85,6 +85,23 @@ export const LoginPage: React.FC = () => {
   const [isDevExpanded, setIsDevExpanded] = useState(false);
 
   const googleBtnRef = useRef<HTMLDivElement>(null);
+  const rightPanelRef = useRef<HTMLElement>(null);
+
+  // Mouse tracking for interactive spotlight on the off-white panel (zero re-renders via CSS vars)
+  const handleMouseMove = (e: React.MouseEvent<HTMLElement>) => {
+    if (!rightPanelRef.current) return;
+    const rect = rightPanelRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    rightPanelRef.current.style.setProperty('--mouse-x', `${x}px`);
+    rightPanelRef.current.style.setProperty('--mouse-y', `${y}px`);
+    rightPanelRef.current.style.setProperty('--spotlight-opacity', '1');
+  };
+
+  const handleMouseLeave = () => {
+    if (!rightPanelRef.current) return;
+    rightPanelRef.current.style.setProperty('--spotlight-opacity', '0');
+  };
 
   // If already authenticated, redirect to destination
   useEffect(() => {
@@ -383,12 +400,43 @@ export const LoginPage: React.FC = () => {
 
       {/* =========================================================================
           RIGHT PANEL: Authentication Container (~45% width on desktop, 100% mobile)
+          Living interactive background: Dot matrix + Mouse spotlight + Ambient orbs
          ========================================================================= */}
       <main
-        className="flex-1 w-full lg:w-[45%] flex flex-col justify-center items-center bg-background px-4 py-8 sm:px-6 lg:px-8 h-full overflow-y-auto"
+        ref={rightPanelRef}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        className="relative flex-1 w-full lg:w-[45%] flex flex-col justify-center items-center bg-background px-4 py-8 sm:px-6 lg:px-8 h-full overflow-y-auto overflow-x-hidden"
       >
+        {/* Living Background Layer 1: Dot pattern grid */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-dot-pattern opacity-60"
+        />
+
+        {/* Living Background Layer 2: Interactive Mouse-following Spotlight */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 transition-opacity duration-300"
+          style={{
+            opacity: 'var(--spotlight-opacity, 0)',
+            background:
+              'radial-gradient(520px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(22, 70, 50, 0.075), transparent 75%)',
+          }}
+        />
+
+        {/* Living Background Layer 3: Slow floating ambient aura orbs */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-16 -right-16 w-80 h-80 rounded-full bg-emerald-200/35 blur-3xl animate-float-orb-1"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -bottom-20 -left-16 w-96 h-96 rounded-full bg-amber-200/25 blur-3xl animate-float-orb-2"
+        />
+
         {/* Mobile Header: Visible only on small/medium screens (< 1024px) */}
-        <div className="lg:hidden w-full max-w-[420px] text-center mb-6">
+        <div className="relative z-10 lg:hidden w-full max-w-[420px] text-center mb-6">
           <div className="inline-flex items-center justify-center gap-2 mb-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-xs">
               <ShieldCheck className="h-4 w-4" />
@@ -402,8 +450,8 @@ export const LoginPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Existing Functional Sign-in Card */}
-        <div className="w-full max-w-[420px] rounded-xl border border-border bg-card p-6 sm:p-8 shadow-xs">
+        {/* Existing Functional Sign-in Card with Glassmorphic Frosted Finish */}
+        <div className="relative z-10 w-full max-w-[420px] rounded-xl border border-border/80 bg-card/95 backdrop-blur-md p-6 sm:p-8 shadow-md">
           {/* Card Heading */}
           <div className="mb-6">
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
@@ -536,7 +584,7 @@ export const LoginPage: React.FC = () => {
         </div>
 
         {/* Global Footer */}
-        <footer className="mt-8 text-center">
+        <footer className="relative z-10 mt-8 text-center">
           <p className="text-xs text-muted-foreground/80">
             Team Recruitment Tool · Recruitment Platform
           </p>
