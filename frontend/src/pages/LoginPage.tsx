@@ -212,11 +212,11 @@ export const LoginPage: React.FC = () => {
         />
 
         {/* 1. Brand Row */}
-        <div className="relative z-10 flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-white shadow-xs border border-white/15 backdrop-blur-xs">
-            <ShieldCheck className="h-4.5 w-4.5 text-white" />
+        <div className="relative z-10 flex items-center gap-3">
+          <div className="flex h-10 w-10 xl:h-11 xl:w-11 items-center justify-center rounded-xl bg-white/10 text-white shadow-xs border border-white/20 backdrop-blur-xs">
+            <ShieldCheck className="h-5.5 w-5.5 xl:h-6 xl:w-6 text-white" />
           </div>
-          <span className="font-semibold text-xs tracking-widest uppercase text-white/90 font-mono">
+          <span className="font-bold text-sm xl:text-base tracking-wider uppercase text-white font-mono">
             TEAM RECRUITMENT
           </span>
         </div>
@@ -437,11 +437,11 @@ export const LoginPage: React.FC = () => {
 
         {/* Mobile Header: Visible only on small/medium screens (< 1024px) */}
         <div className="relative z-10 lg:hidden w-full max-w-[420px] text-center mb-6">
-          <div className="inline-flex items-center justify-center gap-2 mb-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-xs">
-              <ShieldCheck className="h-4 w-4" />
+          <div className="inline-flex items-center justify-center gap-2.5 mb-2">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-xs">
+              <ShieldCheck className="h-5.5 w-5.5" />
             </div>
-            <span className="font-semibold text-xs tracking-wider uppercase text-foreground/90 font-mono">
+            <span className="font-bold text-sm tracking-wider uppercase text-foreground font-mono">
               TEAM RECRUITMENT
             </span>
           </div>

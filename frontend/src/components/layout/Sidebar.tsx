@@ -5,12 +5,9 @@ import {
   PlayCircle,
   Trophy,
   SlidersHorizontal,
-  GraduationCap,
-  Sparkles,
-  Server,
+  ShieldCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
 import type { NavItem } from '@/types';
 
 export const navigationItems: NavItem[] = [
@@ -70,10 +67,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className
         )}
       >
-        {/* Brand / Header */}
+        {/* Brand / Header (Harmonized with Login Page: ShieldCheck) */}
         <div className="flex h-16 shrink-0 items-center gap-3 border-b border-sidebar-border px-5">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-xs">
-            <GraduationCap className="h-5 w-5" />
+            <ShieldCheck className="h-5 w-5" />
           </div>
           <div className="flex flex-col min-w-0">
             <span className="font-semibold text-sm tracking-tight text-foreground truncate">
@@ -137,23 +134,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
           })}
         </nav>
 
-        {/* Footer / System Context */}
-        <div className="shrink-0 border-t border-sidebar-border p-4 space-y-2 bg-sidebar">
+        {/* Clean Production Footer */}
+        <div className="shrink-0 border-t border-sidebar-border p-4 bg-sidebar">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5 font-medium">
-              <Server className="h-3.5 w-3.5 text-emerald-600" />
-              API Ready
+            <span className="font-medium text-[11px] text-muted-foreground/80">
+              Team Recruitment Tool
             </span>
-            <Badge variant="forest" className="text-[10px] py-0 px-1.5 font-mono">
-              FastAPI v0.1.0
-            </Badge>
-          </div>
-          <div className="rounded border border-border/60 bg-card/60 p-2 text-[11px] text-muted-foreground leading-normal">
-            <div className="flex items-center gap-1.5 font-medium text-foreground mb-0.5">
-              <Sparkles className="h-3 w-3 text-forest-700" />
-              Editorial Enterprise
-            </div>
-            Deterministic 3-state eligibility & weighted scoring shortlist engine.
+            <span className="font-mono text-[10px] text-muted-foreground/60">
+              v1.0.0
+            </span>
           </div>
         </div>
       </aside>
