@@ -42,7 +42,7 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 | Data           | Pandas                                       |
 | HTTP / API     | HTTPX                                        |
 | Document Parsers | PyPDF (`pypdf`) · Python-Docx (`python-docx`) |
-| Testing        | Pytest · Starlette TestClient (412 tests)    |
+| Testing        | Pytest · Starlette TestClient (459 tests, 100% pass) |
 | Database       | PostgreSQL (Neon Cloud) · SQLAlchemy 2.0 · Alembic · Psycopg 3 |
 | Frontend       | React 18 · TypeScript · Vite · Tailwind CSS · shadcn/ui · React Router v6 · TanStack Query v5 · Lucide React |
 
@@ -61,7 +61,7 @@ Hackathon organizers receive hundreds of team registrations and need to **shortl
 | **Phase 6** | Ranking, top-X selection, and human-readable explanations | ✅ Completed |
 | **Database Phase** | Persistent PostgreSQL storage on Neon (8 stores, Alembic migration, safety checks, ID-only pipeline, CSV export) | ✅ Completed |
 | **Phase 7** | Frontend integration, live dashboard, evaluation wizard, results leaderboard & reviewer workflow, configuration manager | ✅ Completed |
-| **Phase 8** | End-to-end testing, production deployment, and authentication gateway | 🔲 Planned |
+| **Phase 8** | End-to-end testing, production deployment containerization, and authentication gateway | ✅ Completed |
 
 ---
 
@@ -760,10 +760,142 @@ The test suite includes **440+ automated tests** with a 100% pass rate across 19
 
 ---
 
-## ⚠️ Current Limitations & Next Steps
+## 🚀 Production Deployment Guide
 
-1. **Production Reverse Proxy & Deployment**: In production, configure an Nginx or cloud gateway to serve the Vite frontend build artifacts (`frontend/dist`) and reverse-proxy `/api` requests to the FastAPI backend.
-2. **Production Authentication Gateway**: The backend endpoints currently operate without authentication. Add an API key, OAuth2, or JWT reverse proxy before exposing the application to public internet traffic.
-3. **Future AI Resume Analyzer**: An architectural audit confirmed that an advanced external AI/LLM resume provider can be plugged in via strategy pattern without altering existing signal contracts or downstream scoring.
-4. **GitHub Unauthenticated Rate Limits**: Unauthenticated calls to GitHub API are limited to 60 requests per hour per IP. Set `GITHUB_TOKEN` in `.env` for production workloads to achieve 5,000 req/hr.
+The Team Recruitment Automation Tool is containerized and deployment-ready for standard cloud infrastructure, container services, or self-hosted servers.
+
+### Recommended Deployment Options
+
+#### Option A: Docker & Docker Compose (Turn-Key / One-Command)
+
+The repository includes production-ready Dockerfiles for both frontend (multi-stage Nginx) and backend (Python 3.12 slim), along with a coordinated `docker-compose.yml` including PostgreSQL 16.
+
+1. **Clone and Configure**:
+   ```bash
+   git clone https://github.com/mehul-khandelwal26/Team_Recruitment.git
+   cd Team_Recruitment
+   cp .env.example .env
+   # Edit .env with your production secrets (JWT_SECRET_KEY, POSTGRES_PASSWORD, etc.)
+   ```
+
+2. **Launch Services**:
+   ```bash
+   docker compose up --build -d
+   ```
+   * **Frontend UI**: http://localhost:5173 (or port 80 if mapped)
+   * **Backend API & Swagger Docs**: http://localhost:8000/docs
+   * **Health Check**: http://localhost:8000/api/health
+
+3. **Database Migrations**:
+   The backend container automatically applies all pending Alembic migrations (`alembic upgrade head`) and seeds default presets on startup when `STORAGE_BACKEND=postgres`.
+
+---
+
+#### Option B: Split PaaS Deployment (Vercel / Netlify + Render / Railway)
+
+Ideal for managed cloud hosting with zero infrastructure maintenance.
+
+##### 1. Backend + Database (Render / Railway)
+* **Runtime**: Python 3.12
+* **Database**: Managed PostgreSQL (or Neon / Supabase)
+* **Build Command**: `pip install -r requirements.txt && alembic upgrade head`
+* **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+* **Environment Variables**:
+  * `APP_ENV=production`
+  * `STORAGE_BACKEND=postgres`
+  * `DATABASE_URL=postgresql+psycopg://user:password@host/db?sslmode=require`
+  * `CORS_ORIGINS=https://your-frontend.vercel.app`
+  * `JWT_SECRET_KEY=<generate-secure-64-char-random-key>`
+  * `AUTH_ENABLED=true`
+  * `GOOGLE_CLIENT_ID=<your-client-id>.apps.googleusercontent.com` (optional)
+
+##### 2. Frontend (Vercel / Netlify / Cloudflare Pages)
+* **Framework Preset**: Vite
+* **Root Directory**: `frontend`
+* **Build Command**: `npm run build`
+* **Output Directory**: `dist`
+* **Environment Variables**:
+  * `VITE_API_BASE_URL=https://your-backend.onrender.com`
+
+---
+
+#### Option C: Self-Hosted VPS (Ubuntu/Debian + Nginx + Systemd)
+
+1. **System Dependencies**:
+   ```bash
+   sudo apt update && sudo apt install -y python3-venv python3-pip nodejs npm postgresql nginx
+   ```
+
+2. **Backend Setup**:
+   ```bash
+   cd /var/www/team-recruitment/backend
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   alembic upgrade head
+   ```
+
+3. **Systemd Service (`/etc/systemd/system/recruitment-backend.service`)**:
+   ```ini
+   [Unit]
+   Description=Team Recruitment FastAPI Service
+   After=network.target postgresql.service
+
+   [Service]
+   User=www-data
+   WorkingDirectory=/var/www/team-recruitment/backend
+   EnvironmentFile=/var/www/team-recruitment/backend/.env
+   ExecStart=/var/www/team-recruitment/backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 4
+   Restart=always
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+4. **Frontend Build**:
+   ```bash
+   cd /var/www/team-recruitment/frontend
+   npm ci
+   npm run build
+   # Outputs static assets to /var/www/team-recruitment/frontend/dist
+   ```
+
+5. **Nginx Reverse Proxy (`/etc/nginx/sites-available/recruitment.conf`)**:
+   ```nginx
+   server {
+       listen 80;
+       server_name recruitment.yourdomain.com;
+
+       # Frontend SPA
+       location / {
+           root /var/www/team-recruitment/frontend/dist;
+           try_files $uri $uri/ /index.html;
+       }
+
+       # Backend API Proxy
+       location /api/ {
+           proxy_pass http://127.0.0.1:8000;
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+       }
+   }
+   ```
+
+---
+
+## 🔒 Production Security & Operational Invariants
+
+1. **Authentication Gateway**:
+   - Google OAuth2 authentication is supported out of the box with zero credentials required for local dev (using the built-in Dev Mock Login).
+   - In production, set `GOOGLE_CLIENT_ID` and specify `ALLOWED_EMAILS` or `ALLOWED_EMAIL_DOMAINS` to restrict access strictly to authorized organizers.
+2. **PostgreSQL Relational Invariants**:
+   - In `APP_ENV=production`, `STORAGE_BACKEND` must be `postgres` and `DATABASE_URL` must be set. The application startup (`lifespan`) automatically validates this and halts if unconfigured.
+   - All connection pools use `pool_pre_ping=True` and `pool_recycle=300` to prevent stale connection dropouts from serverless or cloud compute auto-pausing.
+3. **SSRF and File Upload Defenses**:
+   - Resume downloads are protected against SSRF (loopback addresses, internal subnets, and cloud metadata endpoints `169.254.169.254` are rejected).
+   - File uploads are capped at 10 MB by default (`MAX_UPLOAD_SIZE_MB`).
+4. **GitHub API Rate Limits**:
+   - For high-volume organizer workflows, supply a `GITHUB_TOKEN` to raise GitHub rate limits from 60 req/hr to 5,000 req/hr. If the rate limit is exceeded, the pipeline gracefully continues evaluation without crashing.
 

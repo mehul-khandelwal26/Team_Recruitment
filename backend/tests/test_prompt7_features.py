@@ -220,6 +220,7 @@ def test_summary_endpoints_contract_fields_and_empty_list():
             "members_count",
             "uploaded_at",
             "warnings_count",
+            "user_id",
         }
         assert set(ds.keys()) == expected_ds_keys
         assert "teams" not in ds
@@ -240,6 +241,7 @@ def test_summary_endpoints_contract_fields_and_empty_list():
             "total_members",
             "warnings_count",
             "errors_count",
+            "user_id",
         }
         assert set(sig.keys()) == expected_sig_keys
         assert "team_results" not in sig
