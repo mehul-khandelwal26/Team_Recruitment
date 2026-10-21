@@ -74,3 +74,51 @@
     background: hsl(var(--muted-foreground) / 0.4);
   }
 }
+
+@keyframes fadeInPage {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeInPage 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Ambient Floating Keyframes for the living background */
+@keyframes floatOrb1 {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  50% {
+    transform: translate(32px, -24px) scale(1.06);
+  }
+}
+
+@keyframes floatOrb2 {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  50% {
+    transform: translate(-28px, 26px) scale(0.96);
+  }
+}
+
+.animate-float-orb-1 {
+  animation: floatOrb1 15s ease-in-out infinite;
+}
+
+.animate-float-orb-2 {
+  animation: floatOrb2 19s ease-in-out infinite;
+}
+
+/* Dot pattern background */
+.bg-dot-pattern {
+  background-image: radial-gradient(rgba(24, 10, 12, 0.08) 1.2px, transparent 1.2px);
+  background-size: 20px 20px;
+}

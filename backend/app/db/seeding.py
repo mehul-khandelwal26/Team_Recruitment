@@ -60,11 +60,12 @@ def seed_database_presets(engine: Optional[Engine] = None) -> None:
         # A. Rule configuration presets
         rule_presets = get_default_presets()
         for preset in rule_presets:
-            derived = derive_rule_configuration_columns(preset)
+            derived = derive_rule_configuration_columns(preset, user_id="system")
             stmt = pg_insert(RuleConfigurationModel).values(**derived)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["config_id", "version"],
                 set_={
+                    "user_id": stmt.excluded.user_id,
                     "name": stmt.excluded.name,
                     "description": stmt.excluded.description,
                     "updated_at": stmt.excluded.updated_at,
@@ -76,11 +77,12 @@ def seed_database_presets(engine: Optional[Engine] = None) -> None:
         # B. Scoring configuration presets
         scoring_presets = get_default_scoring_presets()
         for preset in scoring_presets:
-            derived = derive_scoring_configuration_columns(preset)
+            derived = derive_scoring_configuration_columns(preset, user_id="system")
             stmt = pg_insert(ScoringConfigurationModel).values(**derived)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["config_id", "version"],
                 set_={
+                    "user_id": stmt.excluded.user_id,
                     "name": stmt.excluded.name,
                     "description": stmt.excluded.description,
                     "scale_max": stmt.excluded.scale_max,

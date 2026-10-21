@@ -61,7 +61,8 @@ export function useRuleConfigs() {
   return useQuery<RuleConfiguration[], Error>({
     queryKey: WIZARD_QUERY_KEYS.ruleConfigs(),
     queryFn: () => apiService.getRuleConfigs(),
-    staleTime: 1000 * 60,
+    staleTime: 1000 * 30,
+    refetchOnMount: 'always',
   });
 }
 
@@ -72,7 +73,8 @@ export function useScoringConfigs() {
   return useQuery<ScoringConfiguration[], Error>({
     queryKey: WIZARD_QUERY_KEYS.scoringConfigs(),
     queryFn: () => apiService.getScoringConfigs(),
-    staleTime: 1000 * 60,
+    staleTime: 1000 * 30,
+    refetchOnMount: 'always',
   });
 }
 

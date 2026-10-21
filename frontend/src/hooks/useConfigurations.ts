@@ -34,6 +34,7 @@ export function useRuleConfigs() {
     queryKey: CONFIG_QUERY_KEYS.ruleConfigs(),
     queryFn: () => apiService.getRuleConfigs(),
     staleTime: 1000 * 30,
+    refetchOnMount: 'always',
   });
 }
 
@@ -124,6 +125,7 @@ export function useScoringConfigs() {
     queryKey: CONFIG_QUERY_KEYS.scoringConfigs(),
     queryFn: () => apiService.getScoringConfigs(),
     staleTime: 1000 * 30,
+    refetchOnMount: 'always',
   });
 }
 

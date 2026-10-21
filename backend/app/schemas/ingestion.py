@@ -282,6 +282,7 @@ class DatasetRecord(BaseModel):
     """Persisted registration dataset record with upload metadata and parsed payload."""
 
     dataset_id: str = Field(..., min_length=1, description="Unique dataset identifier")
+    user_id: Optional[str] = Field(None, description="Owning user identifier for multi-tenant isolation")
     filename: str = Field(..., description="Original upload filename")
     file_type: str = Field(..., description="File format type ('csv' or 'json')")
     teams_count: int = Field(0, description="Total number of teams in dataset")
@@ -311,6 +312,7 @@ class DatasetSummary(BaseModel):
     """Lightweight summary of an uploaded dataset for dashboard and history views."""
 
     dataset_id: str = Field(..., description="Unique dataset identifier.")
+    user_id: Optional[str] = Field(default=None, description="Owning user identifier.")
     filename: str = Field(..., description="Original name of the uploaded file.")
     file_type: str = Field(..., description="File format ('csv' or 'json').")
     teams_count: int = Field(default=0, description="Total number of parsed teams.")

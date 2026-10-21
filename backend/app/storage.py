@@ -215,14 +215,20 @@ class DelegatingRuleConfigStore:
     def get(self, config_id: str, version: Optional[int] = None) -> Optional[RuleConfiguration]:
         return self._store.get(config_id, version=version)
 
-    def list_latest(self) -> list[RuleConfiguration]:
-        return self._store.list_latest()
+    def list_latest(self, user_id: Optional[str] = None) -> list[RuleConfiguration]:
+        try:
+            return self._store.list_latest(user_id=user_id)
+        except TypeError:
+            return self._store.list_latest()
 
     def list_versions(self, config_id: str) -> list[int]:
         return self._store.list_versions(config_id)
 
-    def save(self, config: RuleConfiguration) -> RuleConfiguration:
-        return self._store.save(config)
+    def save(self, config: RuleConfiguration, user_id: Optional[str] = None) -> RuleConfiguration:
+        try:
+            return self._store.save(config, user_id=user_id)
+        except TypeError:
+            return self._store.save(config)
 
     def update(
         self, config_id: str, update_payload: RuleConfigurationUpdate
@@ -254,14 +260,22 @@ class DelegatingScoringConfigStore:
     def get(self, config_id: str, version: Optional[int] = None) -> Optional[ScoringConfiguration]:
         return self._store.get(config_id, version=version)
 
-    def list_latest(self) -> list[ScoringConfiguration]:
-        return self._store.list_latest()
+    def list_latest(self, user_id: Optional[str] = None) -> list[ScoringConfiguration]:
+        try:
+            return self._store.list_latest(user_id=user_id)
+        except TypeError:
+            return self._store.list_latest()
 
     def list_versions(self, config_id: str) -> list[int]:
         return self._store.list_versions(config_id)
 
-    def save(self, config: ScoringConfiguration) -> ScoringConfiguration:
-        return self._store.save(config)
+    def save(
+        self, config: ScoringConfiguration, user_id: Optional[str] = None
+    ) -> ScoringConfiguration:
+        try:
+            return self._store.save(config, user_id=user_id)
+        except TypeError:
+            return self._store.save(config)
 
     def update(
         self, config_id: str, update_payload: ScoringConfigurationUpdate
@@ -292,14 +306,22 @@ class DelegatingRunStore:
         f = self._factory or default_storage_factory
         return f.get_eligibility_run_store()
 
-    def save(self, record: EligibilityRunResponse) -> None:
-        self._store.save(record)
+    def save(self, record: EligibilityRunResponse, user_id: Optional[str] = None) -> None:
+        try:
+            self._store.save(record, user_id=user_id)
+        except TypeError:
+            self._store.save(record)
 
     def get(self, run_id: str) -> Optional[EligibilityRunResponse]:
         return self._store.get(run_id)
 
-    def list_runs(self, config_id: Optional[str] = None) -> list[EligibilityRunResponse]:
-        return self._store.list_runs(config_id=config_id)
+    def list_runs(
+        self, config_id: Optional[str] = None, user_id: Optional[str] = None
+    ) -> list[EligibilityRunResponse]:
+        try:
+            return self._store.list_runs(config_id=config_id, user_id=user_id)
+        except TypeError:
+            return self._store.list_runs(config_id=config_id)
 
     def delete(self, run_id: str) -> bool:
         if hasattr(self._store, "delete"):
@@ -345,14 +367,22 @@ class DelegatingScoringRunStore:
         f = self._factory or default_storage_factory
         return f.get_scoring_run_store()
 
-    def save(self, record: ScoringRunResponse) -> None:
-        self._store.save(record)
+    def save(self, record: ScoringRunResponse, user_id: Optional[str] = None) -> None:
+        try:
+            self._store.save(record, user_id=user_id)
+        except TypeError:
+            self._store.save(record)
 
     def get(self, run_id: str) -> Optional[ScoringRunResponse]:
         return self._store.get(run_id)
 
-    def list_runs(self, config_id: Optional[str] = None) -> list[ScoringRunResponse]:
-        return self._store.list_runs(config_id=config_id)
+    def list_runs(
+        self, config_id: Optional[str] = None, user_id: Optional[str] = None
+    ) -> list[ScoringRunResponse]:
+        try:
+            return self._store.list_runs(config_id=config_id, user_id=user_id)
+        except TypeError:
+            return self._store.list_runs(config_id=config_id)
 
     def delete(self, run_id: str) -> bool:
         if hasattr(self._store, "delete"):
@@ -374,17 +404,28 @@ class DelegatingRankingRunStore:
         f = self._factory or default_storage_factory
         return f.get_ranking_run_store()
 
-    def save(self, record: RankingRunResponse) -> None:
-        self._store.save(record)
+    def save(self, record: RankingRunResponse, user_id: Optional[str] = None) -> None:
+        try:
+            self._store.save(record, user_id=user_id)
+        except TypeError:
+            self._store.save(record)
 
     def get(self, run_id: str) -> Optional[RankingRunResponse]:
         return self._store.get(run_id)
 
-    def list_runs(self) -> list[RankingRunResponse]:
-        return self._store.list_runs()
+    def list_runs(self, user_id: Optional[str] = None) -> list[RankingRunResponse]:
+        try:
+            return self._store.list_runs(user_id=user_id)
+        except TypeError:
+            return self._store.list_runs()
 
-    def list_summaries(self, limit: int = 50) -> list[RankingRunSummaryItem]:
-        return self._store.list_summaries(limit=limit)
+    def list_summaries(
+        self, limit: int = 50, user_id: Optional[str] = None
+    ) -> list[RankingRunSummaryItem]:
+        try:
+            return self._store.list_summaries(limit=limit, user_id=user_id)
+        except TypeError:
+            return self._store.list_summaries(limit=limit)
 
     def delete(self, run_id: str) -> bool:
         if hasattr(self._store, "delete"):
@@ -406,17 +447,28 @@ class DelegatingDatasetStore:
         f = self._factory or default_storage_factory
         return f.get_dataset_store()
 
-    def save(self, record: DatasetRecord) -> DatasetRecord:
-        return self._store.save(record)
+    def save(self, record: DatasetRecord, user_id: Optional[str] = None) -> DatasetRecord:
+        try:
+            return self._store.save(record, user_id=user_id)
+        except TypeError:
+            return self._store.save(record)
 
     def get(self, dataset_id: str) -> Optional[DatasetRecord]:
         return self._store.get(dataset_id)
 
-    def list_datasets(self) -> list[DatasetRecord]:
-        return self._store.list_datasets()
+    def list_datasets(self, user_id: Optional[str] = None) -> list[DatasetRecord]:
+        try:
+            return self._store.list_datasets(user_id=user_id)
+        except TypeError:
+            return self._store.list_datasets()
 
-    def list_summaries(self, limit: int = 50) -> list[DatasetSummary]:
-        return self._store.list_summaries(limit=limit)
+    def list_summaries(
+        self, limit: int = 50, user_id: Optional[str] = None
+    ) -> list[DatasetSummary]:
+        try:
+            return self._store.list_summaries(limit=limit, user_id=user_id)
+        except TypeError:
+            return self._store.list_summaries(limit=limit)
 
     def get_dependent_counts(self, dataset_id: str) -> dict[str, int]:
         if hasattr(self._store, "get_dependent_counts"):
@@ -446,19 +498,33 @@ class DelegatingExtractionRunStore:
         f = self._factory or default_storage_factory
         return f.get_extraction_run_store()
 
-    def save(self, record: ExtractionRunResponse) -> None:
-        self._store.save(record)
+    def save(self, record: ExtractionRunResponse, user_id: Optional[str] = None) -> None:
+        try:
+            self._store.save(record, user_id=user_id)
+        except TypeError:
+            self._store.save(record)
 
     def get(self, run_id: str) -> Optional[ExtractionRunResponse]:
         return self._store.get(run_id)
 
-    def list_runs(self, dataset_id: Optional[str] = None) -> list[ExtractionRunResponse]:
-        return self._store.list_runs(dataset_id=dataset_id)
+    def list_runs(
+        self, dataset_id: Optional[str] = None, user_id: Optional[str] = None
+    ) -> list[ExtractionRunResponse]:
+        try:
+            return self._store.list_runs(dataset_id=dataset_id, user_id=user_id)
+        except TypeError:
+            return self._store.list_runs(dataset_id=dataset_id)
 
     def list_summaries(
-        self, limit: int = 50, dataset_id: Optional[str] = None
+        self,
+        limit: int = 50,
+        dataset_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> list[ExtractionRunSummary]:
-        return self._store.list_summaries(limit=limit, dataset_id=dataset_id)
+        try:
+            return self._store.list_summaries(limit=limit, dataset_id=dataset_id, user_id=user_id)
+        except TypeError:
+            return self._store.list_summaries(limit=limit, dataset_id=dataset_id)
 
     def get_dependent_counts(self, run_id: str) -> dict[str, int]:
         if hasattr(self._store, "get_dependent_counts"):

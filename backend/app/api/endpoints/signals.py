@@ -16,11 +16,14 @@ import json
 from typing import Any, Optional, Union
 import uuid
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from starlette.concurrency import run_in_threadpool
 
 from app.api.endpoints.ingestion import _read_upload_file_bounded, _resolve_parser
+from app.auth.dependencies import get_current_user
+from app.config import AUTH_ENABLED
 from app.ingestion.store import default_dataset_store
+from app.schemas.auth import UserSchema
 from app.schemas.ingestion import DatasetRecord, MemberSchema, TeamSchema
 from app.signals.flatten import flatten_extraction_signals
 from app.signals.registry import default_signal_registry
@@ -67,7 +70,10 @@ async def list_individual_signals() -> list[SignalDefinition]:
 
 
 @router.post("/extract", response_model=ExtractionRunResponse)
-async def extract_signals(request: ExtractionRunRequest) -> ExtractionRunResponse:
+async def extract_signals(
+    request: ExtractionRunRequest,
+    current_user: UserSchema = Depends(get_current_user),
+) -> ExtractionRunResponse:
     """Execute signal extraction for teams and their members.
 
     Only runs the analyzers and signals explicitly requested in ``selected_signals``.
@@ -77,7 +83,9 @@ async def extract_signals(request: ExtractionRunRequest) -> ExtractionRunRespons
     teams_to_extract = request.teams
     if teams_to_extract is None and request.dataset_id:
         ds = default_dataset_store.get(request.dataset_id)
-        if ds is None:
+        if ds is None or (
+            AUTH_ENABLED and ds.user_id and ds.user_id != current_user.user_id
+        ):
             raise HTTPException(
                 status_code=404,
                 detail=f"Dataset '{request.dataset_id}' not found.",
@@ -97,8 +105,10 @@ async def extract_signals(request: ExtractionRunRequest) -> ExtractionRunRespons
     )
     if request.dataset_id:
         response.dataset_id = request.dataset_id
+    user_id = current_user.user_id if AUTH_ENABLED else None
+    response.user_id = user_id
 
-    default_extraction_run_store.save(response)
+    default_extraction_run_store.save(response, user_id=user_id)
     return response
 
 
@@ -129,6 +139,7 @@ async def extract_signals_from_file(
         None,
         description="Optional JSON-encoded dictionary of analyzer configuration parameters",
     ),
+    current_user: UserSchema = Depends(get_current_user),
 ) -> ExtractionRunResponse:
     """Upload a registration file and run signal extraction in a single request.
 
@@ -203,9 +214,11 @@ async def extract_signals_from_file(
     if content_type == "application/json" or (file.filename and file.filename.lower().endswith(".json")):
         file_type = "json"
 
+    user_id = current_user.user_id if AUTH_ENABLED else None
     now_dt = datetime.datetime.now(datetime.timezone.utc)
     ds_record = DatasetRecord(
         dataset_id=ds_id,
+        user_id=user_id,
         filename=file.filename or f"uploaded.{file_type}",
         file_type=file_type,
         teams_count=upload_result.teams_count,
@@ -217,7 +230,7 @@ async def extract_signals_from_file(
         created_at=now_dt.isoformat(),
         payload=upload_result.model_dump(),
     )
-    default_dataset_store.save(ds_record)
+    default_dataset_store.save(ds_record, user_id=user_id)
 
     run_response = await run_in_threadpool(
         default_signal_registry.execute_extraction,
@@ -226,7 +239,8 @@ async def extract_signals_from_file(
         config=config_dict,
     )
     run_response.dataset_id = ds_id
-    default_extraction_run_store.save(run_response)
+    run_response.user_id = user_id
+    default_extraction_run_store.save(run_response, user_id=user_id)
     return run_response
 
 
@@ -244,6 +258,7 @@ async def extract_signals_from_resume_file(
         None,
         description="Optional JSON configuration dictionary",
     ),
+    current_user: UserSchema = Depends(get_current_user),
 ) -> ExtractionRunResponse:
     """Extract signals directly from an uploaded PDF or DOCX resume document.
 
@@ -313,15 +328,22 @@ async def extract_signals_from_resume_file(
         selected_signals=active_signals,
         config=config_dict,
     )
-    default_extraction_run_store.save(run_response)
+    user_id = current_user.user_id if AUTH_ENABLED else None
+    run_response.user_id = user_id
+    default_extraction_run_store.save(run_response, user_id=user_id)
     return run_response
 
 
 @router.get("/runs/{run_id}", response_model=ExtractionRunResponse)
-async def get_extraction_run(run_id: str) -> ExtractionRunResponse:
+async def get_extraction_run(
+    run_id: str,
+    current_user: UserSchema = Depends(get_current_user),
+) -> ExtractionRunResponse:
     """Retrieve a recorded signal extraction run with all team and member results."""
     record = default_extraction_run_store.get(run_id)
-    if record is None:
+    if record is None or (
+        AUTH_ENABLED and record.user_id and record.user_id != current_user.user_id
+    ):
         raise HTTPException(
             status_code=404,
             detail=f"Extraction run '{run_id}' not found.",
@@ -330,10 +352,15 @@ async def get_extraction_run(run_id: str) -> ExtractionRunResponse:
 
 
 @router.get("/runs/{run_id}/dependencies")
-async def get_extraction_run_dependencies(run_id: str) -> dict[str, Any]:
+async def get_extraction_run_dependencies(
+    run_id: str,
+    current_user: UserSchema = Depends(get_current_user),
+) -> dict[str, Any]:
     """Retrieve counts of downstream evaluation runs dependent on this extraction run."""
     record = default_extraction_run_store.get(run_id)
-    if record is None:
+    if record is None or (
+        AUTH_ENABLED and record.user_id and record.user_id != current_user.user_id
+    ):
         raise HTTPException(
             status_code=404,
             detail=f"Extraction run '{run_id}' not found.",
@@ -351,10 +378,13 @@ async def get_extraction_run_dependencies(run_id: str) -> dict[str, Any]:
 async def delete_extraction_run(
     run_id: str,
     cascade: bool = Query(default=False, description="Cascade delete all dependent scoring and ranking runs"),
+    current_user: UserSchema = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Permanently delete an extraction run and optionally cascade delete dependent runs."""
     record = default_extraction_run_store.get(run_id)
-    if record is None:
+    if record is None or (
+        AUTH_ENABLED and record.user_id and record.user_id != current_user.user_id
+    ):
         raise HTTPException(
             status_code=404,
             detail=f"Extraction run '{run_id}' not found.",
@@ -400,11 +430,13 @@ async def list_extraction_runs(
     dataset_id: Optional[str] = Query(default=None, description="Optional dataset ID filter"),
     summary: bool = Query(default=False, description="Return lightweight summary objects without team results"),
     limit: int = Query(default=50, ge=1, le=200, description="Maximum number of items to return (1-200)"),
+    current_user: UserSchema = Depends(get_current_user),
 ) -> Union[list[ExtractionRunResponse], list[ExtractionRunSummary]]:
     """List recorded extraction runs, optionally filtered by dataset_id."""
+    user_id = current_user.user_id if AUTH_ENABLED else None
     if summary:
-        return default_extraction_run_store.list_summaries(limit=limit, dataset_id=dataset_id)
-    return default_extraction_run_store.list_runs(dataset_id=dataset_id)
+        return default_extraction_run_store.list_summaries(limit=limit, dataset_id=dataset_id, user_id=user_id)
+    return default_extraction_run_store.list_runs(dataset_id=dataset_id, user_id=user_id)
 
 
 

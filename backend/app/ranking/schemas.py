@@ -145,6 +145,7 @@ class RankingRunResponse(BaseModel):
     """Standard response model for a completed Top-X ranking and selection run."""
 
     run_id: str = Field(..., description="Unique ranking run identifier.")
+    user_id: Optional[str] = Field(None, description="Owning user identifier for multi-tenant isolation.")
     scoring_run_id: Optional[str] = Field(default=None, description="Source scoring run ID if linked.")
     eligibility_run_id: Optional[str] = Field(default=None, description="Source eligibility run ID if linked.")
     evaluated_at: str = Field(..., description="ISO 8601 execution timestamp.")
@@ -207,6 +208,7 @@ class RankingRunSummaryItem(BaseModel):
     """Lightweight summary of a Top-X ranking run for dashboard and history views."""
 
     run_id: str = Field(..., description="Unique ranking run identifier.")
+    user_id: Optional[str] = Field(default=None, description="Owning user identifier.")
     evaluated_at: str = Field(..., description="ISO 8601 evaluation timestamp.")
     dataset_id: Optional[str] = Field(default=None, description="Source dataset ID if linked.")
     extraction_run_id: Optional[str] = Field(default=None, description="Source extraction run ID if linked.")
