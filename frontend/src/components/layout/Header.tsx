@@ -28,6 +28,10 @@ const PAGE_META: Record<string, { title: string; subtitle: string }> = {
     title: 'Rules & Scoring Configurations',
     subtitle: 'Manage versioned eligibility rule sets and multi-criteria scoring weights',
   },
+  '/guide': {
+    title: 'Organizer Guide & Knowledge Base',
+    subtitle: 'Interactive pipeline walkthrough, scoring rubrics, and frequently asked questions',
+  },
 };
 
 export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {

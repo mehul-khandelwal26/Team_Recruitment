@@ -6,6 +6,7 @@ import {
   Trophy,
   SlidersHorizontal,
   ShieldCheck,
+  BookOpen,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { NavItem } from '@/types';
@@ -34,6 +35,12 @@ export const navigationItems: NavItem[] = [
     href: '/configurations',
     icon: SlidersHorizontal,
     description: 'Eligibility rules & scoring presets',
+  },
+  {
+    title: 'Guide & FAQ',
+    href: '/guide',
+    icon: BookOpen,
+    description: 'Pipeline guide, rubrics & FAQs',
   },
 ];
 
