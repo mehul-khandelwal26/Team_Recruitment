@@ -287,7 +287,7 @@ export const LeaderboardTable: React.FC<LeaderboardTableProps> = ({
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/30 text-xs">
-              <TableHead className="w-16 text-center">Rank</TableHead>
+              <TableHead className="w-20 text-center">Rank</TableHead>
               <TableHead>Team Name & ID</TableHead>
               <TableHead className="text-right w-28">Final Score</TableHead>
               <TableHead className="w-32 text-center">Eligibility</TableHead>
@@ -305,56 +305,52 @@ export const LeaderboardTable: React.FC<LeaderboardTableProps> = ({
                 </TableCell>
               </TableRow>
             ) : (
-              filteredAndSortedRows.map((row) => {
+              filteredAndSortedRows.map((row, index) => {
                 const isSelected = row.selection_status === 'SELECTED';
                 const isReview = row.selection_status === 'NEEDS_REVIEW';
                 const isExcluded = row.selection_status === 'EXCLUDED' || row.selection_status === 'UNRESOLVED';
+                const displayRank = row.rank !== null ? row.rank : index + 1;
 
                 return (
                   <TableRow
                     key={row.team_id}
                     onClick={() => onInspectTeam(row)}
                     className={cn(
-                      'cursor-pointer transition-colors text-xs',
+                      'cursor-pointer transition-colors text-xs border-l-4',
                       isSelected
-                        ? 'bg-forest-50/40 hover:bg-forest-50/70'
+                        ? 'bg-forest-50/70 hover:bg-forest-100/70 border-l-forest-600'
                         : isReview
-                          ? 'bg-amber-50/30 hover:bg-amber-50/50'
+                          ? 'bg-amber-50/60 hover:bg-amber-100/60 border-l-amber-500'
                           : isExcluded
-                            ? 'bg-muted/10 hover:bg-muted/20 opacity-80'
-                            : 'hover:bg-muted/30'
+                            ? 'bg-red-50/45 hover:bg-red-100/55 border-l-red-500'
+                            : 'hover:bg-muted/40 border-l-slate-300'
                     )}
                   >
                     {/* Rank */}
                     <TableCell className="text-center font-mono">
-                      {row.rank !== null ? (
-                        row.rank === 1 ? (
-                          <span className="inline-flex h-6.5 w-6.5 items-center justify-center rounded-full bg-amber-100 text-amber-950 border border-amber-300 font-bold text-xs shadow-2xs" title="Rank #1">
-                            1
-                          </span>
-                        ) : row.rank === 2 ? (
-                          <span className="inline-flex h-6.5 w-6.5 items-center justify-center rounded-full bg-slate-200 text-slate-900 border border-slate-300 font-bold text-xs shadow-2xs" title="Rank #2">
-                            2
-                          </span>
-                        ) : row.rank === 3 ? (
-                          <span className="inline-flex h-6.5 w-6.5 items-center justify-center rounded-full bg-amber-50 text-amber-900 border border-amber-200 font-bold text-xs shadow-2xs" title="Rank #3">
-                            3
-                          </span>
-                        ) : (
-                          <span
-                            className={cn(
-                              'inline-flex h-6 w-6 items-center justify-center rounded-full font-semibold text-xs',
-                              isSelected
-                                ? 'bg-forest-800 text-white shadow-2xs'
-                                : 'bg-muted text-muted-foreground'
-                            )}
-                          >
-                            {row.rank}
-                          </span>
-                        )
-                      ) : (
-                        <span className="text-muted-foreground font-mono">—</span>
-                      )}
+                      <span
+                        className={cn(
+                          'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs shadow-2xs mx-auto',
+                          isSelected
+                            ? 'bg-forest-800 text-white font-bold'
+                            : isReview
+                              ? 'bg-amber-500 text-white font-bold'
+                              : isExcluded
+                                ? 'bg-red-100 text-red-900 border border-red-300 font-semibold'
+                                : 'bg-muted text-muted-foreground font-semibold border border-border'
+                        )}
+                        title={
+                          isSelected
+                            ? `Rank #${displayRank} (Shortlisted)`
+                            : isReview
+                              ? `Position #${displayRank} (Needs Manual Review)`
+                              : isExcluded
+                                ? `Cohort Position #${displayRank} (Disqualified)`
+                                : `Rank #${displayRank} (Below Cutoff)`
+                        }
+                      >
+                        {displayRank}
+                      </span>
                     </TableCell>
 
                     {/* Team Name & ID */}
