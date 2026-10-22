@@ -475,7 +475,10 @@ class PostgresEligibilityRunStore(BasePostgresStore):
             row = s.execute(stmt).scalars().first()
             if row is None:
                 return None
-            return EligibilityRunResponse.model_validate(row.payload)
+            res = EligibilityRunResponse.model_validate(row.payload)
+            if row.user_id:
+                res.user_id = row.user_id
+            return res
 
     def list_runs(
         self, config_id: Optional[str] = None, user_id: Optional[str] = None
@@ -490,7 +493,13 @@ class PostgresEligibilityRunStore(BasePostgresStore):
                 stmt = stmt.where(EligibilityRunModel.user_id == user_id)
             stmt = stmt.order_by(EligibilityRunModel.evaluated_at.desc())
             rows = s.execute(stmt).scalars().all()
-            return [EligibilityRunResponse.model_validate(r.payload) for r in rows]
+            res_list = []
+            for r in rows:
+                item = EligibilityRunResponse.model_validate(r.payload)
+                if r.user_id:
+                    item.user_id = r.user_id
+                res_list.append(item)
+            return res_list
 
     def delete(self, run_id: str) -> bool:
         """Delete eligibility run by run_id."""
@@ -596,7 +605,10 @@ class PostgresScoringRunStore(BasePostgresStore):
             row = s.execute(stmt).scalars().first()
             if row is None:
                 return None
-            return ScoringRunResponse.model_validate(row.payload)
+            res = ScoringRunResponse.model_validate(row.payload)
+            if row.user_id:
+                res.user_id = row.user_id
+            return res
 
     def list_runs(
         self, config_id: Optional[str] = None, user_id: Optional[str] = None
@@ -611,7 +623,13 @@ class PostgresScoringRunStore(BasePostgresStore):
                 stmt = stmt.where(ScoringRunModel.user_id == user_id)
             stmt = stmt.order_by(ScoringRunModel.evaluated_at.desc())
             rows = s.execute(stmt).scalars().all()
-            return [ScoringRunResponse.model_validate(r.payload) for r in rows]
+            res_list = []
+            for r in rows:
+                item = ScoringRunResponse.model_validate(r.payload)
+                if r.user_id:
+                    item.user_id = r.user_id
+                res_list.append(item)
+            return res_list
 
     def delete(self, run_id: str) -> bool:
         """Delete scoring run by run_id."""
@@ -655,7 +673,10 @@ class PostgresRankingRunStore(BasePostgresStore):
             row = s.execute(stmt).scalars().first()
             if row is None:
                 return None
-            return RankingRunResponse.model_validate(row.payload)
+            res = RankingRunResponse.model_validate(row.payload)
+            if row.user_id:
+                res.user_id = row.user_id
+            return res
 
     def list_runs(self, user_id: Optional[str] = None) -> list[RankingRunResponse]:
         from app.ranking.schemas import RankingRunResponse
@@ -666,7 +687,13 @@ class PostgresRankingRunStore(BasePostgresStore):
                 stmt = stmt.where(RankingRunModel.user_id == user_id)
             stmt = stmt.order_by(RankingRunModel.evaluated_at.desc())
             rows = s.execute(stmt).scalars().all()
-            return [RankingRunResponse.model_validate(r.payload) for r in rows]
+            res_list = []
+            for r in rows:
+                item = RankingRunResponse.model_validate(r.payload)
+                if r.user_id:
+                    item.user_id = r.user_id
+                res_list.append(item)
+            return res_list
 
     def list_summaries(self, limit: int = 50, user_id: Optional[str] = None) -> list[RankingRunSummaryItem]:
         from app.ranking.schemas import RankingRunSummaryItem
@@ -1038,7 +1065,10 @@ class PostgresExtractionRunStore(BasePostgresStore):
             row = s.execute(stmt).scalars().first()
             if row is None:
                 return None
-            return ExtractionRunResponse.model_validate(row.payload)
+            res = ExtractionRunResponse.model_validate(row.payload)
+            if row.user_id:
+                res.user_id = row.user_id
+            return res
 
     def list_runs(
         self, dataset_id: Optional[str] = None, user_id: Optional[str] = None
@@ -1053,7 +1083,13 @@ class PostgresExtractionRunStore(BasePostgresStore):
                 stmt = stmt.where(ExtractionRunModel.dataset_id == dataset_id)
             stmt = stmt.order_by(ExtractionRunModel.created_at.desc())
             rows = s.execute(stmt).scalars().all()
-            return [ExtractionRunResponse.model_validate(r.payload) for r in rows]
+            res_list = []
+            for r in rows:
+                item = ExtractionRunResponse.model_validate(r.payload)
+                if r.user_id:
+                    item.user_id = r.user_id
+                res_list.append(item)
+            return res_list
 
     def list_summaries(
         self, limit: int = 50, dataset_id: Optional[str] = None, user_id: Optional[str] = None

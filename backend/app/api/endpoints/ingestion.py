@@ -174,7 +174,7 @@ async def get_dataset(
     """Retrieve an uploaded dataset snapshot by dataset_id."""
     record = default_dataset_store.get(dataset_id)
     if record is None or (
-        AUTH_ENABLED and record.user_id and record.user_id != current_user.user_id
+        AUTH_ENABLED and getattr(record, "user_id", None) != current_user.user_id
     ):
         raise HTTPException(
             status_code=404,
@@ -191,7 +191,7 @@ async def get_dataset_dependencies(
     """Retrieve counts of downstream evaluation runs dependent on this dataset."""
     record = default_dataset_store.get(dataset_id)
     if record is None or (
-        AUTH_ENABLED and record.user_id and record.user_id != current_user.user_id
+        AUTH_ENABLED and getattr(record, "user_id", None) != current_user.user_id
     ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -215,7 +215,7 @@ async def delete_dataset(
     """Permanently delete an uploaded dataset and optionally cascade delete dependent runs."""
     record = default_dataset_store.get(dataset_id)
     if record is None or (
-        AUTH_ENABLED and record.user_id and record.user_id != current_user.user_id
+        AUTH_ENABLED and getattr(record, "user_id", None) != current_user.user_id
     ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

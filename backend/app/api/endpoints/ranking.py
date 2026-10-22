@@ -41,7 +41,7 @@ def evaluate_ranking_endpoint(
     if request.scoring_run_id:
         scoring_run = default_scoring_run_store.get(request.scoring_run_id)
         if scoring_run is None or (
-            AUTH_ENABLED and scoring_run.user_id and scoring_run.user_id != current_user.user_id
+            AUTH_ENABLED and getattr(scoring_run, "user_id", None) != current_user.user_id
         ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -62,7 +62,7 @@ def evaluate_ranking_endpoint(
     if request.eligibility_run_id:
         effective_elig_run = get_effective_run(request.eligibility_run_id)
         if effective_elig_run is None or (
-            AUTH_ENABLED and effective_elig_run.user_id and effective_elig_run.user_id != current_user.user_id
+            AUTH_ENABLED and getattr(effective_elig_run, "user_id", None) != current_user.user_id
         ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -91,7 +91,7 @@ def evaluate_ranking_endpoint(
     if request.extraction_run_id:
         ext_run = default_extraction_run_store.get(request.extraction_run_id)
         if ext_run is None or (
-            AUTH_ENABLED and ext_run.user_id and ext_run.user_id != current_user.user_id
+            AUTH_ENABLED and getattr(ext_run, "user_id", None) != current_user.user_id
         ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -121,7 +121,7 @@ def evaluate_ranking_endpoint(
         if teams_to_use is None and request.dataset_id:
             ds = default_dataset_store.get(request.dataset_id)
             if ds is None or (
-                AUTH_ENABLED and ds.user_id and ds.user_id != current_user.user_id
+                AUTH_ENABLED and getattr(ds, "user_id", None) != current_user.user_id
             ):
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -216,7 +216,7 @@ def get_ranking_run(
     """Retrieve a recorded ranking run with all shortlisted teams, breakdowns, and exclusions."""
     record = default_ranking_run_store.get(run_id)
     if record is None or (
-        AUTH_ENABLED and record.user_id and record.user_id != current_user.user_id
+        AUTH_ENABLED and getattr(record, "user_id", None) != current_user.user_id
     ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -233,7 +233,7 @@ def delete_ranking_run(
     """Permanently delete a recorded ranking run."""
     record = default_ranking_run_store.get(run_id)
     if record is None or (
-        AUTH_ENABLED and record.user_id and record.user_id != current_user.user_id
+        AUTH_ENABLED and getattr(record, "user_id", None) != current_user.user_id
     ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -273,7 +273,7 @@ def export_ranking_run_csv(
     """Export a recorded ranking run as a CSV file with formula-injection mitigation."""
     record = default_ranking_run_store.get(run_id)
     if record is None or (
-        AUTH_ENABLED and record.user_id and record.user_id != current_user.user_id
+        AUTH_ENABLED and getattr(record, "user_id", None) != current_user.user_id
     ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

@@ -84,7 +84,7 @@ async def extract_signals(
     if teams_to_extract is None and request.dataset_id:
         ds = default_dataset_store.get(request.dataset_id)
         if ds is None or (
-            AUTH_ENABLED and ds.user_id and ds.user_id != current_user.user_id
+            AUTH_ENABLED and getattr(ds, "user_id", None) != current_user.user_id
         ):
             raise HTTPException(
                 status_code=404,
@@ -342,7 +342,7 @@ async def get_extraction_run(
     """Retrieve a recorded signal extraction run with all team and member results."""
     record = default_extraction_run_store.get(run_id)
     if record is None or (
-        AUTH_ENABLED and record.user_id and record.user_id != current_user.user_id
+        AUTH_ENABLED and getattr(record, "user_id", None) != current_user.user_id
     ):
         raise HTTPException(
             status_code=404,
@@ -359,7 +359,7 @@ async def get_extraction_run_dependencies(
     """Retrieve counts of downstream evaluation runs dependent on this extraction run."""
     record = default_extraction_run_store.get(run_id)
     if record is None or (
-        AUTH_ENABLED and record.user_id and record.user_id != current_user.user_id
+        AUTH_ENABLED and getattr(record, "user_id", None) != current_user.user_id
     ):
         raise HTTPException(
             status_code=404,
@@ -383,7 +383,7 @@ async def delete_extraction_run(
     """Permanently delete an extraction run and optionally cascade delete dependent runs."""
     record = default_extraction_run_store.get(run_id)
     if record is None or (
-        AUTH_ENABLED and record.user_id and record.user_id != current_user.user_id
+        AUTH_ENABLED and getattr(record, "user_id", None) != current_user.user_id
     ):
         raise HTTPException(
             status_code=404,

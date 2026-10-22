@@ -241,7 +241,7 @@ async def evaluate_eligibility(
         if payload.dataset_id:
             ds = default_dataset_store.get(payload.dataset_id)
             if ds is None or (
-                AUTH_ENABLED and ds.user_id and ds.user_id != current_user.user_id
+                AUTH_ENABLED and getattr(ds, "user_id", None) != current_user.user_id
             ):
                 raise HTTPException(
                     status_code=404,
@@ -259,7 +259,7 @@ async def evaluate_eligibility(
     if signals_to_evaluate is None and payload.extraction_run_id:
         ext_run = default_extraction_run_store.get(payload.extraction_run_id)
         if ext_run is None or (
-            AUTH_ENABLED and ext_run.user_id and ext_run.user_id != current_user.user_id
+            AUTH_ENABLED and getattr(ext_run, "user_id", None) != current_user.user_id
         ):
             raise HTTPException(
                 status_code=404,
@@ -275,7 +275,7 @@ async def evaluate_eligibility(
     elif signals_to_evaluate is not None and payload.extraction_run_id:
         ext_run = default_extraction_run_store.get(payload.extraction_run_id)
         if ext_run is None or (
-            AUTH_ENABLED and ext_run.user_id and ext_run.user_id != current_user.user_id
+            AUTH_ENABLED and getattr(ext_run, "user_id", None) != current_user.user_id
         ):
             raise HTTPException(
                 status_code=404,
@@ -316,7 +316,7 @@ async def get_run_results(
     """Retrieve an evaluation run's results, with any manual overrides merged."""
     run_record = get_effective_run(run_id)
     if run_record is None or (
-        AUTH_ENABLED and run_record.user_id and run_record.user_id != current_user.user_id
+        AUTH_ENABLED and getattr(run_record, "user_id", None) != current_user.user_id
     ):
         raise HTTPException(status_code=404, detail=f"Evaluation run '{run_id}' not found.")
     return run_record
@@ -335,7 +335,7 @@ async def apply_team_override(
     """
     run_record = default_run_store.get(run_id)
     if run_record is None or (
-        AUTH_ENABLED and run_record.user_id and run_record.user_id != current_user.user_id
+        AUTH_ENABLED and getattr(run_record, "user_id", None) != current_user.user_id
     ):
         raise HTTPException(status_code=404, detail=f"Evaluation run '{run_id}' not found.")
 

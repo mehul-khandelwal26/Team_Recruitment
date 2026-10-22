@@ -342,7 +342,7 @@ def evaluate_teams_endpoint(
     if request.eligibility_run_id:
         elig_run = get_effective_run(request.eligibility_run_id)
         if elig_run is None or (
-            AUTH_ENABLED and elig_run.user_id and elig_run.user_id != current_user.user_id
+            AUTH_ENABLED and getattr(elig_run, "user_id", None) != current_user.user_id
         ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -365,7 +365,7 @@ def evaluate_teams_endpoint(
         if request.dataset_id:
             ds = default_dataset_store.get(request.dataset_id)
             if ds is None or (
-                AUTH_ENABLED and ds.user_id and ds.user_id != current_user.user_id
+                AUTH_ENABLED and getattr(ds, "user_id", None) != current_user.user_id
             ):
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -383,7 +383,7 @@ def evaluate_teams_endpoint(
     if signals_to_evaluate is None and request.extraction_run_id:
         ext_run = default_extraction_run_store.get(request.extraction_run_id)
         if ext_run is None or (
-            AUTH_ENABLED and ext_run.user_id and ext_run.user_id != current_user.user_id
+            AUTH_ENABLED and getattr(ext_run, "user_id", None) != current_user.user_id
         ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -398,7 +398,7 @@ def evaluate_teams_endpoint(
     elif signals_to_evaluate is not None and request.extraction_run_id:
         ext_run = default_extraction_run_store.get(request.extraction_run_id)
         if ext_run is None or (
-            AUTH_ENABLED and ext_run.user_id and ext_run.user_id != current_user.user_id
+            AUTH_ENABLED and getattr(ext_run, "user_id", None) != current_user.user_id
         ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -442,7 +442,7 @@ def get_scoring_run(
     """Retrieve a recorded scoring run with all team scores and criteria breakdowns."""
     run_record = default_scoring_run_store.get(run_id)
     if run_record is None or (
-        AUTH_ENABLED and run_record.user_id and run_record.user_id != current_user.user_id
+        AUTH_ENABLED and getattr(run_record, "user_id", None) != current_user.user_id
     ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
