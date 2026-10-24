@@ -156,7 +156,7 @@ def create_scoring_config(
                 detail=f"Scoring configuration '{payload.config_id}' already exists. Use PUT to create a new version.",
             )
         else:
-            disambiguated = f"{payload.config_id}_{current_user.user_id[:8]}"
+            disambiguated = f"{payload.config_id}_{current_user.user_id[-8:]}"
             if default_scoring_config_store.get(disambiguated) is not None:
                 disambiguated = f"{payload.config_id}_{uuid.uuid4().hex[:6]}"
             cfg_id = disambiguated

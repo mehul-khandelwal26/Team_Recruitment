@@ -87,7 +87,7 @@ async def create_configuration(
                 detail=f"Configuration with ID '{cfg_id}' already exists. Use PUT to create a new version.",
             )
         else:
-            disambiguated = f"{cfg_id}_{current_user.user_id[:8]}"
+            disambiguated = f"{cfg_id}_{current_user.user_id[-8:]}"
             if default_config_store.get(disambiguated) is not None:
                 disambiguated = f"{cfg_id}_{uuid.uuid4().hex[:6]}"
             cfg_id = disambiguated
