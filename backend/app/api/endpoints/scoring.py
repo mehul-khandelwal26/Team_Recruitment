@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -146,16 +147,23 @@ def create_scoring_config(
 ) -> ScoringConfiguration:
     """Create a new validated scoring configuration (starts at version 1)."""
     # Check if config_id already exists
-    existing = default_scoring_config_store.get(payload.config_id)
+    cfg_id = payload.config_id
+    existing = default_scoring_config_store.get(cfg_id)
     if existing is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Scoring configuration '{payload.config_id}' already exists. Use PUT to create a new version.",
-        )
+        if not AUTH_ENABLED or getattr(existing, "user_id", None) in ("system", current_user.user_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Scoring configuration '{payload.config_id}' already exists. Use PUT to create a new version.",
+            )
+        else:
+            disambiguated = f"{payload.config_id}_{current_user.user_id[:8]}"
+            if default_scoring_config_store.get(disambiguated) is not None:
+                disambiguated = f"{payload.config_id}_{uuid.uuid4().hex[:6]}"
+            cfg_id = disambiguated
 
     user_id = current_user.user_id if AUTH_ENABLED else None
     config = ScoringConfiguration(
-        config_id=payload.config_id,
+        config_id=cfg_id,
         user_id=user_id,
         name=payload.name,
         version=1,

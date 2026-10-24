@@ -162,13 +162,17 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
   const handleParameterChange = (index: number, key: string, value: any) => {
     setRules((prev) => {
       const copy = [...prev];
-      copy[index] = {
+      const updatedRule: any = {
         ...copy[index],
         parameters: {
           ...copy[index].parameters,
           [key]: value,
         },
       };
+      if (key === 'member_selection' || key === 'aggregation') {
+        updatedRule[key] = value;
+      }
+      copy[index] = updatedRule;
       return copy;
     });
   };
@@ -362,7 +366,12 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
             .map((s) => s.trim())
             .filter(Boolean);
         }
-        return { ...r, parameters: p };
+        return {
+          ...r,
+          member_selection: p.member_selection ?? r.member_selection,
+          aggregation: p.aggregation ?? r.aggregation,
+          parameters: p,
+        };
       });
 
       if (config.user_id === 'system' || ['basic', 'strict', 'open_solo', 'demo_mixed_review'].includes(config.config_id)) {

@@ -334,6 +334,8 @@ class TeamScoringResult(BaseModel):
     eligibility_summary: Optional[str] = None
     warnings: list[str] = Field(default_factory=list)
     explanation: str
+    is_temporary_id: bool = Field(default=False, description="Whether this team was assigned a temporary ID due to missing/ambiguous ID")
+    is_unresolved: bool = Field(default=False, description="Whether this team's identity is unresolved due to duplicate names or ambiguous registration")
 
 
 class ScoringRunSummary(BaseModel):

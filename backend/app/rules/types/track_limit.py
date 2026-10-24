@@ -21,13 +21,16 @@ def _resolve_team_track(team: TeamSchema, field_key: str) -> tuple[Optional[str]
     if not team.members:
         return None, "unmapped"
 
-    # Check first member or team lead
+    has_not_provided = False
     for member in team.members:
         val, state = RuleEvaluatorBase.resolve_field(member, field_key)
         if state == "present" and val is not None and str(val).strip():
             return str(val).strip(), "present"
         if state == "not_provided":
-            return None, "not_provided"
+            has_not_provided = True
+
+    if has_not_provided:
+        return None, "not_provided"
 
     # Check unmapped
     return None, "unmapped"

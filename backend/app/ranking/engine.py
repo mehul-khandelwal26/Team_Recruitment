@@ -165,6 +165,9 @@ def evaluate_ranking(
                 elig_t = eff_teams_by_id[t.team_id]
                 t.eligibility_status = elig_t.status
                 t.eligibility_summary = "; ".join(elig_t.reasons) if elig_t.reasons else None
+                if elig_t.status in (EligibilityStatus.ELIGIBLE, EligibilityStatus.NEEDS_REVIEW):
+                    if t.score_status == ScoreStatus.DISQUALIFIED and t.final_score is not None and getattr(t, "criteria_breakdowns", None):
+                        t.score_status = ScoreStatus.CALCULATED
                 if getattr(elig_t, "is_unresolved", False) or getattr(elig_t, "is_temporary_id", False):
                     unresolved_team_ids.add(t.team_id)
             else:

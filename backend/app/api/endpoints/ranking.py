@@ -18,11 +18,12 @@ from app.ranking.schemas import (
     RankingRunSummaryItem,
 )
 from app.ranking.store import default_ranking_run_store
+from app.rules.schemas import EligibilityStatus
 from app.rules.store import get_effective_run
 from app.schemas.auth import UserSchema
 from app.scoring.config_store import default_scoring_config_store
 from app.scoring.engine import evaluate_scoring
-from app.scoring.schemas import ScoringConfiguration
+from app.scoring.schemas import ScoreStatus, ScoringConfiguration
 from app.scoring.store import default_scoring_run_store
 from app.signals.flatten import flatten_extraction_signals
 from app.signals.store import default_extraction_run_store
@@ -110,6 +111,67 @@ def evaluate_ranking_endpoint(
     if request.scoring_run_id:
         scoring_run = default_scoring_run_store.get(request.scoring_run_id)
         scoring_results = scoring_run.teams
+
+        # Check if scoring results are stale due to effective eligibility overrides
+        if effective_elig_run is not None and scoring_run.teams:
+            eff_teams_by_id = {t.team_id: t for t in effective_elig_run.teams}
+            has_stale_scoring = False
+            for t in scoring_run.teams:
+                eff_t = eff_teams_by_id.get(t.team_id)
+                if not eff_t:
+                    continue
+                status_changed = t.eligibility_status != eff_t.status
+                was_disqualified_now_eligible = (
+                    (t.score_status == ScoreStatus.DISQUALIFIED or t.final_score is None or not t.criteria_breakdowns)
+                    and eff_t.status in (EligibilityStatus.ELIGIBLE, EligibilityStatus.NEEDS_REVIEW)
+                )
+                if status_changed or was_disqualified_now_eligible:
+                    has_stale_scoring = True
+                    break
+
+            if has_stale_scoring:
+                teams_for_rescore = None
+                ds_id = request.dataset_id or getattr(scoring_run, "dataset_id", None)
+                if ds_id:
+                    ds = default_dataset_store.get(ds_id)
+                    if ds:
+                        teams_for_rescore = ds.payload.get("teams", [])
+                if not teams_for_rescore:
+                    teams_for_rescore = request.teams
+
+                signals_for_rescore = None
+                ext_id = request.extraction_run_id or getattr(scoring_run, "extraction_run_id", None)
+                if ext_id:
+                    ext_run = default_extraction_run_store.get(ext_id)
+                    if ext_run:
+                        signals_for_rescore = flatten_extraction_signals(ext_run)
+                if signals_for_rescore is None:
+                    signals_for_rescore = request.signals
+
+                scoring_cfg = getattr(scoring_run, "config_snapshot", None)
+                if scoring_cfg is None:
+                    cfg_id = getattr(scoring_run, "config_id", "balanced")
+                    cfg_ver = getattr(scoring_run, "config_version", None)
+                    scoring_cfg = default_scoring_config_store.get(cfg_id, version=cfg_ver)
+
+                if teams_for_rescore is not None and scoring_cfg is not None:
+                    new_scoring_run = evaluate_scoring(
+                        teams=teams_for_rescore,
+                        signals=signals_for_rescore,
+                        config=scoring_cfg,
+                        eligibility_run_id=effective_elig_run.run_id,
+                    )
+                    new_scoring_run.config_source = getattr(scoring_run, "config_source", "stored")
+                    new_scoring_run.config_snapshot = getattr(scoring_run, "config_snapshot", None)
+                    new_scoring_run.eligibility_run_id = effective_elig_run.run_id
+                    new_scoring_run.dataset_id = ds_id
+                    new_scoring_run.extraction_run_id = ext_id
+                    new_user_id = current_user.user_id if AUTH_ENABLED else None
+                    new_scoring_run.user_id = new_user_id
+                    default_scoring_run_store.save(new_scoring_run, user_id=new_user_id)
+                    scoring_run = new_scoring_run
+                    scoring_results = new_scoring_run.teams
+                    derived_scoring_run_id = new_scoring_run.run_id
 
     # Option B: Explicit scoring results payload
     elif request.scoring_results is not None:

@@ -593,6 +593,9 @@ def calculate_team_score(
     eligibility_summary: Optional[str] = None,
 ) -> TeamScoringResult:
     """Compute composite weighted score, breakdowns, and audit details for a team."""
+    is_temp = getattr(team, "is_temporary_id", False)
+    is_unres = getattr(team, "is_unresolved", False)
+
     # Empty team check
     if not team.members:
         return TeamScoringResult(
@@ -608,6 +611,8 @@ def calculate_team_score(
             eligibility_summary=eligibility_summary,
             warnings=["Team has 0 members; cannot evaluate scores."],
             explanation="Empty team has no members to evaluate.",
+            is_temporary_id=is_temp,
+            is_unresolved=is_unres,
         )
 
     # Disqualified team check (if score_ineligible_teams is False and team is INELIGIBLE)
@@ -625,6 +630,8 @@ def calculate_team_score(
             eligibility_summary=eligibility_summary,
             warnings=["Score suppressed because team is INELIGIBLE."],
             explanation=f"Team is INELIGIBLE ({eligibility_summary or 'Hard rule violation'}). Score suppressed to 0.0.",
+            is_temporary_id=is_temp,
+            is_unresolved=is_unres,
         )
 
     # Evaluate criteria
@@ -649,6 +656,8 @@ def calculate_team_score(
             eligibility_summary=eligibility_summary,
             warnings=warnings + ["No evaluable criteria available for this team."],
             explanation="No evaluable criteria available for this team; score cannot be calculated.",
+            is_temporary_id=is_temp,
+            is_unresolved=is_unres,
         )
 
     # Relative weight renormalization
@@ -691,6 +700,8 @@ def calculate_team_score(
         eligibility_summary=eligibility_summary,
         warnings=warnings,
         explanation=explanation,
+        is_temporary_id=is_temp,
+        is_unresolved=is_unres,
     )
 
 
@@ -800,6 +811,8 @@ def evaluate_scoring(
                         criteria_breakdowns=[],
                         warnings=[f"Failed to parse team: {str(ex)}"],
                         explanation=f"Malformed team record could not be parsed: {str(ex)}",
+                        is_temporary_id=bool(team_raw.get("is_temporary_id", False)),
+                        is_unresolved=bool(team_raw.get("is_unresolved", False)),
                     )
                 )
                 errors.append(f"Team {raw_id}: schema validation failed.")
