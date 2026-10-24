@@ -149,6 +149,27 @@ class RuleDefinition(BaseModel):
         description="Rule-specific configuration parameters.",
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def sync_parameters_and_top_level_fields(cls, data: Any) -> Any:
+        """Synchronize member_selection and aggregation between parameters and top-level fields."""
+        if isinstance(data, dict):
+            raw_params = data.get("parameters")
+            params = raw_params if isinstance(raw_params, dict) else {}
+            if not isinstance(raw_params, dict):
+                data["parameters"] = params
+
+            for key in ("member_selection", "aggregation"):
+                param_val = params.get(key)
+                top_val = data.get(key)
+
+                if param_val is not None:
+                    data[key] = param_val
+                elif top_val is not None:
+                    params[key] = top_val.value if hasattr(top_val, "value") else top_val
+
+        return data
+
 
 class RuleConfiguration(BaseModel):
     """An immutable, versioned configuration containing a set of rules."""

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import datetime
 import json
-from typing import Optional, Union
+from typing import Any, Optional, Union
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status

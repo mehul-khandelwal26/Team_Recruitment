@@ -315,6 +315,53 @@ export const ResultsSummaryHeader: React.FC<ResultsSummaryHeaderProps> = ({
           </span>
         </div>
       </div>
+
+      {/* Shortage Advisory Banner */}
+      {(summary?.shortage ?? 0) > 0 &&
+        (rankingRun.recommended_review_candidates?.length ?? 0) > 0 && (
+          <div className="p-4 rounded-xl border border-amber-300 bg-amber-50/70 text-amber-950 space-y-2.5 shadow-2xs">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0" />
+                <span className="font-bold text-xs">
+                  Shortlist Shortage Advisory ({summary?.shortage} unfulfilled slot{summary?.shortage === 1 ? '' : 's'}):
+                </span>
+              </div>
+              <Badge variant="warning" className="text-[10px] font-mono">
+                Action Required
+              </Badge>
+            </div>
+            <p className="text-xs text-amber-900 leading-relaxed">
+              Only <strong>{summary?.selected_teams_count || 0}</strong> of the requested{' '}
+              <strong>{rankingRun.top_x}</strong> teams qualified automatically. Below are top-scoring candidates pending manual review that can fulfill remaining slots:
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1">
+              {(rankingRun.recommended_review_candidates || []).map((cand) => (
+                <div
+                  key={cand.team_id}
+                  className="p-2.5 rounded-lg border border-amber-200 bg-white/90 text-xs flex items-center justify-between"
+                >
+                  <div className="min-w-0 pr-2">
+                    <span className="font-bold text-foreground block truncate">{cand.team_name}</span>
+                    <span className="text-[10px] text-muted-foreground font-mono">
+                      ID: <TruncatedId id={cand.team_id} />
+                    </span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="font-mono font-bold text-forest-900 text-xs block">
+                      {cand.final_score !== null && cand.final_score !== undefined
+                        ? Number(cand.final_score).toFixed(2)
+                        : '—'} pts
+                    </span>
+                    <Badge variant="warning" className="text-[9px] px-1 py-0 uppercase font-mono">
+                      Needs Review
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
     </div>
   );
 };

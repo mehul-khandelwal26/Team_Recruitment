@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   CheckCircle2,
   AlertTriangle,
@@ -33,6 +33,7 @@ import type {
   EligibilityRunResponse,
   RankedTeamResult,
   ExcludedTeamResult,
+  CriterionScoreBreakdown,
 } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -85,14 +86,45 @@ export const TeamDetailModal: React.FC<TeamDetailModalProps> = ({
 
   const applyOverrideMutation = useApplyOverrideMutation();
 
-  if (!team) return null;
-
   // Find corresponding team in the eligibility run
-  const eligTeam = eligibilityRun?.teams?.find((t) => t.team_id === team.team_id);
+  const eligTeam = eligibilityRun?.teams?.find((t) => t.team_id === team?.team_id);
   const ruleResults = eligTeam?.rule_results || [];
   const existingOverride = eligTeam?.override;
 
-  const criteriaBreakdowns = team.rawRanked?.criteria_breakdowns || [];
+  useEffect(() => {
+    if (open && team) {
+      setOverrideReason('');
+      setConfirmOverride(false);
+      setOverrideSuccessMsg(null);
+      setActiveTab('overview');
+      const initialStatus = (eligTeam?.status || team.eligibility_status) as
+        | 'ELIGIBLE'
+        | 'INELIGIBLE'
+        | 'NEEDS_REVIEW';
+      if (
+        initialStatus === 'ELIGIBLE' ||
+        initialStatus === 'INELIGIBLE' ||
+        initialStatus === 'NEEDS_REVIEW'
+      ) {
+        setOverrideStatus(initialStatus);
+      } else {
+        setOverrideStatus('ELIGIBLE');
+      }
+    }
+  }, [team?.team_id, open]);
+
+  if (!team) return null;
+
+  const criteriaBreakdowns: CriterionScoreBreakdown[] =
+    (team.rawRanked?.criteria_breakdowns as CriterionScoreBreakdown[]) ||
+    ((team.rawExcluded as any)?.criteria_breakdowns as CriterionScoreBreakdown[]) ||
+    [];
+  const weightRenormalized =
+    team.rawRanked?.weight_renormalized ||
+    (team.rawExcluded as any)?.weight_renormalized ||
+    false;
+  const effectiveEligibilityStatus =
+    eligTeam?.status || team.eligibility_status || 'UNVERIFIED';
 
   const handleApplyOverride = async () => {
     if (!eligibilityRunId) {
@@ -245,7 +277,7 @@ export const TeamDetailModal: React.FC<TeamDetailModalProps> = ({
                     Eligibility Status
                   </span>
                   <span className="font-semibold text-foreground mt-0.5 block">
-                    {team.eligibility_status || 'UNVERIFIED'}
+                    {effectiveEligibilityStatus}
                   </span>
                 </div>
                 <div className="p-2.5 rounded-md border border-border bg-card">
@@ -297,7 +329,7 @@ export const TeamDetailModal: React.FC<TeamDetailModalProps> = ({
           {/* TAB 2: CRITERIA BREAKDOWN */}
           {activeTab === 'criteria' && (
             <div className="space-y-3">
-              {team.rawRanked?.weight_renormalized && (
+              {weightRenormalized && (
                 <div className="p-2.5 rounded-md border border-amber-200 bg-amber-50/60 text-amber-900 text-xs flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0" />
                   <span>
@@ -315,36 +347,99 @@ export const TeamDetailModal: React.FC<TeamDetailModalProps> = ({
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/30 text-xs">
-                        <TableHead>Criterion</TableHead>
-                        <TableHead className="w-24">Target Signal</TableHead>
-                        <TableHead className="text-right w-20">Weight</TableHead>
+                        <TableHead>Criterion / Target Signal</TableHead>
                         <TableHead className="w-24">Aggregation</TableHead>
-                        <TableHead className="text-right w-24">Team Score</TableHead>
+                        <TableHead className="text-right w-28">Weight (Share)</TableHead>
+                        <TableHead className="text-right w-24">Norm Score</TableHead>
+                        <TableHead className="text-right w-36">Weighted Points</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {criteriaBreakdowns.map((crit) => (
-                        <TableRow key={crit.criterion_id} className="text-xs">
-                          <TableCell className="font-semibold text-foreground">
-                            {crit.name}
-                          </TableCell>
-                          <TableCell className="font-mono text-[10px] text-muted-foreground">
-                            {crit.target_signal_key}
-                          </TableCell>
-                          <TableCell className="text-right font-mono text-[11px]">
-                            {crit.configured_weight}
-                          </TableCell>
-                          <TableCell className="uppercase font-mono text-[10px] text-muted-foreground">
-                            {crit.aggregation_method}
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-bold text-forest-900">
-                            {crit.team_criterion_score !== null &&
-                            crit.team_criterion_score !== undefined
-                              ? Number(crit.team_criterion_score).toFixed(2)
-                              : '—'}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {criteriaBreakdowns.map((crit) => {
+                        const isApplicable = crit.is_applicable !== false;
+                        const sharePct =
+                          crit.normalized_weight !== undefined && crit.normalized_weight !== null
+                            ? `${(crit.normalized_weight * 100).toFixed(1)}%`
+                            : null;
+                        return (
+                          <TableRow key={crit.criterion_id} className="text-xs">
+                            <TableCell>
+                              <div className="space-y-0.5">
+                                <span className="font-semibold text-foreground block">
+                                  {crit.name}
+                                </span>
+                                <span className="font-mono text-[10px] text-muted-foreground block">
+                                  {crit.target_signal_key}
+                                </span>
+                                {crit.explanation && (
+                                  <p className="text-[11px] text-muted-foreground leading-tight pt-0.5">
+                                    {crit.explanation}
+                                  </p>
+                                )}
+                                {crit.member_scores && (
+                                  <div className="flex flex-wrap gap-1 pt-1">
+                                    {Array.isArray(crit.member_scores)
+                                      ? crit.member_scores.map((m: any, mIdx: number) => (
+                                          <span
+                                            key={m.member_id || mIdx}
+                                            className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono"
+                                          >
+                                            {m.member_name || m.member_id}:{' '}
+                                            {m.normalized_score !== null && m.normalized_score !== undefined
+                                              ? Number(m.normalized_score).toFixed(2)
+                                              : m.raw_value !== null && m.raw_value !== undefined
+                                                ? String(m.raw_value)
+                                                : '—'}
+                                          </span>
+                                        ))
+                                      : Object.entries(crit.member_scores).map(([memberId, mScore]: [string, any]) => (
+                                          <span
+                                            key={memberId}
+                                            className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono"
+                                          >
+                                            {memberId}: {mScore !== null && mScore !== undefined ? Number(mScore).toFixed(2) : '—'}
+                                          </span>
+                                        ))}
+                                  </div>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="uppercase font-mono text-[10px] text-muted-foreground align-top">
+                              {crit.aggregation_method || '—'}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-[11px] align-top">
+                              <span className="font-semibold">{crit.configured_weight}</span>
+                              {sharePct && (
+                                <span className="text-[10px] text-muted-foreground block">
+                                  ({sharePct})
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-[11px] align-top">
+                              {crit.team_criterion_score !== null && crit.team_criterion_score !== undefined
+                                ? Number(crit.team_criterion_score).toFixed(2)
+                                : '—'}
+                            </TableCell>
+                            <TableCell className="text-right font-mono align-top">
+                              {isApplicable ? (
+                                <span className="font-bold text-forest-900 text-xs">
+                                  {crit.weighted_contribution !== null &&
+                                  crit.weighted_contribution !== undefined
+                                    ? `+${Number(crit.weighted_contribution).toFixed(2)} pts`
+                                    : crit.team_criterion_score !== null &&
+                                      crit.team_criterion_score !== undefined
+                                      ? `${Number(crit.team_criterion_score).toFixed(2)}`
+                                      : '—'}
+                                </span>
+                              ) : (
+                                <Badge variant="outline" className="text-[10px] text-amber-700 bg-amber-50">
+                                  Excluded (Missing Data)
+                                </Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
@@ -401,6 +496,51 @@ export const TeamDetailModal: React.FC<TeamDetailModalProps> = ({
                         <p className="text-muted-foreground leading-relaxed text-[11px]">
                           {r.explanation}
                         </p>
+                        {r.member_evaluations && r.member_evaluations.length > 0 && (
+                          <div className="pt-2 border-t border-border/50 space-y-1.5">
+                            <span className="text-[10px] font-bold text-muted-foreground block uppercase">
+                              Member Evaluations ({r.member_evaluations.length}):
+                            </span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                              {r.member_evaluations.map((m: any, mIdx: number) => (
+                                <div
+                                  key={m.member_id || mIdx}
+                                  className="flex items-center justify-between p-1.5 rounded bg-background/80 border border-border/50 text-[11px]"
+                                >
+                                  <div className="min-w-0 pr-2">
+                                    <span className="font-semibold text-foreground block truncate">
+                                      {m.name || m.member_id || `Member ${mIdx + 1}`}
+                                    </span>
+                                    {m.reason && (
+                                      <span className="text-[10px] text-muted-foreground block truncate">
+                                        {m.reason}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {m.value !== undefined && m.value !== null && (
+                                      <span className="font-mono text-[10px] text-muted-foreground">
+                                        {String(m.value)}
+                                      </span>
+                                    )}
+                                    <Badge
+                                      variant={
+                                        m.status === 'PASSED'
+                                          ? 'success'
+                                          : m.status === 'FAILED'
+                                            ? 'destructive'
+                                            : 'warning'
+                                      }
+                                      className="text-[9px] px-1 py-0 uppercase font-mono"
+                                    >
+                                      {m.status || 'UNKNOWN'}
+                                    </Badge>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}

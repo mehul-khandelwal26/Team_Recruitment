@@ -6,10 +6,23 @@
 
 export function formatRuleType(ruleType: string): string {
   const map: Record<string, string> = {
+    team_size_range: 'Team Size Range',
     team_size_min: 'Minimum Team Size',
     team_size_max: 'Maximum Team Size',
     required_link: 'Required Profile Link',
     signal_threshold: 'Signal Threshold',
+    custom_signal_threshold: 'Custom Signal Threshold',
+    academic_year_range: 'Academic Year Range',
+    cgpa_minimum: 'Minimum CGPA / CPI',
+    normalized_cgpa_minimum: 'Normalized Minimum CGPA',
+    github_repos_minimum: 'Minimum GitHub Repositories',
+    required_signal_present: 'Required Signal Present',
+    signal_contains: 'Signal Value Contains',
+    allowed_values: 'Allowed Categorical Values',
+    track_limit: 'Track Capacity Limit',
+    duplicate_member_email: 'Duplicate Member Check',
+    required_fields_present: 'Required Registration Fields',
+    // Preserved aliases & legacy display identifiers
     track_whitelist: 'Allowed Track Whitelist',
     academic_year_filter: 'Academic Year Filter',
     disallowed_email_domain: 'Disallowed Email Domain',
@@ -30,10 +43,13 @@ export function formatMissingPolicy(policy: string): { label: string; tone: 'neu
       return { label: 'Pass (Permissive)', tone: 'neutral' };
     case 'fail':
       return { label: 'Disqualify (Strict)', tone: 'warning' };
+    case 'skip':
+      return { label: 'Skip Evaluation', tone: 'neutral' };
     case 'exclude_and_renormalize':
       return { label: 'Renormalize Weights', tone: 'info' };
+    case 'zero_score':
     case 'zero_fill':
-      return { label: 'Zero Fill (0.0 pts)', tone: 'neutral' };
+      return { label: 'Zero Score (0.0 pts)', tone: 'neutral' };
     case 'default_score':
       return { label: 'Default Score', tone: 'neutral' };
     default:
@@ -50,6 +66,8 @@ export function formatScope(scope: string): string {
       return 'Team-Wide';
     case 'member':
       return 'Member-Level';
+    case 'cross_team':
+      return 'Cross-Team';
     default:
       return scope || 'Team-Wide';
   }
@@ -62,6 +80,7 @@ export function formatMemberSelection(selection?: string | null): string | null 
       return 'Any Member (≥1)';
     case 'all_members':
       return 'All Members';
+    case 'team_lead':
     case 'lead_only':
       return 'Team Lead Only';
     default:
@@ -89,7 +108,14 @@ export function formatAggregation(agg?: string): string {
     case 'mean':
       return 'Mean Average';
     case 'lead':
+    case 'lead_only':
       return 'Team Lead Value';
+    case 'top_k':
+      return 'Top-K Average';
+    case 'all':
+      return 'All Members Match';
+    case 'any':
+      return 'Any Member Matches';
     case 'max':
       return 'Maximum Value';
     case 'min':
@@ -114,12 +140,31 @@ export function formatRuleParameters(
 
   const result: FormattedParameter[] = [];
 
-  // Special formatting for min/max team size
+  // Always show Signal or Field first if explicitly specified
+  if (params.signal_key) {
+    result.push({ label: 'Signal', value: String(params.signal_key) });
+  }
+  if (params.field_key) {
+    result.push({ label: 'Field', value: String(params.field_key) });
+  }
+  if (Array.isArray(params.field_keys)) {
+    result.push({ label: 'Fields', value: params.field_keys.join(', ') });
+  }
+  if (params.link_field) {
+    result.push({ label: 'Field', value: String(params.link_field) });
+  }
+
+  // Min/Max team size or generic min/max values
   if (params.min_size !== undefined) {
     result.push({ label: 'Min', value: `${params.min_size} members` });
+  } else if (params.min_value !== undefined) {
+    result.push({ label: 'Min', value: String(params.min_value) });
   }
+
   if (params.max_size !== undefined) {
     result.push({ label: 'Max', value: `${params.max_size} members` });
+  } else if (params.max_value !== undefined) {
+    result.push({ label: 'Max', value: String(params.max_value) });
   }
 
   // Threshold rule: combine operator + threshold
@@ -128,12 +173,7 @@ export function formatRuleParameters(
     result.push({ label: 'Cutoff', value: `${op} ${params.threshold}` });
   }
 
-  // Profile link field
-  if (params.link_field) {
-    result.push({ label: 'Field', value: String(params.link_field) });
-  }
-
-  // Allowed tracks / categories
+  // Allowed tracks / categories / values
   if (Array.isArray(params.allowed_tracks)) {
     result.push({ label: 'Tracks', value: params.allowed_tracks.join(', ') });
   }
@@ -144,7 +184,41 @@ export function formatRuleParameters(
     result.push({ label: 'Blocked', value: params.blocked_domains.join(', ') });
   }
 
-  // If no recognized parameter was extracted, fall back to formatting all keys (excluding duplicates)
+  // Keywords (signal_contains)
+  if (params.keywords !== undefined) {
+    result.push({
+      label: 'Keywords',
+      value: Array.isArray(params.keywords) ? params.keywords.join(', ') : String(params.keywords),
+    });
+  }
+
+  // Required registration fields (required_fields_present)
+  if (Array.isArray(params.required_fields)) {
+    result.push({ label: 'Required', value: params.required_fields.join(', ') });
+  }
+
+  // Track capacity limit
+  if (params.max_teams_per_track !== undefined) {
+    result.push({ label: 'Max / Track', value: `${params.max_teams_per_track} teams` });
+  }
+  if (params.track_limits && typeof params.track_limits === 'object' && !Array.isArray(params.track_limits)) {
+    result.push({
+      label: 'Track Limits',
+      value: Object.entries(params.track_limits)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(', '),
+    });
+  }
+  if (params.limit !== undefined) {
+    result.push({ label: 'Limit', value: String(params.limit) });
+  }
+
+  // Expected value
+  if (params.expected_value !== undefined) {
+    result.push({ label: 'Expected', value: String(params.expected_value) });
+  }
+
+  // If no recognized parameter was extracted, fall back to formatting all remaining keys (excluding duplicates)
   if (result.length === 0) {
     for (const [key, val] of Object.entries(params)) {
       if (['aggregation', 'member_selection'].includes(key)) continue;

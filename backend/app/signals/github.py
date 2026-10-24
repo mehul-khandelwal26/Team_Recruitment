@@ -159,6 +159,20 @@ class GitHubAnalyzer(BaseSignalExtractor):
         self._repos_cache: dict[str, list[dict[str, Any]]] = {}
         self._events_cache: dict[str, list[dict[str, Any]]] = {}
 
+    def clear_cache(self) -> None:
+        """Clear all in-memory caches."""
+        self._user_cache.clear()
+        self._repos_cache.clear()
+        self._events_cache.clear()
+
+    @staticmethod
+    def _set_cache_entry(cache: dict[str, Any], key: str, value: Any, max_size: int = 500) -> None:
+        """Set a cache entry, evicting oldest if max_size is reached."""
+        if len(cache) >= max_size and key not in cache:
+            first_k = next(iter(cache))
+            cache.pop(first_k, None)
+        cache[key] = value
+
     @property
     def descriptor(self) -> ExtractorDescriptor:
         return ExtractorDescriptor(
@@ -213,15 +227,16 @@ class GitHubAnalyzer(BaseSignalExtractor):
             },
         )
 
-    def _get_client(self) -> httpx.Client:
+    def _get_client(self, token: Optional[str] = None) -> httpx.Client:
         if self._custom_client is not None:
             return self._custom_client
+        effective_token = token or self._token
         headers = {
             "Accept": "application/vnd.github+json",
             "User-Agent": "Team-Recruitment-Tool/0.1",
         }
-        if self._token:
-            headers["Authorization"] = f"Bearer {self._token}"
+        if effective_token:
+            headers["Authorization"] = f"Bearer {effective_token}"
         return httpx.Client(
             headers=headers,
             timeout=httpx.Timeout(self._timeout, connect=5.0),
@@ -239,6 +254,7 @@ class GitHubAnalyzer(BaseSignalExtractor):
         results: list[ExtractedSignal] = []
 
         cfg = config or {}
+        effective_token = cfg.get("github_token") or self._token
         raw_max_repos = cfg.get("max_repos_inspected", 30)
         try:
             max_repos = max(1, int(raw_max_repos))
@@ -306,7 +322,7 @@ class GitHubAnalyzer(BaseSignalExtractor):
         client_to_close: Optional[httpx.Client] = None
         client = self._custom_client
         if client is None:
-            client = self._get_client()
+            client = self._get_client(token=effective_token)
             client_to_close = client
 
         try:
@@ -502,7 +518,7 @@ class GitHubAnalyzer(BaseSignalExtractor):
 
         if resp.status_code == 200:
             data = resp.json()
-            self._user_cache[username] = data
+            self._set_cache_entry(self._user_cache, username, data)
             return data, None, None
         elif resp.status_code == 404:
             return None, SignalStatus.FAILED, f"GitHub profile '{username}' not found (HTTP 404)."
@@ -563,7 +579,7 @@ class GitHubAnalyzer(BaseSignalExtractor):
                     break
                 return [], f"HTTP {resp.status_code}"
 
-        self._repos_cache[cache_key] = all_repos
+        self._set_cache_entry(self._repos_cache, cache_key, all_repos)
         return all_repos, None
 
     def _fetch_events(
@@ -585,7 +601,7 @@ class GitHubAnalyzer(BaseSignalExtractor):
         if resp.status_code == 200:
             data = resp.json()
             if isinstance(data, list):
-                self._events_cache[username] = data
+                self._set_cache_entry(self._events_cache, username, data)
                 return data, None
             return [], "Unexpected response format for public events."
         return [], f"HTTP {resp.status_code}"

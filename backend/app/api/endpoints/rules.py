@@ -81,10 +81,16 @@ async def create_configuration(
 
     existing = default_config_store.get(cfg_id)
     if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Configuration with ID '{cfg_id}' already exists. Use PUT to create a new version.",
-        )
+        if not AUTH_ENABLED or getattr(existing, "user_id", None) in ("system", current_user.user_id):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Configuration with ID '{cfg_id}' already exists. Use PUT to create a new version.",
+            )
+        else:
+            disambiguated = f"{cfg_id}_{current_user.user_id[-8:]}"
+            if default_config_store.get(disambiguated) is not None:
+                disambiguated = f"{cfg_id}_{uuid.uuid4().hex[:6]}"
+            cfg_id = disambiguated
 
     user_id = current_user.user_id if AUTH_ENABLED else None
     now_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()

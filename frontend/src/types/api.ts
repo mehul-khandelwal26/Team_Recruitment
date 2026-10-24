@@ -1470,6 +1470,26 @@ export interface components {
              * @description Diagnostic warnings associated with this team.
              */
             warnings?: string[];
+            /**
+             * Criteria Breakdowns
+             * @description Scoring criteria breakdowns if evaluated (e.g. for informational scoring).
+             */
+            criteria_breakdowns?: components["schemas"]["CriterionScoreBreakdown"][];
+            /**
+             * Weight Renormalized
+             * @description Whether weights were renormalized during scoring.
+             */
+            weight_renormalized?: boolean;
+            /**
+             * Applicable Weight
+             * @description Total applicable criteria weight during scoring.
+             */
+            applicable_weight?: number;
+            /**
+             * Total Configured Weight
+             * @description Total configured weight across all scoring criteria.
+             */
+            total_configured_weight?: number;
         };
         /**
          * ExclusionReason

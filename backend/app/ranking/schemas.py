@@ -121,6 +121,22 @@ class ExcludedTeamResult(BaseModel):
         default_factory=list,
         description="Diagnostic warnings associated with this team.",
     )
+    criteria_breakdowns: list[CriterionScoreBreakdown] = Field(
+        default_factory=list,
+        description="Scoring criteria breakdowns if evaluated (e.g. for informational scoring).",
+    )
+    weight_renormalized: bool = Field(
+        default=False,
+        description="Whether weights were renormalized during scoring.",
+    )
+    applicable_weight: float = Field(
+        default=0.0,
+        description="Total applicable criteria weight during scoring.",
+    )
+    total_configured_weight: float = Field(
+        default=0.0,
+        description="Total configured weight across all scoring criteria.",
+    )
 
 
 class RankingRunSummary(BaseModel):

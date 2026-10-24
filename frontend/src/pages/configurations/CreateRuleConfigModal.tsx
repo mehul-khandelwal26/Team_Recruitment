@@ -188,7 +188,7 @@ export const CreateRuleConfigModal: React.FC<CreateRuleConfigModalProps> = ({
               onChange={(e) => setBasePresetId(e.target.value)}
               className="w-full h-8 text-xs rounded border border-border bg-card px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-forest-600"
             >
-              <option value="__scratch__">✨ Start from Scratch (Blank - 0 rules)</option>
+              <option value="__scratch__">✨ Start from Scratch (1 starter rule)</option>
               {existingConfigs.map((cfg) => (
                 <option key={cfg.config_id} value={cfg.config_id}>
                   Clone from: {cfg.name} ({cfg.rules?.length || 0} rules)
