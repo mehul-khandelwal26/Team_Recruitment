@@ -98,10 +98,23 @@ export function useRerunRankingMutation() {
       eligibilityRunId: string;
       topX: number;
       includeNeedsReview?: boolean;
+      tiebreakCriterionId?: string | null;
     }
   >({
-    mutationFn: ({ scoringRunId, eligibilityRunId, topX, includeNeedsReview = false }) =>
-      apiService.evaluateRanking(scoringRunId, eligibilityRunId, topX, includeNeedsReview),
+    mutationFn: ({
+      scoringRunId,
+      eligibilityRunId,
+      topX,
+      includeNeedsReview = false,
+      tiebreakCriterionId,
+    }) =>
+      apiService.evaluateRanking(
+        scoringRunId,
+        eligibilityRunId,
+        topX,
+        includeNeedsReview,
+        tiebreakCriterionId
+      ),
     onSuccess: (newRun) => {
       // Seed newly created run into cache and invalidate recent lists
       queryClient.setQueryData(RESULTS_QUERY_KEYS.rankingRun(newRun.run_id), newRun);

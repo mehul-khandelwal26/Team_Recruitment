@@ -69,6 +69,7 @@ export const ResultsPage: React.FC = () => {
         eligibilityRunId: rankingRun.eligibility_run_id,
         topX: rankingRun.top_x,
         includeNeedsReview: rankingRun.include_needs_review,
+        tiebreakCriterionId: rankingRun.tiebreak_criterion_id ?? null,
       });
 
       setIsStale(false);

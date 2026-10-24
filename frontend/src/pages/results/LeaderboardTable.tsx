@@ -305,11 +305,19 @@ export const LeaderboardTable: React.FC<LeaderboardTableProps> = ({
                 </TableCell>
               </TableRow>
             ) : (
-              filteredAndSortedRows.map((row, index) => {
+              filteredAndSortedRows.map((row) => {
                 const isSelected = row.selection_status === 'SELECTED';
                 const isReview = row.selection_status === 'NEEDS_REVIEW';
                 const isExcluded = row.selection_status === 'EXCLUDED' || row.selection_status === 'UNRESOLVED';
-                const displayRank = row.rank !== null ? row.rank : index + 1;
+                const displayRank = row.rank !== null ? row.rank : '—';
+                const rankTooltip =
+                  row.rank === null
+                    ? 'Unranked (Disqualified / Excluded)'
+                    : isReview
+                      ? `Provisional Rank #${row.rank} (Pending Manual Review)`
+                      : isSelected
+                        ? `Shortlisted #${row.rank}`
+                        : `Rank #${row.rank} (Below Cutoff)`;
 
                 return (
                   <TableRow
@@ -339,15 +347,7 @@ export const LeaderboardTable: React.FC<LeaderboardTableProps> = ({
                                 ? 'bg-red-100 text-red-900 border border-red-300 font-semibold'
                                 : 'bg-muted text-muted-foreground font-semibold border border-border'
                         )}
-                        title={
-                          isSelected
-                            ? `Rank #${displayRank} (Shortlisted)`
-                            : isReview
-                              ? `Position #${displayRank} (Needs Manual Review)`
-                              : isExcluded
-                                ? `Cohort Position #${displayRank} (Disqualified)`
-                                : `Rank #${displayRank} (Below Cutoff)`
-                        }
+                        title={rankTooltip}
                       >
                         {displayRank}
                       </span>

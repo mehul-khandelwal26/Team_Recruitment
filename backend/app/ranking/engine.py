@@ -198,6 +198,10 @@ def evaluate_ranking(
                 score_status=t.score_status,
                 final_score=t.final_score,
                 warnings=list(t.warnings),
+                criteria_breakdowns=list(getattr(t, "criteria_breakdowns", []) or []),
+                weight_renormalized=bool(getattr(t, "weight_renormalized", False)),
+                applicable_weight=float(getattr(t, "applicable_weight", 0.0)),
+                total_configured_weight=float(getattr(t, "total_configured_weight", 0.0)),
             )
             unresolved_candidates.append(excl)
             excluded_candidates.append(excl)
@@ -214,6 +218,10 @@ def evaluate_ranking(
                 score_status=t.score_status,
                 final_score=t.final_score,
                 warnings=list(t.warnings),
+                criteria_breakdowns=list(getattr(t, "criteria_breakdowns", []) or []),
+                weight_renormalized=bool(getattr(t, "weight_renormalized", False)),
+                applicable_weight=float(getattr(t, "applicable_weight", 0.0)),
+                total_configured_weight=float(getattr(t, "total_configured_weight", 0.0)),
             )
             excluded_candidates.append(excl)
             continue
@@ -230,6 +238,10 @@ def evaluate_ranking(
                 score_status=t.score_status,
                 final_score=t.final_score,
                 warnings=list(t.warnings),
+                criteria_breakdowns=list(getattr(t, "criteria_breakdowns", []) or []),
+                weight_renormalized=bool(getattr(t, "weight_renormalized", False)),
+                applicable_weight=float(getattr(t, "applicable_weight", 0.0)),
+                total_configured_weight=float(getattr(t, "total_configured_weight", 0.0)),
             )
             excluded_candidates.append(excl)
             continue
@@ -250,6 +262,10 @@ def evaluate_ranking(
                 score_status=t.score_status,
                 final_score=t.final_score,
                 warnings=list(t.warnings),
+                criteria_breakdowns=list(getattr(t, "criteria_breakdowns", []) or []),
+                weight_renormalized=bool(getattr(t, "weight_renormalized", False)),
+                applicable_weight=float(getattr(t, "applicable_weight", 0.0)),
+                total_configured_weight=float(getattr(t, "total_configured_weight", 0.0)),
             )
             excluded_candidates.append(excl)
             continue
@@ -272,6 +288,10 @@ def evaluate_ranking(
                     score_status=t.score_status,
                     final_score=t.final_score,
                     warnings=list(t.warnings),
+                    criteria_breakdowns=list(getattr(t, "criteria_breakdowns", []) or []),
+                    weight_renormalized=bool(getattr(t, "weight_renormalized", False)),
+                    applicable_weight=float(getattr(t, "applicable_weight", 0.0)),
+                    total_configured_weight=float(getattr(t, "total_configured_weight", 0.0)),
                 )
                 excluded_candidates.append(excl)
                 continue

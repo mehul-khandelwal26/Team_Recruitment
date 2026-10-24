@@ -387,3 +387,104 @@ def test_track_limit_evaluator_checks_all_members():
     val, state = _resolve_team_track(team, "track")
     assert state == "present"
     assert val == "AI Track"
+
+
+# ---------------------------------------------------------------------------
+# Batch 3: ExcludedTeamResult Criteria Breakdowns Preservation
+# ---------------------------------------------------------------------------
+
+def test_excluded_team_preserves_criteria_breakdowns_when_informational_scoring():
+    """Batch 3 Issue 2: When score_ineligible_teams=True, ineligible excluded teams
+    preserve criteria_breakdowns, weight_renormalized, applicable_weight, and total_configured_weight.
+    """
+    csv_data = (
+        "team_id,team_name,member_id,name,email,cgpa,github\n"
+        "T_EXCL,Solo Ineligible,M1,Alice,alice@test.org,9.0,https://github.com/alice\n"
+        "T_VALID,Duo Eligible,M2,Bob,bob@test.org,8.0,https://github.com/bob\n"
+        "T_VALID,Duo Eligible,M3,Charlie,charlie@test.org,8.5,https://github.com/charlie\n"
+    )
+    upload_resp = client.post(
+        "/api/ingestion/upload",
+        files={"file": ("teams.csv", io.BytesIO(csv_data.encode()), "text/csv")},
+    )
+    assert upload_resp.status_code == 200
+    dataset_id = upload_resp.json()["dataset_id"]
+
+    ext_resp = client.post(
+        "/api/signals/extract",
+        json={"dataset_id": dataset_id, "signal_keys": ["academic_cgpa"]},
+    )
+    assert ext_resp.status_code == 200
+    ext_run_id = ext_resp.json()["run_id"]
+
+    # Basic preset requires team_size >= 2, so T_EXCL will be INELIGIBLE
+    elig_resp = client.post(
+        "/api/rules/evaluate",
+        json={"dataset_id": dataset_id, "config_id": "basic"},
+    )
+    assert elig_resp.status_code == 200
+    elig_run_id = elig_resp.json()["run_id"]
+
+    # Create scoring config with score_ineligible_teams=True (informational scoring)
+    cfg_resp = client.post(
+        "/api/scoring/configs",
+        json={
+            "config_id": "cfg_info_scoring_batch3",
+            "name": "Informational Scoring Rubric",
+            "score_ineligible_teams": True,
+            "scale_max": 100.0,
+            "criteria": [
+                {
+                    "criterion_id": "crit_cgpa_b3",
+                    "name": "Academic CGPA",
+                    "criterion_type": "numeric_range",
+                    "target_signal_key": "academic_cgpa",
+                    "weight": 10.0,
+                    "normalization": {"linear_range": {"min_value": 0, "max_value": 10}},
+                }
+            ],
+        },
+    )
+    assert cfg_resp.status_code == 201
+
+    scoring_resp = client.post(
+        "/api/scoring/evaluate",
+        json={
+            "dataset_id": dataset_id,
+            "extraction_run_id": ext_run_id,
+            "eligibility_run_id": elig_run_id,
+            "config_id": "cfg_info_scoring_batch3",
+        },
+    )
+    assert scoring_resp.status_code == 200
+    scoring_run_id = scoring_resp.json()["run_id"]
+    t_excl_score = next(t for t in scoring_resp.json()["teams"] if t["team_id"] == "T_EXCL")
+    assert t_excl_score["score_status"] == "CALCULATED"
+    assert t_excl_score["final_score"] is not None
+    assert len(t_excl_score["criteria_breakdowns"]) > 0
+
+    # Evaluate ranking (with include_needs_review=True so T_VALID qualifies despite missing profile link)
+    ranking_resp = client.post(
+        "/api/ranking/evaluate",
+        json={
+            "scoring_run_id": scoring_run_id,
+            "eligibility_run_id": elig_run_id,
+            "top_x": 1,
+            "include_needs_review": True,
+        },
+    )
+    assert ranking_resp.status_code == 200
+    rank_data = ranking_resp.json()
+    assert len(rank_data["selected_teams"]) == 1
+    assert rank_data["selected_teams"][0]["team_id"] == "T_VALID"
+
+    # T_EXCL must be in excluded_teams with criteria_breakdowns preserved
+    assert len(rank_data["excluded_teams"]) == 1
+    excl = rank_data["excluded_teams"][0]
+    assert excl["team_id"] == "T_EXCL"
+    assert excl["reason_code"] == "INELIGIBLE"
+    assert len(excl["criteria_breakdowns"]) == 1
+    assert excl["criteria_breakdowns"][0]["criterion_id"] == "crit_cgpa_b3"
+    assert excl["criteria_breakdowns"][0]["team_criterion_score"] is not None
+    assert excl["applicable_weight"] == 10.0
+    assert excl["total_configured_weight"] == 10.0
