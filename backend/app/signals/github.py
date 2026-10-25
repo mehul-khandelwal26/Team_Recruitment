@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime
 import re
+import threading
 from typing import Any, Optional
 from urllib.parse import urlparse
 
@@ -155,23 +156,25 @@ class GitHubAnalyzer(BaseSignalExtractor):
         self._timeout = timeout or GITHUB_REQUEST_TIMEOUT
         self._custom_client = http_client
         # In-memory per-run cache to avoid duplicate API calls for identical usernames
+        self._lock = threading.RLock()
         self._user_cache: dict[str, dict[str, Any]] = {}
         self._repos_cache: dict[str, list[dict[str, Any]]] = {}
         self._events_cache: dict[str, list[dict[str, Any]]] = {}
 
     def clear_cache(self) -> None:
         """Clear all in-memory caches."""
-        self._user_cache.clear()
-        self._repos_cache.clear()
-        self._events_cache.clear()
+        with self._lock:
+            self._user_cache.clear()
+            self._repos_cache.clear()
+            self._events_cache.clear()
 
-    @staticmethod
-    def _set_cache_entry(cache: dict[str, Any], key: str, value: Any, max_size: int = 500) -> None:
+    def _set_cache_entry(self, cache: dict[str, Any], key: str, value: Any, max_size: int = 500) -> None:
         """Set a cache entry, evicting oldest if max_size is reached."""
-        if len(cache) >= max_size and key not in cache:
-            first_k = next(iter(cache))
-            cache.pop(first_k, None)
-        cache[key] = value
+        with self._lock:
+            if len(cache) >= max_size and key not in cache:
+                first_k = next(iter(cache))
+                cache.pop(first_k, None)
+            cache[key] = value
 
     @property
     def descriptor(self) -> ExtractorDescriptor:
@@ -505,8 +508,9 @@ class GitHubAnalyzer(BaseSignalExtractor):
         raw_input: Any,
     ) -> tuple[Optional[dict[str, Any]], Optional[SignalStatus], Optional[str]]:
         """Fetch user profile from GitHub API."""
-        if username in self._user_cache:
-            return self._user_cache[username], None, None
+        with self._lock:
+            if username in self._user_cache:
+                return self._user_cache[username], None, None
 
         url = f"{self._base_url}/users/{username}"
         try:
@@ -538,8 +542,9 @@ class GitHubAnalyzer(BaseSignalExtractor):
     ) -> tuple[list[dict[str, Any]], Optional[str]]:
         """Fetch public repos for a user with pagination up to max_repos."""
         cache_key = f"{username}_{max_repos}"
-        if cache_key in self._repos_cache:
-            return self._repos_cache[cache_key], None
+        with self._lock:
+            if cache_key in self._repos_cache:
+                return self._repos_cache[cache_key], None
 
         all_repos: list[dict[str, Any]] = []
         page = 1
@@ -588,8 +593,9 @@ class GitHubAnalyzer(BaseSignalExtractor):
         username: str,
     ) -> tuple[list[dict[str, Any]], Optional[str]]:
         """Fetch public events for a user."""
-        if username in self._events_cache:
-            return self._events_cache[username], None
+        with self._lock:
+            if username in self._events_cache:
+                return self._events_cache[username], None
 
         url = f"{self._base_url}/users/{username}/events/public"
         params = {"per_page": 30}

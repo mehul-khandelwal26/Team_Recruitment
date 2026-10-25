@@ -159,6 +159,22 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
     });
   };
 
+  const handleRuleNameChange = (index: number, name: string) => {
+    setRules((prev) => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], name };
+      return copy;
+    });
+  };
+
+  const handleRuleDescriptionChange = (index: number, description: string) => {
+    setRules((prev) => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], description };
+      return copy;
+    });
+  };
+
   const handleParameterChange = (index: number, key: string, value: any) => {
     setRules((prev) => {
       const copy = [...prev];
@@ -368,6 +384,8 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
         }
         return {
           ...r,
+          name: (r.name || '').trim() || r.rule_id,
+          description: (r.description || '').trim(),
           member_selection: p.member_selection ?? r.member_selection,
           aggregation: p.aggregation ?? r.aggregation,
           parameters: p,
@@ -738,15 +756,30 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                     </span>
                                   </div>
 
-                                  {rule.description && (
-                                    <p
-                                      className="text-[11px] text-muted-foreground bg-muted/40 p-2.5 rounded-md border border-border/50 leading-relaxed"
-                                      title={rule.description}
-                                    >
-                                      <span className="font-semibold text-foreground">Rule Purpose: </span>
-                                      {rule.description}
-                                    </p>
-                                  )}
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-2 border-b border-border/60">
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] font-semibold text-foreground">
+                                        Rule Display Name
+                                      </label>
+                                      <Input
+                                        value={rule.name}
+                                        onChange={(e) => handleRuleNameChange(idx, e.target.value)}
+                                        placeholder="e.g. Lead CGPA Requirement"
+                                        className="h-7 text-xs"
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] font-semibold text-foreground">
+                                        Rule Description / Purpose
+                                      </label>
+                                      <Input
+                                        value={rule.description || ''}
+                                        onChange={(e) => handleRuleDescriptionChange(idx, e.target.value)}
+                                        placeholder="e.g. Enforces minimum lead CGPA of 7.5..."
+                                        className="h-7 text-xs"
+                                      />
+                                    </div>
+                                  </div>
 
                                   {/* Dynamic fields based on rule_type */}
                                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
@@ -1033,6 +1066,19 @@ export const EditRuleConfigModal: React.FC<EditRuleConfigModalProps> = ({
                                                 : ''
                                             }`}
                                           />
+                                          <div className="flex flex-wrap items-center gap-1 mt-1 pt-0.5">
+                                            <span className="text-[10px] text-muted-foreground">Quick pick:</span>
+                                            {['resume_programming_languages', 'resume_frameworks_libraries', 'resume_databases', 'resume_tools_technologies', 'resume_extracted_skills', 'github_repo_metadata'].map((k) => (
+                                              <button
+                                                key={k}
+                                                type="button"
+                                                onClick={() => handleParameterChange(idx, 'signal_key', k)}
+                                                className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted hover:bg-forest-100 hover:text-forest-800 text-muted-foreground transition-colors cursor-pointer"
+                                              >
+                                                +{k}
+                                              </button>
+                                            ))}
+                                          </div>
                                         </div>
                                         <div className="space-y-1">
                                           <div className="flex items-center justify-between">

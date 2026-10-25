@@ -26,6 +26,13 @@ interface CreateRuleConfigModalProps {
   onSuccess: (newConfigId: string) => void;
 }
 
+const slugify = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+
 export const CreateRuleConfigModal: React.FC<CreateRuleConfigModalProps> = ({
   open,
   onOpenChange,
@@ -38,12 +45,19 @@ export const CreateRuleConfigModal: React.FC<CreateRuleConfigModalProps> = ({
   const [configId, setConfigId] = useState('');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [isIdManual, setIsIdManual] = useState(false);
   const [basePresetId, setBasePresetId] = useState<string>(
     initialBasePresetId || existingConfigs[0]?.config_id || ''
   );
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (open) {
+      setConfigId('');
+      setName('');
+      setDescription('');
+      setErrorMessage(null);
+      setIsIdManual(false);
       if (initialBasePresetId && existingConfigs.some((c) => c.config_id === initialBasePresetId)) {
         setBasePresetId(initialBasePresetId);
       } else if (existingConfigs[0]?.config_id) {
@@ -51,7 +65,13 @@ export const CreateRuleConfigModal: React.FC<CreateRuleConfigModalProps> = ({
       }
     }
   }, [open, initialBasePresetId, existingConfigs]);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const handleNameChange = (val: string) => {
+    setName(val);
+    if (!isIdManual) {
+      setConfigId(slugify(val));
+    }
+  };
 
   const handleSubmit = async () => {
     const cleanId = configId.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
@@ -148,7 +168,10 @@ export const CreateRuleConfigModal: React.FC<CreateRuleConfigModalProps> = ({
             </label>
             <Input
               value={configId}
-              onChange={(e) => setConfigId(e.target.value)}
+              onChange={(e) => {
+                setIsIdManual(true);
+                setConfigId(e.target.value);
+              }}
               placeholder="e.g. custom_hackathon_rules"
               className="text-xs h-8 font-mono"
             />
@@ -163,7 +186,7 @@ export const CreateRuleConfigModal: React.FC<CreateRuleConfigModalProps> = ({
             </label>
             <Input
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => handleNameChange(e.target.value)}
               placeholder="e.g. 2026 Winter Hackathon Standard"
               className="text-xs h-8"
             />

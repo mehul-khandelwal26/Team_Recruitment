@@ -488,3 +488,118 @@ def test_excluded_team_preserves_criteria_breakdowns_when_informational_scoring(
     assert excl["criteria_breakdowns"][0]["team_criterion_score"] is not None
     assert excl["applicable_weight"] == 10.0
     assert excl["total_configured_weight"] == 10.0
+
+
+# ---------------------------------------------------------------------------
+# Batch 4: Concurrent Signal Extraction & Custom Numeric Scoring
+# ---------------------------------------------------------------------------
+
+def test_concurrent_extraction_preserves_deterministic_order():
+    """Batch 4 Issue 6: Concurrent multi-team/multi-member extraction preserves
+    exact input order of teams and members.
+    """
+    from app.signals.registry import default_signal_registry
+    
+    # Create 4 teams with multiple members each
+    teams = [
+        TeamSchema(
+            team_id=f"T_{i}",
+            team_name=f"Team {i}",
+            members=[
+                MemberSchema(
+                    member_id=f"M_{i}_{j}",
+                    name=f"Member {i}-{j}",
+                    custom_fields={"custom:leetcode_solved": j * 50, "custom:track": "AI"},
+                )
+                for j in range(3)
+            ],
+        )
+        for i in range(4)
+    ]
+
+    res = default_signal_registry.execute_extraction(
+        teams=teams,
+        selected_signals=["academic_cgpa", "custom:leetcode_solved", "custom:track"],
+    )
+    assert res.total_teams == 4
+    assert res.total_members == 12
+
+    for i in range(4):
+        team_res = res.teams[i]
+        assert team_res.team_id == f"T_{i}"
+        assert team_res.team_name == f"Team {i}"
+        assert len(team_res.member_results) == 3
+        for j in range(3):
+            mem_res = team_res.member_results[j]
+            assert mem_res.member_id == f"M_{i}_{j}"
+            assert mem_res.name == f"Member {i}-{j}"
+            sigs = {s.signal_key: s for s in mem_res.signals}
+            assert sigs["custom:leetcode_solved"].value == j * 50
+            assert sigs["custom:track"].value == "AI"
+
+
+def test_custom_numeric_scoring_criterion():
+    """Batch 4 Issue 2: Custom numeric signals (e.g. custom:leetcode_solved)
+    scored with criterion_type='numeric_range' and linear_range normalization
+    calculate correct normalized and weighted scores.
+    """
+    from app.scoring.engine import calculate_team_score
+    from app.scoring.schemas import ScoringConfiguration, EvaluationCriterion, NormalizationConfig, LinearRangeConfig
+
+    team = TeamSchema(
+        team_id="T_CUSTOM",
+        team_name="Team Custom Score",
+        members=[
+            MemberSchema(member_id="M1", name="Alice", custom_fields={"custom:leetcode_solved": 150}),
+            MemberSchema(member_id="M2", name="Bob", custom_fields={"custom:leetcode_solved": 50}),
+        ],
+    )
+    signals = {
+        "M1": {
+            "custom:leetcode_solved": ExtractedSignal(
+                signal_key="custom:leetcode_solved",
+                category="custom",
+                value=150,
+                status=SignalStatus.EXTRACTED,
+                evidence=SignalEvidence(source="custom", raw_input="150"),
+            )
+        },
+        "M2": {
+            "custom:leetcode_solved": ExtractedSignal(
+                signal_key="custom:leetcode_solved",
+                category="custom",
+                value=50,
+                status=SignalStatus.EXTRACTED,
+                evidence=SignalEvidence(source="custom", raw_input="50"),
+            )
+        },
+    }
+
+    config = ScoringConfiguration(
+        config_id="cfg_custom_numeric",
+        name="Custom Numeric Model",
+        scale_max=100.0,
+        criteria=[
+            EvaluationCriterion(
+                criterion_id="crit_leetcode",
+                name="LeetCode Solved",
+                target_signal_key="custom:leetcode_solved",
+                criterion_type="numeric_range",
+                weight=10.0,
+                aggregation="mean",
+                normalization=NormalizationConfig(
+                    method="linear_range",
+                    linear_range=LinearRangeConfig(min_value=0.0, max_value=200.0),
+                ),
+            )
+        ],
+    )
+
+    result = calculate_team_score(team, config, signals)
+    assert result.score_status == ScoreStatus.CALCULATED
+    assert len(result.criteria_breakdowns) == 1
+    bd = result.criteria_breakdowns[0]
+    assert bd.criterion_id == "crit_leetcode"
+    assert bd.team_criterion_score == pytest.approx(0.50, 0.001)
+    assert bd.weighted_contribution == pytest.approx(50.0, 0.001)
+    assert result.final_score == pytest.approx(50.0, 0.001)

@@ -58,9 +58,16 @@ const SIGNAL_NAMES: Record<string, string> = {
   github_total_stars: 'Total Stargazers',
   github_languages: 'Primary Languages',
   github_recent_commits: 'Recent Commits (90d)',
+  github_repo_metadata: 'GitHub Repositories Metadata',
+  github_recent_activity: 'GitHub Recent Activity',
+  github_profile_verified: 'GitHub Profile Verified',
 };
 
 const formatSignalName = (key: string): string => {
+  if (key.startsWith('custom:')) {
+    const raw = key.replace(/^custom:/, '');
+    return `Custom: ${raw.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}`;
+  }
   return SIGNAL_NAMES[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 };
 

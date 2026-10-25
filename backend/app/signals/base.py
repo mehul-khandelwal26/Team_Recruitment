@@ -6,6 +6,7 @@ without tight coupling to the data ingestion engine or premature scoring calcula
 
 from __future__ import annotations
 
+import concurrent.futures
 import datetime
 import uuid
 from abc import ABC, abstractmethod
@@ -239,98 +240,131 @@ class SignalExtractorRegistry:
         if any(s.startswith("custom:") or s.startswith("custom_") for s in active_signals):
             analyzers_executed.append("custom_field_extractor")
 
-        team_results: list[TeamExtractionResult] = []
-        total_members = 0
+        # Collect all member tasks preserving exact (team_idx, member_idx) coordinates
+        tasks: list[tuple[int, int, MemberSchema]] = []
+        for t_idx, team in enumerate(validated_teams):
+            for m_idx, member in enumerate(team.members):
+                tasks.append((t_idx, m_idx, member))
 
-        for team in validated_teams:
-            member_results: list[MemberExtractionResult] = []
-            for member in team.members:
-                total_members += 1
-                member_signals: list[ExtractedSignal] = []
+        total_members = len(tasks)
 
-                # Run each relevant extractor
-                for extractor, sigs in extractor_to_signals.items():
-                    try:
-                        extracted = extractor.extract(
-                            member=member,
-                            selected_signals=sigs,
-                            config=run_config,
-                        )
-                        member_signals.extend(extracted)
-                    except Exception as exc:
-                        # Defensive boundary: analyzer crash must never abort extraction
-                        err_msg = f"Extractor '{extractor.descriptor.extractor_id}' failed unexpectedly: {exc}"
-                        errors.append(err_msg)
-                        for s_key in sigs:
-                            member_signals.append(
-                                ExtractedSignal(
-                                    signal_key=s_key,
-                                    category=extractor.descriptor.category,
-                                    status=SignalStatus.FAILED,
-                                    error_message=f"Analyzer internal error: {exc}",
-                                )
-                            )
+        # Pre-allocate member results structure per team
+        team_member_results: list[list[Optional[MemberExtractionResult]]] = [
+            [None] * len(team.members) for team in validated_teams
+        ]
 
-                # Extract requested custom signals and mapped custom fields from member data
-                custom_keys_to_extract = set(
-                    [s for s in active_signals if s.startswith("custom:") or s.startswith("custom_")]
-                )
-                for k in member.custom_fields.keys():
-                    if k.startswith("custom:"):
-                        custom_keys_to_extract.add(k)
+        def _extract_for_member(member: MemberSchema) -> tuple[MemberExtractionResult, list[str]]:
+            member_signals: list[ExtractedSignal] = []
+            member_errors: list[str] = []
 
-                for sig_key in custom_keys_to_extract:
-                    raw_k = sig_key.split(":", 1)[1] if ":" in sig_key else sig_key[7:]
-                    val = (
-                        member.custom_fields.get(sig_key)
-                        or member.custom_fields.get(raw_k)
-                        or member.raw_data.get(raw_k)
-                        or member.raw_data.get(sig_key)
+            # Run each relevant extractor
+            for extractor, sigs in extractor_to_signals.items():
+                try:
+                    extracted = extractor.extract(
+                        member=member,
+                        selected_signals=sigs,
+                        config=run_config,
                     )
-                    if val is not None and not (isinstance(val, str) and not val.strip()):
+                    member_signals.extend(extracted)
+                except Exception as exc:
+                    # Defensive boundary: analyzer crash must never abort extraction
+                    err_msg = f"Extractor '{extractor.descriptor.extractor_id}' failed unexpectedly: {exc}"
+                    member_errors.append(err_msg)
+                    for s_key in sigs:
                         member_signals.append(
                             ExtractedSignal(
-                                signal_key=sig_key,
-                                category="custom",
-                                status=SignalStatus.EXTRACTED,
-                                value=val,
-                                evidence=SignalEvidence(
-                                    source="registration_custom_field", confidence=0.85
-                                ),
-                            )
-                        )
-                    else:
-                        member_signals.append(
-                            ExtractedSignal(
-                                signal_key=sig_key,
-                                category="custom",
-                                status=SignalStatus.NOT_APPLICABLE,
-                                value=None,
-                                evidence=SignalEvidence(
-                                    source="registration_custom_field", confidence=0.0
-                                ),
+                                signal_key=s_key,
+                                category=extractor.descriptor.category,
+                                status=SignalStatus.FAILED,
+                                error_message=f"Analyzer internal error: {exc}",
                             )
                         )
 
-                # Append results for unsupported signals
-                for unsupp in unsupported_signals:
+            # Extract requested custom signals and mapped custom fields from member data
+            custom_keys_to_extract = set(
+                [s for s in active_signals if s.startswith("custom:") or s.startswith("custom_")]
+            )
+            for k in member.custom_fields.keys():
+                if k.startswith("custom:"):
+                    custom_keys_to_extract.add(k)
+
+            for sig_key in custom_keys_to_extract:
+                raw_k = sig_key.split(":", 1)[1] if ":" in sig_key else sig_key[7:]
+                val = member.custom_fields.get(sig_key)
+                if val is None:
+                    val = member.custom_fields.get(raw_k)
+                if val is None:
+                    val = member.raw_data.get(raw_k)
+                if val is None:
+                    val = member.raw_data.get(sig_key)
+                if val is not None and not (isinstance(val, str) and not val.strip()):
                     member_signals.append(
                         ExtractedSignal(
-                            signal_key=unsupp,
-                            category="unknown",
-                            status=SignalStatus.FAILED,
-                            error_message=f"Signal '{unsupp}' is not supported by any registered extractor.",
+                            signal_key=sig_key,
+                            category="custom",
+                            status=SignalStatus.EXTRACTED,
+                            value=val,
+                            evidence=SignalEvidence(
+                                source="registration_custom_field", confidence=0.85
+                            ),
+                        )
+                    )
+                else:
+                    member_signals.append(
+                        ExtractedSignal(
+                            signal_key=sig_key,
+                            category="custom",
+                            status=SignalStatus.NOT_APPLICABLE,
+                            value=None,
+                            evidence=SignalEvidence(
+                                source="registration_custom_field", confidence=0.0
+                            ),
                         )
                     )
 
-                member_results.append(
-                    MemberExtractionResult(
-                        member_id=member.member_id,
-                        name=member.name,
-                        signals=member_signals,
+            # Append results for unsupported signals
+            for unsupp in unsupported_signals:
+                member_signals.append(
+                    ExtractedSignal(
+                        signal_key=unsupp,
+                        category="unknown",
+                        status=SignalStatus.FAILED,
+                        error_message=f"Signal '{unsupp}' is not supported by any registered extractor.",
                     )
                 )
 
+            res = MemberExtractionResult(
+                member_id=member.member_id,
+                name=member.name,
+                signals=member_signals,
+            )
+            return res, member_errors
+
+        max_workers = min(6, len(tasks)) if len(tasks) > 1 else 1
+
+        if max_workers > 1:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_coord = {
+                    executor.submit(_extract_for_member, member): (t_idx, m_idx)
+                    for t_idx, m_idx, member in tasks
+                }
+                for future in concurrent.futures.as_completed(future_to_coord):
+                    t_idx, m_idx = future_to_coord[future]
+                    try:
+                        mem_res, mem_errs = future.result()
+                        team_member_results[t_idx][m_idx] = mem_res
+                        errors.extend(mem_errs)
+                    except Exception as exc:
+                        errors.append(f"Member extraction worker thread failed: {exc}")
+        else:
+            for t_idx, m_idx, member in tasks:
+                mem_res, mem_errs = _extract_for_member(member)
+                team_member_results[t_idx][m_idx] = mem_res
+                errors.extend(mem_errs)
+
+        team_results: list[TeamExtractionResult] = []
+        for t_idx, team in enumerate(validated_teams):
+            member_results = [r for r in team_member_results[t_idx] if r is not None]
             team_results.append(
                 TeamExtractionResult(
                     team_id=team.team_id,

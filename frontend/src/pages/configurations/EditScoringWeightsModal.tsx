@@ -661,9 +661,11 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
         if (!cleanField) {
           return 'Custom field name cannot be empty. Please enter a field name to evaluate (e.g. skills, city, track).';
         }
-        const expVals = c.config?.expected_values || Object.keys(c.normalization?.categorical_mapping?.category_scores || {});
-        if (!expVals || expVals.length === 0) {
-          return `Custom field "${cleanField}" requires at least one expected value / keyword to match (e.g. Python, C++, JavaScript).`;
+        if (c.criterion_type === 'categorical') {
+          const expVals = c.config?.expected_values || Object.keys(c.normalization?.categorical_mapping?.category_scores || {});
+          if (!expVals || expVals.length === 0) {
+            return `Custom field "${cleanField}" requires at least one expected value / keyword to match (e.g. Python, C++, JavaScript).`;
+          }
         }
       }
 
@@ -725,23 +727,35 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
       const cleanedCriteria = criteria.map((c) => {
         const isCustom = c.criterion_id.startsWith('crit_custom_') || c.target_signal_key.startsWith('custom:') || Boolean(c.config?.is_custom_field);
         const cleanField = (c.config?.custom_field_name || (c.target_signal_key.startsWith('custom:') ? c.target_signal_key.slice(7) : c.target_signal_key) || '').trim();
-        const finalTargetKey = isCustom && cleanField ? `custom:${cleanField.toLowerCase().replace(/[^a-z0-9_]/g, '_')}` : c.target_signal_key;
-        const finalName = c.name.trim() || (isCustom && cleanField ? `${cleanField.charAt(0).toUpperCase() + cleanField.slice(1)} Match` : (c.name || 'Custom Field'));
+        const finalTargetKey = isCustom && cleanField ? (cleanField.startsWith('custom:') ? cleanField : `custom:${cleanField.toLowerCase().replace(/[^a-z0-9_]/g, '_')}`) : c.target_signal_key;
+        const defaultName = isCustom && cleanField ? (c.criterion_type === 'numeric_range' ? `${cleanField.charAt(0).toUpperCase() + cleanField.slice(1)} Score` : `${cleanField.charAt(0).toUpperCase() + cleanField.slice(1)} Match`) : (c.name || 'Custom Field');
+        const finalName = c.name.trim() || defaultName;
 
-        const norm = c.normalization ? JSON.parse(JSON.stringify(c.normalization)) : {};
-        if (norm.linear_range) {
-          norm.linear_range.min_value = parseFloat(String(norm.linear_range.min_value)) || 0;
-          norm.linear_range.max_value = parseFloat(String(norm.linear_range.max_value)) || 10;
-        }
-        if (norm.categorical_mapping) {
-          const defParsed = parseFloat(String(norm.categorical_mapping.default_score));
-          norm.categorical_mapping.default_score = isNaN(defParsed) ? 0.0 : Math.min(1.0, Math.max(0.0, defParsed));
-          const scores: Record<string, number> = {};
-          for (const [k, v] of Object.entries(norm.categorical_mapping.category_scores || {})) {
-            const parsed = parseFloat(String(v));
-            scores[k] = isNaN(parsed) ? 1.0 : Math.min(1.0, Math.max(0.0, parsed));
+        let norm: any = {};
+        if (isCustom && c.criterion_type === 'numeric_range') {
+          norm = {
+            
+            linear_range: {
+              min_value: Number(c.normalization?.linear_range?.min_value ?? 0),
+              max_value: Number(c.normalization?.linear_range?.max_value ?? 10),
+            },
+          };
+        } else {
+          norm = c.normalization ? JSON.parse(JSON.stringify(c.normalization)) : {};
+          if (norm.linear_range) {
+            norm.linear_range.min_value = parseFloat(String(norm.linear_range.min_value)) || 0;
+            norm.linear_range.max_value = parseFloat(String(norm.linear_range.max_value)) || 10;
           }
-          norm.categorical_mapping.category_scores = scores;
+          if (norm.categorical_mapping) {
+            const defParsed = parseFloat(String(norm.categorical_mapping.default_score));
+            norm.categorical_mapping.default_score = isNaN(defParsed) ? 0.0 : Math.min(1.0, Math.max(0.0, defParsed));
+            const scores: Record<string, number> = {};
+            for (const [k, v] of Object.entries(norm.categorical_mapping.category_scores || {})) {
+              const parsed = parseFloat(String(v));
+              scores[k] = isNaN(parsed) ? 1.0 : Math.min(1.0, Math.max(0.0, parsed));
+            }
+            norm.categorical_mapping.category_scores = scores;
+          }
         }
 
         return {
@@ -1143,9 +1157,48 @@ export const EditScoringWeightsModal: React.FC<EditScoringWeightsModalProps> = (
                                 ) : (
                                   <span className="font-semibold text-foreground">{c.name}</span>
                                 )}
-                                <Badge variant="forest" className="font-mono text-[9px] py-0 px-1">
-                                  {c.criterion_type}
-                                </Badge>
+                                {isCustomCrit ? (
+                                  <select
+                                    value={c.criterion_type}
+                                    onChange={(e) => {
+                                      const newType = e.target.value as 'categorical' | 'numeric_range';
+                                      setCriteria((prev) => {
+                                        const copy = [...prev];
+                                        const crit = copy[idx];
+                                        if (newType === 'numeric_range') {
+                                          copy[idx] = {
+                                            ...crit,
+                                            criterion_type: 'numeric_range' as any,
+                                            normalization: {
+                                              ...(crit.normalization || {}),
+                                              
+                                              linear_range: crit.normalization?.linear_range || { min_value: 0, max_value: 10 },
+                                            },
+                                          };
+                                        } else {
+                                          copy[idx] = {
+                                            ...crit,
+                                            criterion_type: 'categorical' as any,
+                                            config: {
+                                              ...(crit.config || {}),
+                                              match_mode: crit.config?.match_mode || 'proportional',
+                                              expected_values: crit.config?.expected_values || [],
+                                            },
+                                          };
+                                        }
+                                        return copy;
+                                      });
+                                    }}
+                                    className="h-5 text-[9px] font-mono rounded border border-purple-300 bg-purple-50 text-purple-900 px-1 py-0 cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-600"
+                                  >
+                                    <option value="categorical">categorical</option>
+                                    <option value="numeric_range">numeric_range</option>
+                                  </select>
+                                ) : (
+                                  <Badge variant="forest" className="font-mono text-[9px] py-0 px-1">
+                                    {c.criterion_type}
+                                  </Badge>
+                                )}
                                 {isCustomCrit && (
                                   <Badge variant="outline" className="text-[8px] font-mono py-0 px-1 border-purple-300 text-purple-800">
                                     custom

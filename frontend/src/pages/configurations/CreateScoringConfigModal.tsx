@@ -26,6 +26,13 @@ interface CreateScoringConfigModalProps {
   onSuccess: (newConfigId: string) => void;
 }
 
+const slugify = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+
 export const CreateScoringConfigModal: React.FC<CreateScoringConfigModalProps> = ({
   open,
   onOpenChange,
@@ -39,12 +46,20 @@ export const CreateScoringConfigModal: React.FC<CreateScoringConfigModalProps> =
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [scaleMax, setScaleMax] = useState<number | string>(100);
+  const [isIdManual, setIsIdManual] = useState(false);
   const [basePresetId, setBasePresetId] = useState<string>(
     initialBasePresetId || existingConfigs[0]?.config_id || ''
   );
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (open) {
+      setConfigId('');
+      setName('');
+      setDescription('');
+      setScaleMax(100);
+      setErrorMessage(null);
+      setIsIdManual(false);
       if (initialBasePresetId && existingConfigs.some((c) => c.config_id === initialBasePresetId)) {
         setBasePresetId(initialBasePresetId);
       } else if (existingConfigs[0]?.config_id) {
@@ -52,7 +67,13 @@ export const CreateScoringConfigModal: React.FC<CreateScoringConfigModalProps> =
       }
     }
   }, [open, initialBasePresetId, existingConfigs]);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const handleNameChange = (val: string) => {
+    setName(val);
+    if (!isIdManual) {
+      setConfigId(slugify(val));
+    }
+  };
 
   const handleSubmit = async () => {
     const cleanId = configId.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
@@ -170,7 +191,10 @@ export const CreateScoringConfigModal: React.FC<CreateScoringConfigModalProps> =
             </label>
             <Input
               value={configId}
-              onChange={(e) => setConfigId(e.target.value)}
+              onChange={(e) => {
+                setIsIdManual(true);
+                setConfigId(e.target.value);
+              }}
               placeholder="e.g. backend_focused_scoring"
               className="text-xs h-8 font-mono"
             />
@@ -185,7 +209,7 @@ export const CreateScoringConfigModal: React.FC<CreateScoringConfigModalProps> =
             </label>
             <Input
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => handleNameChange(e.target.value)}
               placeholder="e.g. Backend & Systems Evaluation Rubric"
               className="text-xs h-8"
             />

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck,
   Scale,
@@ -38,6 +38,18 @@ export const VersionHistoryTab: React.FC<VersionHistoryTabProps> = ({
   const [selectedScoringId, setSelectedScoringId] = useState<string>(
     scoringConfigs[0]?.config_id || 'balanced'
   );
+
+  useEffect(() => {
+    if (ruleConfigs.length > 0 && !ruleConfigs.some((c) => c.config_id === selectedRuleId)) {
+      setSelectedRuleId(ruleConfigs[0].config_id);
+    }
+  }, [ruleConfigs, selectedRuleId]);
+
+  useEffect(() => {
+    if (scoringConfigs.length > 0 && !scoringConfigs.some((c) => c.config_id === selectedScoringId)) {
+      setSelectedScoringId(scoringConfigs[0].config_id);
+    }
+  }, [scoringConfigs, selectedScoringId]);
 
   // Versions query
   const ruleVersionsQuery = useRuleConfigVersions(
